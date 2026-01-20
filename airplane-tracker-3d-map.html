@@ -226,42 +226,6 @@
             font-size: 0.9em;
         }
 
-        #altitude-legend {
-            position: absolute;
-            bottom: 100px;
-            left: 20px;
-            padding: 15px;
-            border-radius: 12px;
-            backdrop-filter: blur(10px);
-            transition: all 0.3s ease;
-        }
-        .theme-day #altitude-legend {
-            background: rgba(255, 255, 255, 0.85);
-        }
-        .theme-night #altitude-legend {
-            background: rgba(0, 20, 40, 0.85);
-        }
-        .theme-retro #altitude-legend {
-            background: rgba(0, 20, 0, 0.9);
-            border: 1px solid #00ff00;
-        }
-        #altitude-legend h4 {
-            margin-bottom: 10px;
-            font-size: 0.9em;
-        }
-        .legend-item {
-            display: flex;
-            align-items: center;
-            margin: 5px 0;
-            font-size: 0.8em;
-        }
-        .legend-color {
-            width: 20px;
-            height: 10px;
-            margin-right: 10px;
-            border-radius: 2px;
-        }
-
         select {
             padding: 6px 10px;
             border-radius: 15px;
@@ -346,26 +310,6 @@
         <div id="altitude-value">30x</div>
     </div>
 
-    <div id="altitude-legend">
-        <h4>Altitude</h4>
-        <div class="legend-item">
-            <div class="legend-color" style="background: #00ff00;"></div>
-            <span id="legend-low">&lt; 5,000 ft</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-color" style="background: #ffff00;"></div>
-            <span id="legend-mid1">5,000 - 15,000 ft</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-color" style="background: #ff8800;"></div>
-            <span id="legend-mid2">15,000 - 30,000 ft</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-color" style="background: #ff0088;"></div>
-            <span id="legend-high">&gt; 30,000 ft</span>
-        </div>
-    </div>
-
     <div id="controls">
         <div class="control-group">
             <span class="control-label">Theme:</span>
@@ -419,6 +363,46 @@
         const TILES_PER_SIDE = 6;
         const BASE_ALT_SCALE = 0.00001;
 
+        // Cookie helper functions
+        function setCookie(name, value, days = 365) {
+            const expires = new Date(Date.now() + days * 864e5).toUTCString();
+            document.cookie = name + '=' + encodeURIComponent(JSON.stringify(value)) + '; expires=' + expires + '; path=/; SameSite=Lax';
+        }
+
+        function getCookie(name) {
+            const value = document.cookie.split('; ').find(row => row.startsWith(name + '='));
+            if (value) {
+                try {
+                    return JSON.parse(decodeURIComponent(value.split('=')[1]));
+                } catch (e) {
+                    return null;
+                }
+            }
+            return null;
+        }
+
+        function saveSettings() {
+            const settings = {
+                theme: currentTheme,
+                units: currentUnits,
+                showLabels: showLabels,
+                showTrails: showTrails,
+                autoRotate: autoRotate
+            };
+            setCookie('flightTrackerSettings', settings);
+        }
+
+        function loadSettings() {
+            const settings = getCookie('flightTrackerSettings');
+            if (settings) {
+                if (settings.theme) currentTheme = settings.theme;
+                if (settings.units) currentUnits = settings.units;
+                if (settings.showLabels !== undefined) showLabels = settings.showLabels;
+                if (settings.showTrails !== undefined) showTrails = settings.showTrails;
+                if (settings.autoRotate !== undefined) autoRotate = settings.autoRotate;
+            }
+        }
+
         // State
         let scene, camera, renderer;
         let airplanes = new Map();
@@ -460,6 +444,14 @@
         let previousMousePosition = { x: 0, y: 0 };
 
         function init() {
+            // Load saved settings from cookies
+            loadSettings();
+
+            // Apply loaded settings to UI
+            document.body.className = 'theme-' + currentTheme;
+            document.getElementById('theme-select').value = currentTheme;
+            document.getElementById('units-select').value = currentUnits;
+
             // Scene
             scene = new THREE.Scene();
             updateSceneBackground();
@@ -537,6 +529,8 @@
 
             // Recreate all airplanes with new style (wireframe vs solid)
             recreateAllAirplanes();
+
+            saveSettings();
         }
 
         function recreateAllAirplanes() {
@@ -573,25 +567,11 @@
 
         function changeUnits(units) {
             currentUnits = units;
-            updateLegendUnits();
             updateLabels();
             if (selectedPlane) {
                 selectPlane(selectedPlane);
             }
-        }
-
-        function updateLegendUnits() {
-            if (currentUnits === 'imperial') {
-                document.getElementById('legend-low').textContent = '< 5,000 ft';
-                document.getElementById('legend-mid1').textContent = '5,000 - 15,000 ft';
-                document.getElementById('legend-mid2').textContent = '15,000 - 30,000 ft';
-                document.getElementById('legend-high').textContent = '> 30,000 ft';
-            } else {
-                document.getElementById('legend-low').textContent = '< 1,524 m';
-                document.getElementById('legend-mid1').textContent = '1,524 - 4,572 m';
-                document.getElementById('legend-mid2').textContent = '4,572 - 9,144 m';
-                document.getElementById('legend-high').textContent = '> 9,144 m';
-            }
+            saveSettings();
         }
 
         function formatAltitude(altFeet) {
@@ -1328,6 +1308,31 @@
             trail.geometry.setDrawRange(0, validCount);
         }
 
+        // Get vertical speed arrow character and size
+        // baro_rate is in ft/min, we need to convert to m/s for sizing
+        // 2 m/s = 393.7 ft/min (minimum threshold)
+        // 20 m/s = 3937 ft/min (maximum size)
+        function getVerticalSpeedArrow(baroRate) {
+            if (baroRate === undefined || baroRate === null) return null;
+
+            // Convert ft/min to m/s (divide by 196.85)
+            const vertSpeedMs = Math.abs(baroRate) / 196.85;
+
+            // Ignore vertical speeds below 2 m/s
+            if (vertSpeedMs < 2) return null;
+
+            // Cap at 20 m/s for sizing
+            const clampedSpeed = Math.min(vertSpeedMs, 20);
+
+            // Scale arrow size: 2 m/s -> 16px, 20 m/s -> 48px (linear)
+            const arrowSize = 16 + ((clampedSpeed - 2) / 18) * 32;
+
+            const arrow = baroRate > 0 ? '↑' : '↓';
+            const color = baroRate > 0 ? '#44ff44' : '#ff6644';
+
+            return { arrow, size: arrowSize, color };
+        }
+
         function updateLabels() {
             // Remove old labels from scene and clear array
             labels.forEach(label => scene.remove(label));
@@ -1370,6 +1375,18 @@
                 if (plane.userData.gs !== undefined && plane.userData.gs !== null) {
                     ctx.fillStyle = currentTheme === 'retro' ? '#00aa00' : '#ffaa00';
                     ctx.fillText(formatSpeed(plane.userData.gs), 10, 70);
+                }
+
+                // Draw vertical speed arrow on the right side
+                const arrowInfo = getVerticalSpeedArrow(plane.userData.baro_rate);
+                if (arrowInfo) {
+                    ctx.fillStyle = currentTheme === 'retro' ? '#00ff00' : arrowInfo.color;
+                    ctx.font = `bold ${Math.round(arrowInfo.size)}px sans-serif`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(arrowInfo.arrow, 230, 40);
+                    ctx.textAlign = 'left';
+                    ctx.textBaseline = 'alphabetic';
                 }
 
                 const texture = new THREE.CanvasTexture(canvas);
@@ -1468,12 +1485,14 @@
         function toggleAutoRotate() {
             autoRotate = !autoRotate;
             document.getElementById('btn-rotate').classList.toggle('active', autoRotate);
+            saveSettings();
         }
 
         function toggleLabels() {
             showLabels = !showLabels;
             document.getElementById('btn-labels').classList.toggle('active', showLabels);
             updateLabels();
+            saveSettings();
         }
 
         function toggleTrails() {
@@ -1487,6 +1506,7 @@
                     plane.userData.trailPoints = [];
                 }
             }
+            saveSettings();
         }
 
         function onMouseClick(event) {
@@ -1593,9 +1613,10 @@
         // Initialize
         init();
 
-        // Set initial button states
-        document.getElementById('btn-labels').classList.add('active');
-        document.getElementById('btn-trails').classList.add('active');
+        // Set button states based on loaded settings
+        document.getElementById('btn-labels').classList.toggle('active', showLabels);
+        document.getElementById('btn-trails').classList.toggle('active', showTrails);
+        document.getElementById('btn-rotate').classList.toggle('active', autoRotate);
     </script>
 </body>
 </html>
