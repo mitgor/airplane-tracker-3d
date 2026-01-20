@@ -424,6 +424,26 @@
         let aircraftDataBuffer = new Map(); // hex -> array of {timestamp, data}
         let lastInterpolationTime = 0;
 
+        // Performance: Cached/reusable objects to avoid GC pressure
+        const _raycaster = new THREE.Raycaster();
+        const _mouseVec = new THREE.Vector2();
+        const _tempPos = { x: 0, z: 0 };
+        const _seenHexes = new Set();
+        let _airplanesArray = []; // Cached array of airplane entries for iteration
+        let _airplanesArrayDirty = true; // Flag to rebuild array when airplanes change
+
+        // Performance: Label canvas pool for reuse
+        const _labelCanvasPool = [];
+        const _labelTexturePool = [];
+        const MAX_LABEL_POOL_SIZE = 100;
+
+        // Performance: Throttle flags
+        let _lastTrailFilterTime = 0;
+        const TRAIL_FILTER_INTERVAL = 500; // Filter trails every 500ms max
+
+        // Performance: Tab visibility for power saving
+        let _isTabVisible = true;
+
         // Map state
         let currentZoom = 9;
         const MIN_ZOOM = 6;
@@ -469,10 +489,10 @@
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
             updateCameraPosition();
 
-            // Renderer
+            // Renderer - cap pixel ratio at 2 to reduce GPU load on high-DPI displays
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             document.getElementById('container').appendChild(renderer.domElement);
 
             // Lights
@@ -491,6 +511,11 @@
 
             // Window resize
             window.addEventListener('resize', onWindowResize);
+
+            // Visibility change - pause rendering when tab is hidden
+            document.addEventListener('visibilitychange', () => {
+                _isTabVisible = !document.hidden;
+            });
 
             // Mouse interaction
             renderer.domElement.addEventListener('click', onMouseClick);
@@ -554,10 +579,12 @@
                 if (plane.userData.altLine) scene.remove(plane.userData.altLine);
             }
             airplanes.clear();
+            _airplanesArrayDirty = true;
 
             // Recreate with new theme style
-            aircraftData.forEach(data => {
-                if (!data.lat || !data.lon) return;
+            for (let i = 0; i < aircraftData.length; i++) {
+                const data = aircraftData[i];
+                if (!data.lat || !data.lon) continue;
                 const plane = createAirplane(data);
                 const pos = latLonToXZ(data.lat, data.lon);
                 const alt = (data.altitude || 0) * altitudeScale;
@@ -570,7 +597,8 @@
                 updateAltitudeLine(plane);
                 scene.add(plane);
                 airplanes.set(data.hex, plane);
-            });
+            }
+            _airplanesArrayDirty = true;
 
             updateLabels();
         }
@@ -1077,11 +1105,20 @@
             return a + diff * t;
         }
 
+        // Reusable object for interpolated data to avoid GC
+        const _interpolatedData = {
+            hex: '', lat: 0, lon: 0, altitude: 0, track: 0, gs: 0, baro_rate: 0, flight: '', squawk: ''
+        };
+
         // Interpolation function - called at 30fps
         function interpolateAircraft() {
             const now = Date.now();
             const targetTime = now - INTERPOLATION_DELAY;
-            const seenHexes = new Set();
+
+            // Reuse cached set instead of creating new one
+            _seenHexes.clear();
+
+            let planesChanged = false;
 
             for (const [hex, buffer] of aircraftDataBuffer.entries()) {
                 if (buffer.length === 0) continue;
@@ -1103,7 +1140,7 @@
                 if (!before) before = after;
                 if (!after) after = before;
 
-                seenHexes.add(hex);
+                _seenHexes.add(hex);
 
                 // Calculate interpolation factor
                 let t = 0;
@@ -1112,7 +1149,7 @@
                     t = Math.max(0, Math.min(1, t));
                 }
 
-                // Interpolate data
+                // Interpolate data - reuse object to avoid GC
                 // Note: dump1090 uses 'gs' for ground speed, 'tas' for true airspeed, 'speed' sometimes
                 const beforeSpeed = before.data.gs ?? before.data.speed ?? before.data.tas;
                 const afterSpeed = after.data.gs ?? after.data.speed ?? after.data.tas;
@@ -1122,24 +1159,23 @@
                 const beforeVertRate = before.data.baro_rate ?? before.data.geom_rate ?? before.data.vert_rate ?? 0;
                 const afterVertRate = after.data.baro_rate ?? after.data.geom_rate ?? after.data.vert_rate ?? 0;
 
-                const interpolatedData = {
-                    hex: hex,
-                    lat: lerp(before.data.lat, after.data.lat, t),
-                    lon: lerp(before.data.lon, after.data.lon, t),
-                    altitude: lerp(beforeAlt, afterAlt, t),
-                    track: lerpAngle(before.data.track || 0, after.data.track || 0, t),
-                    gs: (beforeSpeed !== undefined && afterSpeed !== undefined) ? lerp(beforeSpeed, afterSpeed, t) : (afterSpeed ?? beforeSpeed),
-                    baro_rate: lerp(beforeVertRate, afterVertRate, t),
-                    flight: after.data.flight || before.data.flight,
-                    squawk: after.data.squawk || before.data.squawk
-                };
+                // Populate reusable object
+                _interpolatedData.hex = hex;
+                _interpolatedData.lat = lerp(before.data.lat, after.data.lat, t);
+                _interpolatedData.lon = lerp(before.data.lon, after.data.lon, t);
+                _interpolatedData.altitude = lerp(beforeAlt, afterAlt, t);
+                _interpolatedData.track = lerpAngle(before.data.track || 0, after.data.track || 0, t);
+                _interpolatedData.gs = (beforeSpeed !== undefined && afterSpeed !== undefined) ? lerp(beforeSpeed, afterSpeed, t) : (afterSpeed ?? beforeSpeed);
+                _interpolatedData.baro_rate = lerp(beforeVertRate, afterVertRate, t);
+                _interpolatedData.flight = after.data.flight || before.data.flight || '';
+                _interpolatedData.squawk = after.data.squawk || before.data.squawk || '';
 
                 let plane = airplanes.get(hex);
 
                 if (plane) {
                     // Update existing plane
-                    const pos = latLonToXZ(interpolatedData.lat, interpolatedData.lon);
-                    const alt = interpolatedData.altitude * altitudeScale;
+                    const pos = latLonToXZ(_interpolatedData.lat, _interpolatedData.lon);
+                    const alt = _interpolatedData.altitude * altitudeScale;
 
                     // Store previous position for trail BEFORE updating
                     const prevX = plane.position.x;
@@ -1150,8 +1186,8 @@
                     plane.position.set(pos.x, alt, pos.z);
 
                     // Update heading
-                    if (interpolatedData.track !== undefined) {
-                        plane.rotation.y = (-interpolatedData.track * Math.PI / 180) + Math.PI;
+                    if (_interpolatedData.track !== undefined) {
+                        plane.rotation.y = (-_interpolatedData.track * Math.PI / 180) + Math.PI;
                     }
 
                     // Mark plane as initialized after first real position update
@@ -1170,7 +1206,9 @@
                         plane.userData.lastTrailTime = now;
 
                         // Only add if previous position was valid (not near origin)
-                        if (Math.abs(prevX) > 1 || Math.abs(prevZ) > 1) {
+                        const absPrevX = prevX < 0 ? -prevX : prevX;
+                        const absPrevZ = prevZ < 0 ? -prevZ : prevZ;
+                        if (absPrevX > 1 || absPrevZ > 1) {
                             plane.userData.trailPoints.push({
                                 x: prevX,
                                 y: prevY,
@@ -1187,7 +1225,7 @@
                     updateAltitudeLine(plane);
 
                     // Update colors
-                    const newColor = getAltitudeColor(interpolatedData.altitude);
+                    const newColor = getAltitudeColor(_interpolatedData.altitude);
                     if (plane.userData.noseMaterial) {
                         plane.userData.noseMaterial.color.setHex(newColor);
                         plane.userData.noseMaterial.emissive.setHex(newColor);
@@ -1196,18 +1234,39 @@
                         plane.userData.trailMaterial.color.setHex(newColor);
                     }
 
-                    Object.assign(plane.userData, interpolatedData);
+                    // Update userData without creating new object
+                    plane.userData.hex = _interpolatedData.hex;
+                    plane.userData.lat = _interpolatedData.lat;
+                    plane.userData.lon = _interpolatedData.lon;
+                    plane.userData.altitude = _interpolatedData.altitude;
+                    plane.userData.track = _interpolatedData.track;
+                    plane.userData.gs = _interpolatedData.gs;
+                    plane.userData.baro_rate = _interpolatedData.baro_rate;
+                    plane.userData.flight = _interpolatedData.flight;
+                    plane.userData.squawk = _interpolatedData.squawk;
                 } else {
-                    // Create new plane - set position BEFORE adding to scene
-                    plane = createAirplane(interpolatedData);
-                    const pos = latLonToXZ(interpolatedData.lat, interpolatedData.lon);
-                    const alt = interpolatedData.altitude * altitudeScale;
+                    // Create new plane - need to copy data since we're reusing _interpolatedData
+                    const newPlaneData = {
+                        hex: _interpolatedData.hex,
+                        lat: _interpolatedData.lat,
+                        lon: _interpolatedData.lon,
+                        altitude: _interpolatedData.altitude,
+                        track: _interpolatedData.track,
+                        gs: _interpolatedData.gs,
+                        baro_rate: _interpolatedData.baro_rate,
+                        flight: _interpolatedData.flight,
+                        squawk: _interpolatedData.squawk
+                    };
+
+                    plane = createAirplane(newPlaneData);
+                    const pos = latLonToXZ(newPlaneData.lat, newPlaneData.lon);
+                    const alt = newPlaneData.altitude * altitudeScale;
 
                     // Set position immediately so plane never appears at origin
                     plane.position.set(pos.x, alt, pos.z);
 
-                    if (interpolatedData.track !== undefined) {
-                        plane.rotation.y = (-interpolatedData.track * Math.PI / 180) + Math.PI;
+                    if (newPlaneData.track !== undefined) {
+                        plane.rotation.y = (-newPlaneData.track * Math.PI / 180) + Math.PI;
                     }
 
                     // Mark as initialized with current time - trails won't record for 500ms
@@ -1216,6 +1275,7 @@
 
                     scene.add(plane);
                     airplanes.set(hex, plane);
+                    planesChanged = true;
 
                     // Create altitude line after plane is positioned
                     createAltLineForPlane(plane);
@@ -1225,12 +1285,18 @@
 
             // Remove planes no longer in data
             for (const [hex, plane] of airplanes.entries()) {
-                if (!seenHexes.has(hex)) {
+                if (!_seenHexes.has(hex)) {
                     scene.remove(plane);
                     if (plane.userData.trail) scene.remove(plane.userData.trail);
                     if (plane.userData.altLine) scene.remove(plane.userData.altLine);
                     airplanes.delete(hex);
+                    planesChanged = true;
                 }
+            }
+
+            // Mark cached array as dirty if planes were added/removed
+            if (planesChanged) {
+                _airplanesArrayDirty = true;
             }
         }
 
@@ -1243,7 +1309,9 @@
             if (!altLine) return;
 
             // Only draw if plane has valid position
-            if (Math.abs(plane.position.x) < 0.1 && Math.abs(plane.position.z) < 0.1) {
+            const absX = plane.position.x < 0 ? -plane.position.x : plane.position.x;
+            const absZ = plane.position.z < 0 ? -plane.position.z : plane.position.z;
+            if (absX < 0.1 && absZ < 0.1) {
                 altLine.geometry.setDrawRange(0, 0);
                 return;
             }
@@ -1258,11 +1326,23 @@
 
             altLine.geometry.attributes.position.needsUpdate = true;
             altLine.geometry.setDrawRange(0, 2);
-            altLine.computeLineDistances();
+
+            // Throttle computeLineDistances - only recompute every 500ms
+            const now = Date.now();
+            if (!plane.userData._lastLineDistTime || now - plane.userData._lastLineDistTime > 500) {
+                plane.userData._lastLineDistTime = now;
+                altLine.computeLineDistances();
+            }
         }
 
         function updateAllAircraftPositions() {
-            for (const [hex, plane] of airplanes.entries()) {
+            // Use cached array
+            if (_airplanesArrayDirty) {
+                _airplanesArray = Array.from(airplanes.values());
+                _airplanesArrayDirty = false;
+            }
+            for (let i = 0, len = _airplanesArray.length; i < len; i++) {
+                const plane = _airplanesArray[i];
                 if (plane.userData.lat && plane.userData.lon) {
                     const pos = latLonToXZ(plane.userData.lat, plane.userData.lon);
                     const alt = (plane.userData.altitude || 0) * altitudeScale;
@@ -1274,10 +1354,24 @@
         }
 
         function updateTrail(plane) {
-            // Filter out any invalid points (near origin)
-            plane.userData.trailPoints = plane.userData.trailPoints.filter(p =>
-                Math.abs(p.x) > 1 || Math.abs(p.z) > 1
-            );
+            const now = Date.now();
+
+            // Throttle trail filtering - only filter every 500ms to reduce array allocations
+            if (now - _lastTrailFilterTime > TRAIL_FILTER_INTERVAL) {
+                _lastTrailFilterTime = now;
+                // Filter out invalid points in-place to avoid creating new array
+                const pts = plane.userData.trailPoints;
+                let writeIdx = 0;
+                for (let i = 0; i < pts.length; i++) {
+                    const p = pts[i];
+                    const absX = p.x < 0 ? -p.x : p.x;
+                    const absZ = p.z < 0 ? -p.z : p.z;
+                    if (absX > 1 || absZ > 1) {
+                        pts[writeIdx++] = p;
+                    }
+                }
+                pts.length = writeIdx;
+            }
 
             const points = plane.userData.trailPoints;
 
@@ -1298,19 +1392,23 @@
             if (!trail) return;
 
             const positions = trail.geometry.attributes.position.array;
-            positions.fill(0);
+            // Don't fill(0) - just overwrite needed positions
 
             let validCount = 0;
-            for (let i = 0; i < points.length && i < 30; i++) {
+            const maxPoints = points.length < 30 ? points.length : 30;
+            for (let i = 0; i < maxPoints; i++) {
+                const pt = points[i];
                 const idx = validCount * 3;
-                positions[idx] = points[i].x;
-                positions[idx + 1] = points[i].y;
-                positions[idx + 2] = points[i].z;
+                positions[idx] = pt.x;
+                positions[idx + 1] = pt.y;
+                positions[idx + 2] = pt.z;
                 validCount++;
             }
 
             // Add current position if valid
-            if (validCount < 30 && (Math.abs(plane.position.x) > 1 || Math.abs(plane.position.z) > 1)) {
+            const absPlaneX = plane.position.x < 0 ? -plane.position.x : plane.position.x;
+            const absPlaneZ = plane.position.z < 0 ? -plane.position.z : plane.position.z;
+            if (validCount < 30 && (absPlaneX > 1 || absPlaneZ > 1)) {
                 const idx = validCount * 3;
                 positions[idx] = plane.position.x;
                 positions[idx + 1] = plane.position.y;
@@ -1347,74 +1445,133 @@
             return { arrow, size: arrowSize, color };
         }
 
-        function updateLabels() {
-            // Remove old labels from scene and clear array
-            labels.forEach(label => scene.remove(label));
-            labels = [];
+        // Get a canvas from pool or create new one
+        function _getPooledCanvas() {
+            if (_labelCanvasPool.length > 0) {
+                return _labelCanvasPool.pop();
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 80;
+            return canvas;
+        }
 
-            // Also clear label references from planes
-            for (const [hex, plane] of airplanes.entries()) {
-                plane.userData.label = null;
+        // Return canvas to pool
+        function _returnCanvasToPool(canvas) {
+            if (_labelCanvasPool.length < MAX_LABEL_POOL_SIZE) {
+                _labelCanvasPool.push(canvas);
+            }
+        }
+
+        // Render label content to canvas
+        function _renderLabelToCanvas(ctx, plane) {
+            // Clear canvas
+            ctx.clearRect(0, 0, 256, 80);
+
+            if (currentTheme === 'retro') {
+                ctx.fillStyle = 'rgba(0, 20, 0, 0.9)';
+                ctx.strokeStyle = '#00ff00';
+                ctx.lineWidth = 2;
+            } else {
+                ctx.fillStyle = 'rgba(0, 20, 40, 0.85)';
+            }
+            ctx.beginPath();
+            ctx.roundRect(0, 0, 256, 80, 8);
+            ctx.fill();
+            if (currentTheme === 'retro') ctx.stroke();
+
+            ctx.fillStyle = currentTheme === 'retro' ? '#00ff00' : '#00ffff';
+            ctx.font = 'bold 22px monospace';
+            const callsign = plane.userData.flight || plane.userData.hex || 'Unknown';
+            ctx.fillText(callsign.trim(), 10, 28);
+
+            ctx.fillStyle = currentTheme === 'retro' ? '#00cc00' : '#88ff88';
+            ctx.font = '16px monospace';
+            ctx.fillText(formatAltitude(plane.userData.altitude || 0), 10, 50);
+
+            if (plane.userData.gs !== undefined && plane.userData.gs !== null) {
+                ctx.fillStyle = currentTheme === 'retro' ? '#00aa00' : '#ffaa00';
+                ctx.fillText(formatSpeed(plane.userData.gs), 10, 70);
+            }
+
+            // Draw vertical speed arrow on the right side
+            const arrowInfo = getVerticalSpeedArrow(plane.userData.baro_rate);
+            if (arrowInfo) {
+                ctx.fillStyle = currentTheme === 'retro' ? '#00ff00' : arrowInfo.color;
+                ctx.font = `bold ${Math.round(arrowInfo.size)}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(arrowInfo.arrow, 230, 40);
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'alphabetic';
+            }
+        }
+
+        function updateLabels() {
+            // Return old canvases to pool and collect sprites for reuse
+            const oldSprites = [];
+            for (let i = 0; i < labels.length; i++) {
+                const label = labels[i];
+                scene.remove(label);
+                // Return canvas to pool if it exists
+                if (label.material && label.material.map && label.material.map.image) {
+                    _returnCanvasToPool(label.material.map.image);
+                }
+                oldSprites.push(label);
+            }
+            labels.length = 0;
+
+            // Clear label references from planes
+            if (_airplanesArrayDirty) {
+                _airplanesArray = Array.from(airplanes.values());
+                _airplanesArrayDirty = false;
+            }
+            for (let i = 0; i < _airplanesArray.length; i++) {
+                _airplanesArray[i].userData.label = null;
             }
 
             if (!showLabels) return;
 
-            for (const [hex, plane] of airplanes.entries()) {
-                const canvas = document.createElement('canvas');
+            let spriteIndex = 0;
+            for (let i = 0; i < _airplanesArray.length; i++) {
+                const plane = _airplanesArray[i];
+                const canvas = _getPooledCanvas();
                 const ctx = canvas.getContext('2d');
-                canvas.width = 256;
-                canvas.height = 80;
 
-                if (currentTheme === 'retro') {
-                    ctx.fillStyle = 'rgba(0, 20, 0, 0.9)';
-                    ctx.strokeStyle = '#00ff00';
-                    ctx.lineWidth = 2;
+                _renderLabelToCanvas(ctx, plane);
+
+                let sprite;
+                if (spriteIndex < oldSprites.length) {
+                    // Reuse existing sprite
+                    sprite = oldSprites[spriteIndex];
+                    sprite.material.map.image = canvas;
+                    sprite.material.map.needsUpdate = true;
                 } else {
-                    ctx.fillStyle = 'rgba(0, 20, 40, 0.85)';
+                    // Create new sprite
+                    const texture = new THREE.CanvasTexture(canvas);
+                    const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+                    sprite = new THREE.Sprite(material);
+                    sprite.scale.set(15, 4.7, 1);
                 }
-                ctx.beginPath();
-                ctx.roundRect(0, 0, 256, 80, 8);
-                ctx.fill();
-                if (currentTheme === 'retro') ctx.stroke();
+                spriteIndex++;
 
-                ctx.fillStyle = currentTheme === 'retro' ? '#00ff00' : '#00ffff';
-                ctx.font = 'bold 22px monospace';
-                const callsign = plane.userData.flight || plane.userData.hex || 'Unknown';
-                ctx.fillText(callsign.trim(), 10, 28);
-
-                ctx.fillStyle = currentTheme === 'retro' ? '#00cc00' : '#88ff88';
-                ctx.font = '16px monospace';
-                ctx.fillText(formatAltitude(plane.userData.altitude || 0), 10, 50);
-
-                if (plane.userData.gs !== undefined && plane.userData.gs !== null) {
-                    ctx.fillStyle = currentTheme === 'retro' ? '#00aa00' : '#ffaa00';
-                    ctx.fillText(formatSpeed(plane.userData.gs), 10, 70);
-                }
-
-                // Draw vertical speed arrow on the right side
-                const arrowInfo = getVerticalSpeedArrow(plane.userData.baro_rate);
-                if (arrowInfo) {
-                    ctx.fillStyle = currentTheme === 'retro' ? '#00ff00' : arrowInfo.color;
-                    ctx.font = `bold ${Math.round(arrowInfo.size)}px sans-serif`;
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    ctx.fillText(arrowInfo.arrow, 230, 40);
-                    ctx.textAlign = 'left';
-                    ctx.textBaseline = 'alphabetic';
-                }
-
-                const texture = new THREE.CanvasTexture(canvas);
-                const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
-                const sprite = new THREE.Sprite(material);
                 sprite.position.copy(plane.position);
                 sprite.position.y += 8;
-                sprite.scale.set(15, 4.7, 1);
 
                 // Store reference to label on the plane for correct position updates
                 plane.userData.label = sprite;
 
                 scene.add(sprite);
                 labels.push(sprite);
+            }
+
+            // Dispose unused old sprites
+            for (let i = spriteIndex; i < oldSprites.length; i++) {
+                const sprite = oldSprites[i];
+                if (sprite.material) {
+                    if (sprite.material.map) sprite.material.map.dispose();
+                    sprite.material.dispose();
+                }
             }
         }
 
@@ -1512,27 +1669,36 @@
         function toggleTrails() {
             showTrails = !showTrails;
             document.getElementById('btn-trails').classList.toggle('active', showTrails);
-            for (const [hex, plane] of airplanes.entries()) {
+            // Use cached array
+            if (_airplanesArrayDirty) {
+                _airplanesArray = Array.from(airplanes.values());
+                _airplanesArrayDirty = false;
+            }
+            for (let i = 0, len = _airplanesArray.length; i < len; i++) {
+                const plane = _airplanesArray[i];
                 if (plane.userData.trail) {
                     plane.userData.trail.visible = showTrails;
                 }
                 if (!showTrails) {
-                    plane.userData.trailPoints = [];
+                    plane.userData.trailPoints.length = 0;
                 }
             }
             saveSettings();
         }
 
         function onMouseClick(event) {
-            const mouse = new THREE.Vector2();
-            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            // Reuse cached objects to avoid GC pressure
+            _mouseVec.x = (event.clientX / window.innerWidth) * 2 - 1;
+            _mouseVec.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
-            const raycaster = new THREE.Raycaster();
-            raycaster.setFromCamera(mouse, camera);
+            _raycaster.setFromCamera(_mouseVec, camera);
 
-            const planeObjects = Array.from(airplanes.values());
-            const intersects = raycaster.intersectObjects(planeObjects, true);
+            // Use cached array if available
+            if (_airplanesArrayDirty) {
+                _airplanesArray = Array.from(airplanes.values());
+                _airplanesArrayDirty = false;
+            }
+            const intersects = _raycaster.intersectObjects(_airplanesArray, true);
 
             if (intersects.length > 0) {
                 let plane = intersects[0].object;
@@ -1579,6 +1745,10 @@
 
         function animate() {
             requestAnimationFrame(animate);
+
+            // Skip rendering when tab is not visible to save CPU/power
+            if (!_isTabVisible) return;
+
             const now = Date.now();
             time += 0.016;
 
@@ -1593,31 +1763,41 @@
                 updateCameraPosition();
             }
 
-            // Animate position lights
-            for (const [hex, plane] of airplanes.entries()) {
+            // Update cached array if needed
+            if (_airplanesArrayDirty) {
+                _airplanesArray = Array.from(airplanes.values());
+                _airplanesArrayDirty = false;
+            }
+
+            const needsLabelRedraw = now - lastLabelUpdate > 1000;
+            const updateLabelPositions = !needsLabelRedraw && showLabels;
+
+            // Single combined loop for lights and label positions
+            for (let i = 0, len = _airplanesArray.length; i < len; i++) {
+                const plane = _airplanesArray[i];
+
+                // Animate position lights
                 if (plane.userData.positionLight) {
                     plane.userData.lightPhase += 0.08;
                     const brightness = Math.sin(plane.userData.lightPhase) > 0.7 ? 1 : 0.2;
                     plane.userData.positionLight.material.opacity = brightness;
                 }
+
+                // Update label positions between full redraws
+                if (updateLabelPositions && plane.userData.label) {
+                    plane.userData.label.position.x = plane.position.x;
+                    plane.userData.label.position.y = plane.position.y + 8;
+                    plane.userData.label.position.z = plane.position.z;
+                }
             }
 
             // Update labels periodically - redraw every 1 second to update speed/altitude
-            if (now - lastLabelUpdate > 1000) {
+            if (needsLabelRedraw) {
                 lastLabelUpdate = now;
                 updateLabels();
 
                 if (selectedPlane && airplanes.has(selectedPlane.userData.hex)) {
                     selectPlane(airplanes.get(selectedPlane.userData.hex));
-                }
-            } else {
-                // Just update label positions between full redraws
-                // Use the stored label reference on each plane for correct matching
-                for (const [hex, plane] of airplanes.entries()) {
-                    if (plane.userData.label) {
-                        plane.userData.label.position.copy(plane.position);
-                        plane.userData.label.position.y += 8;
-                    }
                 }
             }
 
