@@ -387,7 +387,8 @@
                 units: currentUnits,
                 showLabels: showLabels,
                 showTrails: showTrails,
-                autoRotate: autoRotate
+                autoRotate: autoRotate,
+                altitudeScaleValue: Math.round(altitudeScale / BASE_ALT_SCALE)
             };
             setCookie('flightTrackerSettings', settings);
         }
@@ -400,6 +401,9 @@
                 if (settings.showLabels !== undefined) showLabels = settings.showLabels;
                 if (settings.showTrails !== undefined) showTrails = settings.showTrails;
                 if (settings.autoRotate !== undefined) autoRotate = settings.autoRotate;
+                if (settings.altitudeScaleValue !== undefined) {
+                    altitudeScale = settings.altitudeScaleValue * BASE_ALT_SCALE;
+                }
             }
         }
 
@@ -452,6 +456,11 @@
             document.getElementById('theme-select').value = currentTheme;
             document.getElementById('units-select').value = currentUnits;
 
+            // Apply altitude scale to slider
+            const scaleValue = Math.round(altitudeScale / BASE_ALT_SCALE);
+            document.getElementById('altitude-slider').value = scaleValue;
+            document.getElementById('altitude-value').textContent = scaleValue + 'x';
+
             // Scene
             scene = new THREE.Scene();
             updateSceneBackground();
@@ -493,6 +502,7 @@
                 altitudeScale = value * BASE_ALT_SCALE;
                 document.getElementById('altitude-value').textContent = value + 'x';
                 updateAllAircraftPositions();
+                saveSettings();
             });
 
             // Start animation
@@ -959,6 +969,7 @@
 
             const trail = new THREE.Line(trailGeom, trailMat);
             trail.frustumCulled = false;
+            trail.visible = showTrails;
             scene.add(trail);
 
             plane.userData.trail = trail;
@@ -1107,6 +1118,9 @@
                 const afterSpeed = after.data.gs ?? after.data.speed ?? after.data.tas;
                 const beforeAlt = before.data.altitude ?? before.data.alt_baro ?? before.data.alt_geom ?? 0;
                 const afterAlt = after.data.altitude ?? after.data.alt_baro ?? after.data.alt_geom ?? 0;
+                // Support multiple vertical rate field names
+                const beforeVertRate = before.data.baro_rate ?? before.data.geom_rate ?? before.data.vert_rate ?? 0;
+                const afterVertRate = after.data.baro_rate ?? after.data.geom_rate ?? after.data.vert_rate ?? 0;
 
                 const interpolatedData = {
                     hex: hex,
@@ -1115,7 +1129,7 @@
                     altitude: lerp(beforeAlt, afterAlt, t),
                     track: lerpAngle(before.data.track || 0, after.data.track || 0, t),
                     gs: (beforeSpeed !== undefined && afterSpeed !== undefined) ? lerp(beforeSpeed, afterSpeed, t) : (afterSpeed ?? beforeSpeed),
-                    baro_rate: lerp(before.data.baro_rate || 0, after.data.baro_rate || 0, t),
+                    baro_rate: lerp(beforeVertRate, afterVertRate, t),
                     flight: after.data.flight || before.data.flight,
                     squawk: after.data.squawk || before.data.squawk
                 };
