@@ -831,7 +831,7 @@
                 const store = transaction.objectStore('trails');
                 store.put({
                     hex: hex,
-                    points: trailPoints.slice(-50), // Keep last 50 points
+                    points: trailPoints.slice(-100), // Keep last 100 points
                     lastSeen: Date.now(),
                     lastLat: lat,
                     lastLon: lon
@@ -1717,7 +1717,7 @@
             const color = isRetro ? 0x00ff00 : getAltitudeColor(plane.userData.altitude || 0);
 
             const trailGeom = new THREE.BufferGeometry();
-            const trailPositions = new Float32Array(150 * 3); // 50 points max
+            const trailPositions = new Float32Array(300 * 3); // 100 points max
             trailGeom.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
             trailGeom.setDrawRange(0, 0);
 
@@ -1738,7 +1738,6 @@
 
             plane.userData.trail = trail;
             plane.userData.trailMaterial = trailMat;
-            console.log('Trail created for', plane.userData.hex, 'visible:', showTrails);
         }
 
         // Create altitude line for a plane
@@ -1933,27 +1932,36 @@
                         plane.userData.initTime = now;
                     }
 
-                    // Add trail point AFTER position update, only if plane has been initialized for a bit
-                    // and previous position was valid (not at origin)
+                    // Add trail point using lat/lon coordinates (not world coords)
+                    // This ensures trails remain valid when map bounds change
                     const timeSinceInit = now - (plane.userData.initTime || now);
                     if (showTrails && timeSinceInit > 500) {
-                        // Add trail points more frequently (every 100ms instead of 200ms)
                         if (now - (plane.userData.lastTrailTime || 0) > 100) {
                             plane.userData.lastTrailTime = now;
 
-                            // Only add if previous position was valid (not near origin)
-                            const absPrevX = prevX < 0 ? -prevX : prevX;
-                            const absPrevZ = prevZ < 0 ? -prevZ : prevZ;
-                            if (absPrevX > 1 || absPrevZ > 1) {
-                                plane.userData.trailPoints.push({
-                                    x: prevX,
-                                    y: prevY,
-                                    z: prevZ
-                                });
-                                if (plane.userData.trailPoints.length > 50) {
-                                    plane.userData.trailPoints.shift();
+                            // Store as lat/lon/alt - these are stable coordinates
+                            const lastPoint = plane.userData.trailPoints[plane.userData.trailPoints.length - 1];
+                            const currentLat = plane.userData.lat;
+                            const currentLon = plane.userData.lon;
+                            const currentAlt = plane.userData.altitude;
+
+                            // Only add if we have valid coordinates and position changed
+                            if (currentLat && currentLon) {
+                                const dominated = lastPoint &&
+                                    Math.abs(lastPoint.lat - currentLat) < 0.0001 &&
+                                    Math.abs(lastPoint.lon - currentLon) < 0.0001;
+
+                                if (!dominated) {
+                                    plane.userData.trailPoints.push({
+                                        lat: currentLat,
+                                        lon: currentLon,
+                                        alt: currentAlt || 0
+                                    });
+                                    if (plane.userData.trailPoints.length > 100) {
+                                        plane.userData.trailPoints.shift();
+                                    }
+                                    updateTrail(plane);
                                 }
-                                updateTrail(plane);
                             }
                         }
                     }
@@ -2100,25 +2108,6 @@
         }
 
         function updateTrail(plane) {
-            const now = Date.now();
-
-            // Throttle trail filtering - only filter every 500ms to reduce array allocations
-            if (now - _lastTrailFilterTime > TRAIL_FILTER_INTERVAL) {
-                _lastTrailFilterTime = now;
-                // Filter out invalid points in-place to avoid creating new array
-                const pts = plane.userData.trailPoints;
-                let writeIdx = 0;
-                for (let i = 0; i < pts.length; i++) {
-                    const p = pts[i];
-                    const absX = p.x < 0 ? -p.x : p.x;
-                    const absZ = p.z < 0 ? -p.z : p.z;
-                    if (absX > 1 || absZ > 1) {
-                        pts[writeIdx++] = p;
-                    }
-                }
-                pts.length = writeIdx;
-            }
-
             const points = plane.userData.trailPoints;
 
             // Need at least 2 valid points to draw a trail
@@ -2138,23 +2127,27 @@
             if (!trail) return;
 
             const positions = trail.geometry.attributes.position.array;
-            // Don't fill(0) - just overwrite needed positions
 
+            // Convert lat/lon trail points to world coordinates
             let validCount = 0;
-            const maxPoints = points.length < 50 ? points.length : 50;
+            const maxPoints = Math.min(points.length, 100);
+
             for (let i = 0; i < maxPoints; i++) {
                 const pt = points[i];
-                const idx = validCount * 3;
-                positions[idx] = pt.x;
-                positions[idx + 1] = pt.y;
-                positions[idx + 2] = pt.z;
-                validCount++;
+                // Points are stored as {lat, lon, alt}
+                if (pt.lat !== undefined && pt.lon !== undefined) {
+                    const worldPos = latLonToXZ(pt.lat, pt.lon);
+                    const alt = (pt.alt || 0) * altitudeScale;
+                    const idx = validCount * 3;
+                    positions[idx] = worldPos.x;
+                    positions[idx + 1] = alt;
+                    positions[idx + 2] = worldPos.z;
+                    validCount++;
+                }
             }
 
-            // Add current position if valid
-            const absPlaneX = plane.position.x < 0 ? -plane.position.x : plane.position.x;
-            const absPlaneZ = plane.position.z < 0 ? -plane.position.z : plane.position.z;
-            if (validCount < 50 && (absPlaneX > 1 || absPlaneZ > 1)) {
+            // Add current plane position as the final point
+            if (validCount < 100 && plane.userData.lat && plane.userData.lon) {
                 const idx = validCount * 3;
                 positions[idx] = plane.position.x;
                 positions[idx + 1] = plane.position.y;
@@ -2165,13 +2158,8 @@
             trail.geometry.attributes.position.needsUpdate = true;
             trail.geometry.setDrawRange(0, validCount);
 
-            // Debug: Log trail updates occasionally
-            if (Math.random() < 0.01) {
-                console.log('Trail update:', plane.userData.hex, 'points:', validCount, 'visible:', trail.visible);
-            }
-
-            // Save trail to DB periodically (every 5 seconds)
-            if (!plane.userData.lastTrailSave || Date.now() - plane.userData.lastTrailSave > 5000) {
+            // Save trail to DB periodically (every 10 seconds)
+            if (!plane.userData.lastTrailSave || Date.now() - plane.userData.lastTrailSave > 10000) {
                 plane.userData.lastTrailSave = Date.now();
                 saveTrailToDb(plane.userData.hex, plane.userData.trailPoints, plane.userData.lat, plane.userData.lon);
             }
