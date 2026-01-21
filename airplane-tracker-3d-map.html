@@ -1386,6 +1386,9 @@
             document.body.className = 'theme-' + theme;
             updateSceneBackground();
 
+            // Update edge fade for new background color
+            createMapEdgeFade();
+
             // Clear tile cache for theme change to force reload with new style
             tileCache.clear();
 
@@ -1480,6 +1483,142 @@
             ground.position.y = -0.1;
             ground.name = 'groundPlaceholder';
             scene.add(ground);
+
+            // Create edge fade effect
+            createMapEdgeFade();
+        }
+
+        // Store edge fade meshes for theme updates
+        let edgeFadeMeshes = [];
+
+        // Create gradient texture for edge fade
+        function createEdgeFadeTexture(bgColor, direction) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+
+            // Create gradient based on direction
+            let gradient;
+            switch (direction) {
+                case 'north': // Fade from bottom (transparent) to top (solid)
+                    gradient = ctx.createLinearGradient(0, canvas.height, 0, 0);
+                    break;
+                case 'south': // Fade from top (transparent) to bottom (solid)
+                    gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+                    break;
+                case 'east': // Fade from left (transparent) to right (solid)
+                    gradient = ctx.createLinearGradient(0, 0, canvas.width, 0);
+                    break;
+                case 'west': // Fade from right (transparent) to left (solid)
+                    gradient = ctx.createLinearGradient(canvas.width, 0, 0, 0);
+                    break;
+                case 'corner-ne':
+                    gradient = ctx.createRadialGradient(0, canvas.height, 0, 0, canvas.height, canvas.width * 1.4);
+                    break;
+                case 'corner-nw':
+                    gradient = ctx.createRadialGradient(canvas.width, canvas.height, 0, canvas.width, canvas.height, canvas.width * 1.4);
+                    break;
+                case 'corner-se':
+                    gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, canvas.width * 1.4);
+                    break;
+                case 'corner-sw':
+                    gradient = ctx.createRadialGradient(canvas.width, 0, 0, canvas.width, 0, canvas.width * 1.4);
+                    break;
+            }
+
+            // Convert hex color to RGB
+            const r = (bgColor >> 16) & 255;
+            const g = (bgColor >> 8) & 255;
+            const b = bgColor & 255;
+
+            gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0)`);
+            gradient.addColorStop(0.5, `rgba(${r}, ${g}, ${b}, 0.7)`);
+            gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 1)`);
+
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.needsUpdate = true;
+            return texture;
+        }
+
+        // Get background color for current theme
+        function getThemeBackgroundColor() {
+            if (currentTheme === 'day') return 0x87CEEB;
+            if (currentTheme === 'night') return 0x0a0a1a;
+            if (currentTheme === 'retro') return 0x000800;
+            return 0x87CEEB;
+        }
+
+        // Create edge fade planes around the map
+        function createMapEdgeFade() {
+            // Remove existing fade meshes
+            edgeFadeMeshes.forEach(mesh => {
+                scene.remove(mesh);
+                if (mesh.material.map) mesh.material.map.dispose();
+                mesh.material.dispose();
+            });
+            edgeFadeMeshes = [];
+
+            const bgColor = getThemeBackgroundColor();
+            const fadeWidth = MAP_GROUND_SIZE * 0.25; // Width of fade zone
+            const halfMap = MAP_GROUND_SIZE / 2;
+
+            // Edge positions: north, south, east, west
+            const edges = [
+                { dir: 'north', pos: [0, -halfMap - fadeWidth/2], size: [MAP_GROUND_SIZE, fadeWidth] },
+                { dir: 'south', pos: [0, halfMap + fadeWidth/2], size: [MAP_GROUND_SIZE, fadeWidth] },
+                { dir: 'east', pos: [halfMap + fadeWidth/2, 0], size: [fadeWidth, MAP_GROUND_SIZE] },
+                { dir: 'west', pos: [-halfMap - fadeWidth/2, 0], size: [fadeWidth, MAP_GROUND_SIZE] },
+            ];
+
+            // Corner positions
+            const corners = [
+                { dir: 'corner-ne', pos: [halfMap + fadeWidth/2, -halfMap - fadeWidth/2], size: [fadeWidth, fadeWidth] },
+                { dir: 'corner-nw', pos: [-halfMap - fadeWidth/2, -halfMap - fadeWidth/2], size: [fadeWidth, fadeWidth] },
+                { dir: 'corner-se', pos: [halfMap + fadeWidth/2, halfMap + fadeWidth/2], size: [fadeWidth, fadeWidth] },
+                { dir: 'corner-sw', pos: [-halfMap - fadeWidth/2, halfMap + fadeWidth/2], size: [fadeWidth, fadeWidth] },
+            ];
+
+            // Create edge planes
+            edges.forEach(edge => {
+                const geometry = new THREE.PlaneGeometry(edge.size[0], edge.size[1]);
+                const texture = createEdgeFadeTexture(bgColor, edge.dir);
+                const material = new THREE.MeshBasicMaterial({
+                    map: texture,
+                    transparent: true,
+                    side: THREE.DoubleSide,
+                    depthWrite: false
+                });
+
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.rotation.x = -Math.PI / 2;
+                mesh.position.set(edge.pos[0], 0.05, edge.pos[1]);
+                mesh.renderOrder = 1;
+                scene.add(mesh);
+                edgeFadeMeshes.push(mesh);
+            });
+
+            // Create corner planes
+            corners.forEach(corner => {
+                const geometry = new THREE.PlaneGeometry(corner.size[0], corner.size[1]);
+                const texture = createEdgeFadeTexture(bgColor, corner.dir);
+                const material = new THREE.MeshBasicMaterial({
+                    map: texture,
+                    transparent: true,
+                    side: THREE.DoubleSide,
+                    depthWrite: false
+                });
+
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.rotation.x = -Math.PI / 2;
+                mesh.position.set(corner.pos[0], 0.05, corner.pos[1]);
+                mesh.renderOrder = 1;
+                scene.add(mesh);
+                edgeFadeMeshes.push(mesh);
+            });
         }
 
         function getTileUrl(x, y, zoom) {
