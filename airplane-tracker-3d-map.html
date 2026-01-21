@@ -226,6 +226,143 @@
             font-size: 0.9em;
         }
 
+        /* Graphs Panel Styles */
+        #graphs-panel {
+            position: absolute;
+            right: 80px;
+            top: 20px;
+            width: 320px;
+            max-height: calc(100vh - 120px);
+            overflow-y: auto;
+            padding: 15px;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+            display: none;
+        }
+        #graphs-panel.visible {
+            display: block;
+        }
+        .theme-day #graphs-panel {
+            background: rgba(255, 255, 255, 0.92);
+            border: 1px solid rgba(0, 100, 200, 0.3);
+        }
+        .theme-night #graphs-panel {
+            background: rgba(0, 20, 40, 0.92);
+            border: 1px solid rgba(0, 150, 255, 0.3);
+        }
+        .theme-retro #graphs-panel {
+            background: rgba(0, 20, 0, 0.95);
+            border: 1px solid #00ff00;
+            box-shadow: 0 0 15px rgba(0, 255, 0, 0.3);
+        }
+
+        #graphs-panel h3 {
+            margin-bottom: 12px;
+            font-size: 1.1em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .theme-day #graphs-panel h3 { color: #0066cc; }
+        .theme-night #graphs-panel h3 { color: #00d4ff; }
+        .theme-retro #graphs-panel h3 { color: #00ff00; text-shadow: 0 0 10px #00ff00; }
+
+        .graphs1090-status {
+            font-size: 0.7em;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-weight: normal;
+        }
+        .graphs1090-status.connected {
+            background: rgba(0, 200, 100, 0.3);
+            color: #00cc66;
+        }
+        .graphs1090-status.local {
+            background: rgba(255, 150, 0, 0.3);
+            color: #ffaa00;
+        }
+
+        .graph-card {
+            margin-bottom: 12px;
+            padding: 10px;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+        .theme-day .graph-card {
+            background: rgba(0, 100, 200, 0.1);
+        }
+        .theme-night .graph-card {
+            background: rgba(0, 100, 200, 0.2);
+        }
+        .theme-retro .graph-card {
+            background: rgba(0, 255, 0, 0.1);
+            border: 1px solid rgba(0, 255, 0, 0.3);
+        }
+
+        .graph-card h4 {
+            font-size: 0.85em;
+            margin-bottom: 8px;
+            opacity: 0.9;
+        }
+
+        .graph-current-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+        .theme-day .graph-current-value { color: #0088ff; }
+        .theme-night .graph-current-value { color: #00d4ff; }
+        .theme-retro .graph-current-value { color: #00ff00; text-shadow: 0 0 8px #00ff00; }
+
+        .graph-canvas-container {
+            width: 100%;
+            height: 60px;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .theme-day .graph-canvas-container {
+            background: rgba(0, 0, 0, 0.05);
+        }
+        .theme-night .graph-canvas-container {
+            background: rgba(0, 0, 0, 0.3);
+        }
+        .theme-retro .graph-canvas-container {
+            background: rgba(0, 50, 0, 0.5);
+        }
+
+        .graph-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        .graph-stats {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75em;
+            margin-top: 6px;
+            opacity: 0.7;
+        }
+
+        #graphs-panel::-webkit-scrollbar {
+            width: 6px;
+        }
+        #graphs-panel::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .theme-day #graphs-panel::-webkit-scrollbar-thumb {
+            background: rgba(0, 100, 200, 0.3);
+            border-radius: 3px;
+        }
+        .theme-night #graphs-panel::-webkit-scrollbar-thumb {
+            background: rgba(0, 150, 255, 0.3);
+            border-radius: 3px;
+        }
+        .theme-retro #graphs-panel::-webkit-scrollbar-thumb {
+            background: rgba(0, 255, 0, 0.3);
+            border-radius: 3px;
+        }
+
         select {
             padding: 6px 10px;
             border-radius: 15px;
@@ -310,6 +447,46 @@
         <div id="altitude-value">30x</div>
     </div>
 
+    <div id="graphs-panel">
+        <h3>ADS-B Statistics <span class="graphs1090-status local" id="graphs-status">Local DB</span></h3>
+
+        <div class="graph-card" id="card-message-rate">
+            <h4>Message Rate</h4>
+            <div class="graph-current-value" id="msg-rate-value">-- msg/s</div>
+            <div class="graph-canvas-container">
+                <canvas class="graph-canvas" id="canvas-msg-rate"></canvas>
+            </div>
+            <div class="graph-stats">
+                <span id="msg-rate-min">Min: --</span>
+                <span id="msg-rate-max">Max: --</span>
+            </div>
+        </div>
+
+        <div class="graph-card" id="card-aircraft">
+            <h4>Aircraft Seen / Tracked</h4>
+            <div class="graph-current-value" id="aircraft-value">-- / --</div>
+            <div class="graph-canvas-container">
+                <canvas class="graph-canvas" id="canvas-aircraft"></canvas>
+            </div>
+            <div class="graph-stats">
+                <span id="aircraft-min">Min: --</span>
+                <span id="aircraft-max">Max: --</span>
+            </div>
+        </div>
+
+        <div class="graph-card" id="card-signal">
+            <h4>Signal Level</h4>
+            <div class="graph-current-value" id="signal-value">-- dBFS</div>
+            <div class="graph-canvas-container">
+                <canvas class="graph-canvas" id="canvas-signal"></canvas>
+            </div>
+            <div class="graph-stats">
+                <span id="signal-min">Min: --</span>
+                <span id="signal-max">Max: --</span>
+            </div>
+        </div>
+    </div>
+
     <div id="controls">
         <div class="control-group">
             <span class="control-label">Theme:</span>
@@ -351,6 +528,7 @@
             <button onclick="toggleAutoRotate()" id="btn-rotate">Auto Rotate</button>
             <button onclick="toggleTrails()" id="btn-trails">Trails</button>
             <button onclick="toggleLabels()" id="btn-labels">Labels</button>
+            <button onclick="toggleGraphs()" id="btn-graphs">Graphs</button>
         </div>
     </div>
 
@@ -388,6 +566,7 @@
                 showLabels: showLabels,
                 showTrails: showTrails,
                 autoRotate: autoRotate,
+                showGraphs: showGraphs,
                 altitudeScaleValue: Math.round(altitudeScale / BASE_ALT_SCALE)
             };
             setCookie('flightTrackerSettings', settings);
@@ -401,6 +580,7 @@
                 if (settings.showLabels !== undefined) showLabels = settings.showLabels;
                 if (settings.showTrails !== undefined) showTrails = settings.showTrails;
                 if (settings.autoRotate !== undefined) autoRotate = settings.autoRotate;
+                if (settings.showGraphs !== undefined) showGraphs = settings.showGraphs;
                 if (settings.altitudeScaleValue !== undefined) {
                     altitudeScale = settings.altitudeScaleValue * BASE_ALT_SCALE;
                 }
@@ -460,12 +640,399 @@
         // Theme: 'day', 'night', 'retro'
         let currentTheme = 'day';
 
+        // Graphs panel state
+        let showGraphs = false;
+        let graphs1090Available = false;
+        let statsDb = null;
+        let statsHistory = {
+            messageRate: [],
+            aircraftSeen: [],
+            aircraftTracked: [],
+            signalLevel: []
+        };
+        const STATS_HISTORY_MAX = 300; // 5 minutes at 1s intervals
+        const STATS_URL = '/dump1090/data/stats.json';
+        const GRAPHS1090_CHECK_URL = '/graphs1090/';
+
         // Camera controls
         let cameraAngle = 0;
         let cameraHeight = 80;
         let cameraDistance = 150;
         let isDragging = false;
         let previousMousePosition = { x: 0, y: 0 };
+
+        // ===========================================
+        // GRAPHS1090 INTEGRATION & LOCAL STATS
+        // ===========================================
+
+        // Initialize IndexedDB for stats storage
+        function initStatsDatabase() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open('FlightTrackerStats', 1);
+
+                request.onerror = () => {
+                    console.warn('IndexedDB not available, using memory only');
+                    resolve(null);
+                };
+
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+
+                    // Create object stores for each metric
+                    if (!db.objectStoreNames.contains('messageRate')) {
+                        const msgStore = db.createObjectStore('messageRate', { keyPath: 'timestamp' });
+                        msgStore.createIndex('timestamp', 'timestamp', { unique: true });
+                    }
+                    if (!db.objectStoreNames.contains('aircraft')) {
+                        const acStore = db.createObjectStore('aircraft', { keyPath: 'timestamp' });
+                        acStore.createIndex('timestamp', 'timestamp', { unique: true });
+                    }
+                    if (!db.objectStoreNames.contains('signal')) {
+                        const sigStore = db.createObjectStore('signal', { keyPath: 'timestamp' });
+                        sigStore.createIndex('timestamp', 'timestamp', { unique: true });
+                    }
+                };
+
+                request.onsuccess = (event) => {
+                    statsDb = event.target.result;
+                    loadStatsFromDb();
+                    resolve(statsDb);
+                };
+            });
+        }
+
+        // Load historical stats from IndexedDB
+        function loadStatsFromDb() {
+            if (!statsDb) return;
+
+            const now = Date.now();
+            const cutoff = now - (STATS_HISTORY_MAX * 1000);
+
+            ['messageRate', 'aircraft', 'signal'].forEach(storeName => {
+                const transaction = statsDb.transaction([storeName], 'readonly');
+                const store = transaction.objectStore(storeName);
+                const request = store.openCursor();
+
+                request.onsuccess = (event) => {
+                    const cursor = event.target.result;
+                    if (cursor) {
+                        if (cursor.value.timestamp >= cutoff) {
+                            if (storeName === 'messageRate') {
+                                statsHistory.messageRate.push(cursor.value);
+                            } else if (storeName === 'aircraft') {
+                                statsHistory.aircraftSeen.push({ timestamp: cursor.value.timestamp, value: cursor.value.seen });
+                                statsHistory.aircraftTracked.push({ timestamp: cursor.value.timestamp, value: cursor.value.tracked });
+                            } else if (storeName === 'signal') {
+                                statsHistory.signalLevel.push(cursor.value);
+                            }
+                        }
+                        cursor.continue();
+                    }
+                };
+            });
+        }
+
+        // Save stats to IndexedDB
+        function saveStatsToDb(type, data) {
+            if (!statsDb) return;
+
+            const transaction = statsDb.transaction([type], 'readwrite');
+            const store = transaction.objectStore(type);
+            store.put(data);
+
+            // Clean up old entries (keep last 24 hours)
+            const cutoff = Date.now() - (24 * 60 * 60 * 1000);
+            const deleteRequest = store.openCursor();
+            deleteRequest.onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (cursor) {
+                    if (cursor.value.timestamp < cutoff) {
+                        cursor.delete();
+                    }
+                    cursor.continue();
+                }
+            };
+        }
+
+        // Check if graphs1090 is available
+        async function checkGraphs1090() {
+            try {
+                const response = await fetch(GRAPHS1090_CHECK_URL, { method: 'HEAD', cache: 'no-store' });
+                if (response.ok) {
+                    graphs1090Available = true;
+                    document.getElementById('graphs-status').textContent = 'graphs1090';
+                    document.getElementById('graphs-status').classList.remove('local');
+                    document.getElementById('graphs-status').classList.add('connected');
+                    console.log('graphs1090 detected, using its database');
+                    return true;
+                }
+            } catch (e) {
+                // graphs1090 not available
+            }
+
+            graphs1090Available = false;
+            document.getElementById('graphs-status').textContent = 'Local DB';
+            document.getElementById('graphs-status').classList.remove('connected');
+            document.getElementById('graphs-status').classList.add('local');
+            console.log('graphs1090 not detected, using local database');
+            return false;
+        }
+
+        // Fetch stats from dump1090 stats.json
+        async function fetchStats() {
+            try {
+                const response = await fetch(STATS_URL, { cache: 'no-store' });
+                const data = await response.json();
+                const now = Date.now();
+
+                // Extract message rate from last1min
+                let messageRate = 0;
+                if (data.last1min && data.last1min.local) {
+                    const local = data.last1min.local;
+                    const accepted = local.accepted || [0, 0];
+                    const totalAccepted = accepted.reduce((a, b) => a + b, 0);
+                    // Calculate rate per second (last1min data spans ~60 seconds)
+                    const duration = (data.last1min.end || now/1000) - (data.last1min.start || (now/1000 - 60));
+                    messageRate = duration > 0 ? totalAccepted / duration : 0;
+                }
+
+                // Extract aircraft counts
+                let aircraftSeen = 0;
+                let aircraftTracked = 0;
+                if (data.last1min && data.last1min.tracks) {
+                    aircraftSeen = data.last1min.tracks.all || 0;
+                }
+                // Also try to get current aircraft count from the main aircraft data
+                const planeCountEl = document.getElementById('plane-count');
+                if (planeCountEl) {
+                    aircraftTracked = parseInt(planeCountEl.textContent) || 0;
+                }
+
+                // Extract signal level
+                let signalLevel = -50; // Default
+                if (data.last1min && data.last1min.local) {
+                    signalLevel = data.last1min.local.signal || -50;
+                }
+
+                // Store in history
+                statsHistory.messageRate.push({ timestamp: now, value: messageRate });
+                statsHistory.aircraftSeen.push({ timestamp: now, value: aircraftSeen });
+                statsHistory.aircraftTracked.push({ timestamp: now, value: aircraftTracked });
+                statsHistory.signalLevel.push({ timestamp: now, value: signalLevel });
+
+                // Trim history
+                if (statsHistory.messageRate.length > STATS_HISTORY_MAX) {
+                    statsHistory.messageRate.shift();
+                }
+                if (statsHistory.aircraftSeen.length > STATS_HISTORY_MAX) {
+                    statsHistory.aircraftSeen.shift();
+                }
+                if (statsHistory.aircraftTracked.length > STATS_HISTORY_MAX) {
+                    statsHistory.aircraftTracked.shift();
+                }
+                if (statsHistory.signalLevel.length > STATS_HISTORY_MAX) {
+                    statsHistory.signalLevel.shift();
+                }
+
+                // Save to IndexedDB
+                saveStatsToDb('messageRate', { timestamp: now, value: messageRate });
+                saveStatsToDb('aircraft', { timestamp: now, seen: aircraftSeen, tracked: aircraftTracked });
+                saveStatsToDb('signal', { timestamp: now, value: signalLevel });
+
+                // Update display
+                updateGraphsDisplay();
+
+            } catch (error) {
+                // stats.json not available - use basic aircraft data
+                const now = Date.now();
+                const planeCountEl = document.getElementById('plane-count');
+                const aircraftTracked = planeCountEl ? (parseInt(planeCountEl.textContent) || 0) : 0;
+
+                statsHistory.aircraftTracked.push({ timestamp: now, value: aircraftTracked });
+                if (statsHistory.aircraftTracked.length > STATS_HISTORY_MAX) {
+                    statsHistory.aircraftTracked.shift();
+                }
+
+                updateGraphsDisplay();
+            }
+        }
+
+        // Update the graphs display
+        function updateGraphsDisplay() {
+            if (!showGraphs) return;
+
+            const isRetro = currentTheme === 'retro';
+            const lineColor = isRetro ? '#00ff00' : (currentTheme === 'night' ? '#00d4ff' : '#0088ff');
+            const fillColor = isRetro ? 'rgba(0, 255, 0, 0.2)' : (currentTheme === 'night' ? 'rgba(0, 212, 255, 0.2)' : 'rgba(0, 136, 255, 0.2)');
+            const secondLineColor = isRetro ? '#00cc00' : (currentTheme === 'night' ? '#ffaa00' : '#ff8800');
+
+            // Message Rate Graph
+            if (statsHistory.messageRate.length > 0) {
+                const latest = statsHistory.messageRate[statsHistory.messageRate.length - 1].value;
+                document.getElementById('msg-rate-value').textContent = latest.toFixed(1) + ' msg/s';
+
+                const values = statsHistory.messageRate.map(d => d.value);
+                const min = Math.min(...values);
+                const max = Math.max(...values);
+                document.getElementById('msg-rate-min').textContent = 'Min: ' + min.toFixed(1);
+                document.getElementById('msg-rate-max').textContent = 'Max: ' + max.toFixed(1);
+
+                drawMiniGraph('canvas-msg-rate', values, lineColor, fillColor);
+            }
+
+            // Aircraft Graph (seen & tracked)
+            if (statsHistory.aircraftTracked.length > 0) {
+                const latestTracked = statsHistory.aircraftTracked[statsHistory.aircraftTracked.length - 1].value;
+                const latestSeen = statsHistory.aircraftSeen.length > 0 ?
+                    statsHistory.aircraftSeen[statsHistory.aircraftSeen.length - 1].value : latestTracked;
+                document.getElementById('aircraft-value').textContent = latestSeen + ' / ' + latestTracked;
+
+                const trackedValues = statsHistory.aircraftTracked.map(d => d.value);
+                const seenValues = statsHistory.aircraftSeen.length > 0 ?
+                    statsHistory.aircraftSeen.map(d => d.value) : trackedValues;
+
+                const allValues = [...trackedValues, ...seenValues];
+                const min = Math.min(...allValues);
+                const max = Math.max(...allValues);
+                document.getElementById('aircraft-min').textContent = 'Min: ' + min;
+                document.getElementById('aircraft-max').textContent = 'Max: ' + max;
+
+                drawMiniGraph('canvas-aircraft', trackedValues, lineColor, fillColor, seenValues, secondLineColor);
+            }
+
+            // Signal Level Graph
+            if (statsHistory.signalLevel.length > 0) {
+                const latest = statsHistory.signalLevel[statsHistory.signalLevel.length - 1].value;
+                document.getElementById('signal-value').textContent = latest.toFixed(1) + ' dBFS';
+
+                const values = statsHistory.signalLevel.map(d => d.value);
+                const min = Math.min(...values);
+                const max = Math.max(...values);
+                document.getElementById('signal-min').textContent = 'Min: ' + min.toFixed(1) + ' dB';
+                document.getElementById('signal-max').textContent = 'Max: ' + max.toFixed(1) + ' dB';
+
+                // Signal is negative, so invert for better visualization
+                const normalizedValues = values.map(v => -v);
+                drawMiniGraph('canvas-signal', normalizedValues, lineColor, fillColor);
+            }
+        }
+
+        // Draw a mini graph on canvas
+        function drawMiniGraph(canvasId, values, lineColor, fillColor, values2 = null, lineColor2 = null) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+
+            const ctx = canvas.getContext('2d');
+            const rect = canvas.getBoundingClientRect();
+
+            // Set actual canvas size for crisp rendering
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+
+            const width = rect.width;
+            const height = rect.height;
+            const padding = 2;
+
+            ctx.clearRect(0, 0, width, height);
+
+            if (values.length < 2) return;
+
+            // Calculate combined min/max if two datasets
+            let allValues = values;
+            if (values2 && values2.length > 0) {
+                allValues = [...values, ...values2];
+            }
+
+            const minVal = Math.min(...allValues);
+            const maxVal = Math.max(...allValues);
+            const range = maxVal - minVal || 1;
+
+            // Draw helper function
+            const drawLine = (data, color, fill) => {
+                const stepX = (width - padding * 2) / (data.length - 1);
+
+                ctx.beginPath();
+                ctx.moveTo(padding, height - padding);
+
+                for (let i = 0; i < data.length; i++) {
+                    const x = padding + i * stepX;
+                    const normalizedY = (data[i] - minVal) / range;
+                    const y = height - padding - normalizedY * (height - padding * 2);
+
+                    if (i === 0) {
+                        ctx.lineTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                }
+
+                // Complete the fill path
+                ctx.lineTo(width - padding, height - padding);
+                ctx.closePath();
+
+                ctx.fillStyle = fill;
+                ctx.fill();
+
+                // Draw the line on top
+                ctx.beginPath();
+                for (let i = 0; i < data.length; i++) {
+                    const x = padding + i * stepX;
+                    const normalizedY = (data[i] - minVal) / range;
+                    const y = height - padding - normalizedY * (height - padding * 2);
+
+                    if (i === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                }
+
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+            };
+
+            // Draw primary data
+            drawLine(values, lineColor, fillColor);
+
+            // Draw secondary data if provided
+            if (values2 && values2.length > 0 && lineColor2) {
+                drawLine(values2, lineColor2, 'transparent');
+            }
+        }
+
+        // Toggle graphs panel visibility
+        function toggleGraphs() {
+            showGraphs = !showGraphs;
+            const panel = document.getElementById('graphs-panel');
+            const btn = document.getElementById('btn-graphs');
+
+            if (showGraphs) {
+                panel.classList.add('visible');
+                btn.classList.add('active');
+                updateGraphsDisplay();
+            } else {
+                panel.classList.remove('visible');
+                btn.classList.remove('active');
+            }
+
+            saveSettings();
+        }
+
+        // Initialize graphs system
+        async function initGraphsSystem() {
+            await initStatsDatabase();
+            await checkGraphs1090();
+
+            // Start fetching stats
+            fetchStats();
+            setInterval(fetchStats, 1000);
+
+            // Re-check graphs1090 periodically (every 5 minutes)
+            setInterval(checkGraphs1090, 300000);
+        }
 
         function init() {
             // Load saved settings from cookies
@@ -536,6 +1103,14 @@
             // Fetch data
             fetchData();
             setInterval(fetchData, REFRESH_INTERVAL);
+
+            // Initialize graphs system
+            initGraphsSystem();
+
+            // Apply graphs panel state from settings
+            if (showGraphs) {
+                document.getElementById('graphs-panel').classList.add('visible');
+            }
         }
 
         function updateSceneBackground() {
@@ -1811,6 +2386,7 @@
         document.getElementById('btn-labels').classList.toggle('active', showLabels);
         document.getElementById('btn-trails').classList.toggle('active', showTrails);
         document.getElementById('btn-rotate').classList.toggle('active', autoRotate);
+        document.getElementById('btn-graphs').classList.toggle('active', showGraphs);
     </script>
 </body>
 </html>
