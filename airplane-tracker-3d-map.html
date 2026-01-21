@@ -695,6 +695,30 @@
         const _labelTexturePool = [];
         const MAX_LABEL_POOL_SIZE = 100;
 
+        // Performance: Shared geometry instances (created once, reused for all aircraft)
+        let _sharedGeometries = null;
+
+        // Performance: Material pools
+        const _materialPool = {
+            wireframe: [],
+            phong: [],
+            basic: []
+        };
+        const MAX_MATERIAL_POOL_SIZE = 50;
+
+        // Performance: Trail geometry pool
+        const _trailGeometryPool = [];
+        const MAX_TRAIL_POOL_SIZE = 50;
+
+        // Performance: Distance-based LOD thresholds
+        const LOD_DISTANCE_FAR = 250; // Distance for simplified rendering
+        const LOD_DISTANCE_CULL = 400; // Distance for label culling
+
+        // Performance: Batch update flags
+        let _trailUpdateQueue = [];
+        let _lastBatchTrailUpdate = 0;
+        const BATCH_TRAIL_INTERVAL = 50; // Batch trail updates every 50ms
+
         // Performance: Throttle flags
         let _lastTrailFilterTime = 0;
         const TRAIL_FILTER_INTERVAL = 500; // Filter trails every 500ms max
@@ -702,12 +726,38 @@
         // Performance: Tab visibility for power saving
         let _isTabVisible = true;
 
+        // Performance: Render on demand flag
+        let _needsRender = true;
+        let _renderThrottleTime = 0;
+        const RENDER_THROTTLE_MS = 16; // Cap at ~60fps
+
         // Map state
         let currentZoom = 9;
         const MIN_ZOOM = 6;
         const MAX_ZOOM = 12;
         let mapTiles = [];
         let tileCache = new Map();
+        const MAX_TILE_CACHE_SIZE = 150; // Limit texture cache memory
+
+        // Smooth map transition state
+        let mapTransition = {
+            active: false,
+            startLat: 0,
+            startLon: 0,
+            targetLat: 0,
+            targetLon: 0,
+            startZoom: 9,
+            targetZoom: 9,
+            startTime: 0,
+            duration: 300, // ms
+            easing: (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2 // easeInOutCubic
+        };
+
+        // Tile preloading state
+        let preloadedTiles = new Map(); // cache key -> {texture, loading}
+        let preloadQueue = [];
+        let preloadInProgress = 0;
+        const MAX_CONCURRENT_PRELOADS = 4;
 
         // Altitude scale
         let altitudeScale = 30 * BASE_ALT_SCALE;
@@ -1242,6 +1292,9 @@
             document.getElementById('altitude-slider').value = scaleValue;
             document.getElementById('altitude-value').textContent = scaleValue + 'x';
 
+            // Initialize shared geometry pools
+            initSharedGeometries();
+
             // Scene
             scene = new THREE.Scene();
             updateSceneBackground();
@@ -1469,6 +1522,100 @@
             return canvas;
         }
 
+        // Initialize shared geometries (called once at startup)
+        function initSharedGeometries() {
+            if (_sharedGeometries) return;
+
+            _sharedGeometries = {
+                // Wireframe geometries (retro theme)
+                wire: {
+                    fuselage: new THREE.EdgesGeometry(new THREE.BoxGeometry(0.8, 0.6, 4)),
+                    nose: new THREE.EdgesGeometry(new THREE.ConeGeometry(0.4, 1.2, 4)),
+                    wing: new THREE.EdgesGeometry(new THREE.BoxGeometry(6, 0.1, 1.5)),
+                    tail: new THREE.EdgesGeometry(new THREE.BoxGeometry(0.1, 1.2, 0.8)),
+                    hStab: new THREE.EdgesGeometry(new THREE.BoxGeometry(2.5, 0.1, 0.5)),
+                    light: new THREE.SphereGeometry(0.2, 4, 4)
+                },
+                // Solid geometries (day/night themes)
+                solid: {
+                    fuselage: new THREE.CylinderGeometry(0.4, 0.6, 4, 8),
+                    nose: new THREE.ConeGeometry(0.4, 1.2, 8),
+                    wing: new THREE.BoxGeometry(5, 0.15, 1.5),
+                    tailFin: new THREE.BoxGeometry(0.15, 1.2, 1),
+                    hStab: new THREE.BoxGeometry(2, 0.1, 0.6),
+                    engine: new THREE.CylinderGeometry(0.25, 0.25, 0.8, 8),
+                    light: new THREE.SphereGeometry(0.15, 8, 8)
+                },
+                // LOD geometries (simplified for distant aircraft)
+                lod: {
+                    plane: new THREE.BoxGeometry(2, 0.5, 4),
+                    light: new THREE.SphereGeometry(0.3, 4, 4)
+                },
+                // Shared tile geometry
+                tile: new THREE.PlaneGeometry(MAP_GROUND_SIZE / TILES_PER_SIDE, MAP_GROUND_SIZE / TILES_PER_SIDE)
+            };
+        }
+
+        // Get pooled material or create new one
+        function getPooledMaterial(type, options) {
+            const pool = _materialPool[type];
+            if (pool && pool.length > 0) {
+                const mat = pool.pop();
+                // Reset material properties
+                if (options.color !== undefined) mat.color.setHex(options.color);
+                if (options.emissive !== undefined && mat.emissive) mat.emissive.setHex(options.emissive);
+                if (options.opacity !== undefined) mat.opacity = options.opacity;
+                if (options.transparent !== undefined) mat.transparent = options.transparent;
+                mat.needsUpdate = true;
+                return mat;
+            }
+            // Create new material
+            switch (type) {
+                case 'wireframe':
+                    return new THREE.LineBasicMaterial(options);
+                case 'phong':
+                    return new THREE.MeshPhongMaterial(options);
+                case 'basic':
+                    return new THREE.MeshBasicMaterial(options);
+                default:
+                    return new THREE.MeshBasicMaterial(options);
+            }
+        }
+
+        // Return material to pool
+        function returnMaterialToPool(type, material) {
+            const pool = _materialPool[type];
+            if (pool && pool.length < MAX_MATERIAL_POOL_SIZE) {
+                pool.push(material);
+            } else {
+                material.dispose();
+            }
+        }
+
+        // Tile cache management with size limiting
+        function addToTileCache(key, texture) {
+            // Enforce cache size limit using LRU-like behavior
+            if (tileCache.size >= MAX_TILE_CACHE_SIZE) {
+                // Remove oldest entries (first 20% of cache)
+                const keysToRemove = [];
+                let count = 0;
+                const removeCount = Math.floor(MAX_TILE_CACHE_SIZE * 0.2);
+                for (const k of tileCache.keys()) {
+                    if (count++ < removeCount) {
+                        keysToRemove.push(k);
+                    } else {
+                        break;
+                    }
+                }
+                for (const k of keysToRemove) {
+                    const tex = tileCache.get(k);
+                    if (tex && tex.dispose) tex.dispose();
+                    tileCache.delete(k);
+                }
+            }
+            tileCache.set(key, texture);
+        }
+
         function latLonToTile(lat, lon, zoom) {
             const n = Math.pow(2, zoom);
             const x = Math.floor((lon + 180) / 360 * n);
@@ -1485,19 +1632,108 @@
             return { lat, lon };
         }
 
-        function loadMapTiles() {
+        // Preload tiles for adjacent areas
+        function preloadAdjacentTiles() {
             if (!centerInitialized) return;
-
-            // Clear existing tiles
-            mapTiles.forEach(tile => scene.remove(tile));
-            mapTiles = [];
 
             const centerTile = latLonToTile(centerLat, centerLon, currentZoom);
             const halfTiles = Math.floor(TILES_PER_SIDE / 2);
 
-            // Calculate bounds - tiles go from (centerTile - halfTiles) to (centerTile - halfTiles + TILES_PER_SIDE - 1)
-            // So bounds are from tile (centerTile - halfTiles) top-left corner
-            // to tile (centerTile - halfTiles + TILES_PER_SIDE) top-left corner (which is bottom-right of last tile)
+            // Preload one tile beyond visible area in each direction
+            const preloadRange = halfTiles + 1;
+
+            for (let dy = -preloadRange; dy <= preloadRange; dy++) {
+                for (let dx = -preloadRange; dx <= preloadRange; dx++) {
+                    // Skip tiles that are already visible
+                    if (Math.abs(dx) <= halfTiles && Math.abs(dy) <= halfTiles) continue;
+
+                    const tileX = centerTile.x + dx;
+                    const tileY = centerTile.y + dy;
+                    const cacheKey = `${currentTheme}-${currentZoom}-${tileX}-${tileY}`;
+
+                    // Skip if already cached or in preload queue
+                    if (tileCache.has(cacheKey) || preloadedTiles.has(cacheKey)) continue;
+
+                    preloadQueue.push({ tileX, tileY, cacheKey, zoom: currentZoom, theme: currentTheme });
+                }
+            }
+
+            // Also preload adjacent zoom levels
+            [currentZoom - 1, currentZoom + 1].forEach(zoom => {
+                if (zoom < MIN_ZOOM || zoom > MAX_ZOOM) return;
+                const ct = latLonToTile(centerLat, centerLon, zoom);
+                for (let dy = -1; dy <= 1; dy++) {
+                    for (let dx = -1; dx <= 1; dx++) {
+                        const tileX = ct.x + dx;
+                        const tileY = ct.y + dy;
+                        const cacheKey = `${currentTheme}-${zoom}-${tileX}-${tileY}`;
+                        if (!tileCache.has(cacheKey) && !preloadedTiles.has(cacheKey)) {
+                            preloadQueue.push({ tileX, tileY, cacheKey, zoom, theme: currentTheme });
+                        }
+                    }
+                }
+            });
+
+            processPreloadQueue();
+        }
+
+        // Process preload queue with concurrency limit
+        function processPreloadQueue() {
+            while (preloadInProgress < MAX_CONCURRENT_PRELOADS && preloadQueue.length > 0) {
+                const item = preloadQueue.shift();
+                if (tileCache.has(item.cacheKey) || preloadedTiles.has(item.cacheKey)) continue;
+
+                preloadInProgress++;
+                preloadedTiles.set(item.cacheKey, { loading: true });
+
+                const url = getTileUrl(item.tileX, item.tileY, item.zoom);
+
+                if (item.theme === 'retro') {
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    img.onload = () => {
+                        const invertedCanvas = invertToGreen(img);
+                        const texture = new THREE.CanvasTexture(invertedCanvas);
+                        addToTileCache(item.cacheKey, texture);
+                        preloadedTiles.delete(item.cacheKey);
+                        preloadInProgress--;
+                        processPreloadQueue();
+                    };
+                    img.onerror = () => {
+                        preloadedTiles.delete(item.cacheKey);
+                        preloadInProgress--;
+                        processPreloadQueue();
+                    };
+                    img.src = url;
+                } else {
+                    const loader = new THREE.TextureLoader();
+                    loader.crossOrigin = 'anonymous';
+                    loader.load(url,
+                        (texture) => {
+                            addToTileCache(item.cacheKey, texture);
+                            preloadedTiles.delete(item.cacheKey);
+                            preloadInProgress--;
+                            processPreloadQueue();
+                        },
+                        undefined,
+                        () => {
+                            preloadedTiles.delete(item.cacheKey);
+                            preloadInProgress--;
+                            processPreloadQueue();
+                        }
+                    );
+                }
+            }
+        }
+
+        function loadMapTiles() {
+            if (!centerInitialized) return;
+
+            // Initialize shared geometries if needed
+            initSharedGeometries();
+
+            const centerTile = latLonToTile(centerLat, centerLon, currentZoom);
+            const halfTiles = Math.floor(TILES_PER_SIDE / 2);
             const startTileX = centerTile.x - halfTiles;
             const startTileY = centerTile.y - halfTiles;
             const topLeft = tileToLatLon(startTileX, startTileY, currentZoom);
@@ -1511,98 +1747,237 @@
             };
 
             const tileSize = MAP_GROUND_SIZE / TILES_PER_SIDE;
-            const loader = new THREE.TextureLoader();
-            loader.crossOrigin = 'anonymous';
+
+            // Build map of existing tiles by their tile coordinates
+            const existingTiles = new Map();
+            mapTiles.forEach(tile => {
+                if (tile.userData.tileKey) {
+                    existingTiles.set(tile.userData.tileKey, tile);
+                }
+            });
+
+            const newMapTiles = [];
+            const tilesToRemove = new Set(existingTiles.keys());
 
             for (let dy = 0; dy < TILES_PER_SIDE; dy++) {
                 for (let dx = 0; dx < TILES_PER_SIDE; dx++) {
                     const tileX = centerTile.x - halfTiles + dx;
                     const tileY = centerTile.y - halfTiles + dy;
                     const cacheKey = `${currentTheme}-${currentZoom}-${tileX}-${tileY}`;
-
-                    const geometry = new THREE.PlaneGeometry(tileSize, tileSize);
-                    const material = new THREE.MeshBasicMaterial({
-                        color: currentTheme === 'retro' ? 0x001100 : 0x1a4d1a,
-                        side: THREE.DoubleSide
-                    });
-
-                    const tile = new THREE.Mesh(geometry, material);
-                    tile.rotation.x = -Math.PI / 2;
+                    const tileKey = `${currentZoom}-${tileX}-${tileY}`;
 
                     const posX = (dx - halfTiles + 0.5) * tileSize;
                     const posZ = (dy - halfTiles + 0.5) * tileSize;
-                    tile.position.set(posX, 0, posZ);
 
-                    scene.add(tile);
-                    mapTiles.push(tile);
+                    let tile;
 
-                    // Load texture
+                    // Reuse existing tile if same coordinates
+                    if (existingTiles.has(tileKey)) {
+                        tile = existingTiles.get(tileKey);
+                        tilesToRemove.delete(tileKey);
+                        // Update position (might change due to different grid position)
+                        tile.position.set(posX, 0, posZ);
+                    } else {
+                        // Create new tile using shared geometry
+                        const geometry = _sharedGeometries.tile;
+                        const material = new THREE.MeshBasicMaterial({
+                            color: currentTheme === 'retro' ? 0x001100 : 0x1a4d1a,
+                            side: THREE.DoubleSide,
+                            transparent: true,
+                            opacity: 0 // Start transparent for fade-in
+                        });
+
+                        tile = new THREE.Mesh(geometry, material);
+                        tile.rotation.x = -Math.PI / 2;
+                        tile.position.set(posX, 0, posZ);
+                        tile.userData.tileKey = tileKey;
+                        tile.userData.fadeIn = true;
+                        tile.userData.fadeStart = Date.now();
+                        scene.add(tile);
+                    }
+
+                    newMapTiles.push(tile);
+
+                    // Load or apply texture
+                    const material = tile.material;
                     if (tileCache.has(cacheKey)) {
                         material.map = tileCache.get(cacheKey);
                         material.color.setHex(0xffffff);
+                        if (!tile.userData.fadeIn) material.opacity = 1;
                         material.needsUpdate = true;
                     } else {
-                        const url = getTileUrl(tileX, tileY, currentZoom);
-
-                        if (currentTheme === 'retro') {
-                            // Load image manually to invert colors
-                            const img = new Image();
-                            img.crossOrigin = 'anonymous';
-                            img.onload = () => {
-                                const invertedCanvas = invertToGreen(img);
-                                const texture = new THREE.CanvasTexture(invertedCanvas);
-                                material.map = texture;
-                                material.color.setHex(0xffffff);
-                                material.needsUpdate = true;
-                                tileCache.set(cacheKey, texture);
-                            };
-                            img.src = url;
-                        } else {
-                            loader.load(url, (texture) => {
-                                material.color.setHex(0xffffff);
-                                material.map = texture;
-                                material.needsUpdate = true;
-                                tileCache.set(cacheKey, texture);
-                            });
-                        }
+                        // Load texture with fade-in effect
+                        loadTileTexture(tileX, tileY, currentZoom, cacheKey, material, tile);
                     }
                 }
             }
 
+            // Remove tiles that are no longer needed with fade-out
+            for (const tileKey of tilesToRemove) {
+                const tile = existingTiles.get(tileKey);
+                if (tile) {
+                    // Quick fade out and remove
+                    tile.userData.fadeOut = true;
+                    tile.userData.fadeStart = Date.now();
+                    setTimeout(() => {
+                        scene.remove(tile);
+                        if (tile.material && tile.material !== _sharedGeometries.tile) {
+                            tile.material.dispose();
+                        }
+                    }, 150);
+                }
+            }
+
+            mapTiles = newMapTiles;
             document.getElementById('map-zoom').textContent = currentZoom;
+
+            // Trigger preloading of adjacent tiles
+            setTimeout(preloadAdjacentTiles, 100);
+
+            _needsRender = true;
             updateAllAircraftPositions();
         }
 
+        // Load tile texture with error handling
+        function loadTileTexture(tileX, tileY, zoom, cacheKey, material, tile) {
+            const url = getTileUrl(tileX, tileY, zoom);
+
+            if (currentTheme === 'retro') {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = () => {
+                    const invertedCanvas = invertToGreen(img);
+                    const texture = new THREE.CanvasTexture(invertedCanvas);
+                    material.map = texture;
+                    material.color.setHex(0xffffff);
+                    material.needsUpdate = true;
+                    addToTileCache(cacheKey, texture);
+                    tile.userData.textureLoaded = true;
+                    _needsRender = true;
+                };
+                img.onerror = () => {
+                    console.warn('Failed to load tile:', url);
+                };
+                img.src = url;
+            } else {
+                const loader = new THREE.TextureLoader();
+                loader.crossOrigin = 'anonymous';
+                loader.load(url,
+                    (texture) => {
+                        material.color.setHex(0xffffff);
+                        material.map = texture;
+                        material.needsUpdate = true;
+                        addToTileCache(cacheKey, texture);
+                        tile.userData.textureLoaded = true;
+                        _needsRender = true;
+                    },
+                    undefined,
+                    () => {
+                        console.warn('Failed to load tile:', url);
+                    }
+                );
+            }
+        }
+
         function mapZoomIn() {
-            if (currentZoom < MAX_ZOOM) {
-                currentZoom++;
-                loadMapTiles();
+            if (currentZoom < MAX_ZOOM && !mapTransition.active) {
+                startMapTransition(centerLat, centerLon, currentZoom + 1);
             }
         }
 
         function mapZoomOut() {
-            if (currentZoom > MIN_ZOOM) {
-                currentZoom--;
-                loadMapTiles();
+            if (currentZoom > MIN_ZOOM && !mapTransition.active) {
+                startMapTransition(centerLat, centerLon, currentZoom - 1);
             }
         }
 
-        // Map pan function
-        function panMap(direction) {
-            const zoomFactor = Math.pow(2, 12 - currentZoom);
-            const panAmount = 0.05 * zoomFactor;
+        // Start smooth map transition
+        function startMapTransition(targetLat, targetLon, targetZoom) {
+            mapTransition.startLat = centerLat;
+            mapTransition.startLon = centerLon;
+            mapTransition.startZoom = currentZoom;
+            mapTransition.targetLat = targetLat;
+            mapTransition.targetLon = targetLon;
+            mapTransition.targetZoom = targetZoom;
+            mapTransition.startTime = Date.now();
+            mapTransition.active = true;
+            _needsRender = true;
+        }
 
-            switch(direction) {
-                case 'up': centerLat += panAmount; break;
-                case 'down': centerLat -= panAmount; break;
-                case 'left': centerLon -= panAmount; break;
-                case 'right': centerLon += panAmount; break;
+        // Update map transition (called from animate loop)
+        function updateMapTransition() {
+            if (!mapTransition.active) return false;
+
+            const elapsed = Date.now() - mapTransition.startTime;
+            const progress = Math.min(elapsed / mapTransition.duration, 1);
+            const easedProgress = mapTransition.easing(progress);
+
+            // Interpolate position
+            centerLat = mapTransition.startLat + (mapTransition.targetLat - mapTransition.startLat) * easedProgress;
+            centerLon = mapTransition.startLon + (mapTransition.targetLon - mapTransition.startLon) * easedProgress;
+
+            // Update zoom at midpoint for smoother visual effect
+            if (progress > 0.3 && currentZoom !== mapTransition.targetZoom) {
+                currentZoom = mapTransition.targetZoom;
+                loadMapTiles();
             }
 
+            // Update display
             document.getElementById('center-coords').textContent =
                 `${centerLat.toFixed(2)}, ${centerLon.toFixed(2)}`;
 
-            loadMapTiles();
+            // Update map bounds and aircraft positions smoothly
+            if (progress < 1) {
+                updateMapBoundsSmooth();
+                updateAllAircraftPositions();
+            }
+
+            if (progress >= 1) {
+                mapTransition.active = false;
+                centerLat = mapTransition.targetLat;
+                centerLon = mapTransition.targetLon;
+                currentZoom = mapTransition.targetZoom;
+                loadMapTiles();
+            }
+
+            return mapTransition.active;
+        }
+
+        // Update map bounds during smooth transition
+        function updateMapBoundsSmooth() {
+            const centerTile = latLonToTile(centerLat, centerLon, currentZoom);
+            const halfTiles = Math.floor(TILES_PER_SIDE / 2);
+            const startTileX = centerTile.x - halfTiles;
+            const startTileY = centerTile.y - halfTiles;
+            const topLeft = tileToLatLon(startTileX, startTileY, currentZoom);
+            const bottomRight = tileToLatLon(startTileX + TILES_PER_SIDE, startTileY + TILES_PER_SIDE, currentZoom);
+
+            window.mapBounds = {
+                north: topLeft.lat,
+                south: bottomRight.lat,
+                east: bottomRight.lon,
+                west: topLeft.lon
+            };
+        }
+
+        // Map pan function with smooth transition
+        function panMap(direction) {
+            if (mapTransition.active) return; // Ignore while transitioning
+
+            const zoomFactor = Math.pow(2, 12 - currentZoom);
+            const panAmount = 0.05 * zoomFactor;
+
+            let targetLat = centerLat;
+            let targetLon = centerLon;
+
+            switch(direction) {
+                case 'up': targetLat += panAmount; break;
+                case 'down': targetLat -= panAmount; break;
+                case 'left': targetLon -= panAmount; break;
+                case 'right': targetLon += panAmount; break;
+            }
+
+            startMapTransition(targetLat, targetLon, currentZoom);
         }
 
         function latLonToXZ(lat, lon) {
@@ -1631,53 +2006,40 @@
         }
 
         function createAirplane(data) {
+            // Ensure shared geometries are initialized
+            if (!_sharedGeometries) initSharedGeometries();
+
             const group = new THREE.Group();
             const color = getAltitudeColor(data.altitude || 0);
             const isRetro = currentTheme === 'retro';
 
             if (isRetro) {
-                // WIREFRAME MODE for retro 80s theme
-                const wireColor = 0x00ff00;
-                const wireMat = new THREE.LineBasicMaterial({ color: wireColor });
+                // WIREFRAME MODE for retro 80s theme - using shared geometries
+                const wireMat = getPooledMaterial('wireframe', { color: 0x00ff00 });
 
-                // Fuselage wireframe
-                const fuselageGeom = new THREE.BoxGeometry(0.8, 0.6, 4);
-                const fuselageEdges = new THREE.EdgesGeometry(fuselageGeom);
-                const fuselageWire = new THREE.LineSegments(fuselageEdges, wireMat);
+                // Use shared geometries for all parts
+                const fuselageWire = new THREE.LineSegments(_sharedGeometries.wire.fuselage, wireMat);
                 group.add(fuselageWire);
 
-                // Nose cone wireframe
-                const noseGeom = new THREE.ConeGeometry(0.4, 1.2, 4);
-                const noseEdges = new THREE.EdgesGeometry(noseGeom);
-                const noseWire = new THREE.LineSegments(noseEdges, wireMat);
+                const noseWire = new THREE.LineSegments(_sharedGeometries.wire.nose, wireMat.clone());
                 noseWire.rotation.x = -Math.PI / 2;
                 noseWire.position.z = 2.6;
                 group.add(noseWire);
 
-                // Wings wireframe
-                const wingGeom = new THREE.BoxGeometry(6, 0.1, 1.5);
-                const wingEdges = new THREE.EdgesGeometry(wingGeom);
-                const wingWire = new THREE.LineSegments(wingEdges, wireMat);
+                const wingWire = new THREE.LineSegments(_sharedGeometries.wire.wing, wireMat.clone());
                 group.add(wingWire);
 
-                // Tail fin wireframe
-                const tailGeom = new THREE.BoxGeometry(0.1, 1.2, 0.8);
-                const tailEdges = new THREE.EdgesGeometry(tailGeom);
-                const tailWire = new THREE.LineSegments(tailEdges, wireMat);
+                const tailWire = new THREE.LineSegments(_sharedGeometries.wire.tail, wireMat.clone());
                 tailWire.position.set(0, 0.6, -1.8);
                 group.add(tailWire);
 
-                // Horizontal stabilizer wireframe
-                const hStabGeom = new THREE.BoxGeometry(2.5, 0.1, 0.5);
-                const hStabEdges = new THREE.EdgesGeometry(hStabGeom);
-                const hStabWire = new THREE.LineSegments(hStabEdges, wireMat);
+                const hStabWire = new THREE.LineSegments(_sharedGeometries.wire.hStab, wireMat.clone());
                 hStabWire.position.set(0, 0, -1.8);
                 group.add(hStabWire);
 
-                // Blinking light
-                const lightGeom = new THREE.SphereGeometry(0.2, 4, 4);
-                const lightMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true });
-                const positionLight = new THREE.Mesh(lightGeom, lightMat);
+                // Blinking light - using shared geometry
+                const lightMat = getPooledMaterial('basic', { color: 0x00ff00, transparent: true });
+                const positionLight = new THREE.Mesh(_sharedGeometries.wire.light, lightMat);
                 positionLight.position.set(0, 0, 2.6);
                 group.add(positionLight);
 
@@ -1689,53 +2051,48 @@
                     isWireframe: true
                 };
             } else {
-                // SOLID MODE for day/night themes
-                const fuselageGeom = new THREE.CylinderGeometry(0.4, 0.6, 4, 8);
-                const fuselageMat = new THREE.MeshPhongMaterial({ color: 0xffffff, emissive: 0x222222 });
-                const fuselage = new THREE.Mesh(fuselageGeom, fuselageMat);
+                // SOLID MODE for day/night themes - using shared geometries
+                const fuselageMat = getPooledMaterial('phong', { color: 0xffffff, emissive: 0x222222 });
+                const fuselage = new THREE.Mesh(_sharedGeometries.solid.fuselage, fuselageMat);
                 fuselage.rotation.x = Math.PI / 2;
                 group.add(fuselage);
 
-                const noseGeom = new THREE.ConeGeometry(0.4, 1.2, 8);
-                const noseMat = new THREE.MeshPhongMaterial({ color: color, emissive: color, emissiveIntensity: 0.3 });
-                const nose = new THREE.Mesh(noseGeom, noseMat);
+                const noseMat = getPooledMaterial('phong', { color: color, emissive: color, emissiveIntensity: 0.3 });
+                const nose = new THREE.Mesh(_sharedGeometries.solid.nose, noseMat);
                 nose.rotation.x = -Math.PI / 2;
                 nose.position.z = 2.6;
                 group.add(nose);
 
-                const wingGeom = new THREE.BoxGeometry(5, 0.15, 1.5);
-                const wingMat = new THREE.MeshPhongMaterial({ color: 0xcccccc, emissive: 0x333333 });
-                const wings = new THREE.Mesh(wingGeom, wingMat);
+                const wingMat = getPooledMaterial('phong', { color: 0xcccccc, emissive: 0x333333 });
+                const wings = new THREE.Mesh(_sharedGeometries.solid.wing, wingMat);
                 group.add(wings);
 
-                const tailFinGeom = new THREE.BoxGeometry(0.15, 1.2, 1);
-                const tailFin = new THREE.Mesh(tailFinGeom, wingMat);
+                const tailFin = new THREE.Mesh(_sharedGeometries.solid.tailFin, wingMat);
                 tailFin.position.set(0, 0.6, -1.8);
                 group.add(tailFin);
 
-                const hStabGeom = new THREE.BoxGeometry(2, 0.1, 0.6);
-                const hStab = new THREE.Mesh(hStabGeom, wingMat);
+                const hStab = new THREE.Mesh(_sharedGeometries.solid.hStab, wingMat);
                 hStab.position.set(0, 0, -1.8);
                 group.add(hStab);
 
-                const engineGeom = new THREE.CylinderGeometry(0.25, 0.25, 0.8, 8);
-                const engineMat = new THREE.MeshPhongMaterial({ color: 0x444444 });
+                const engineMat = getPooledMaterial('phong', { color: 0x444444 });
                 [-1.2, 1.2].forEach(xPos => {
-                    const engine = new THREE.Mesh(engineGeom, engineMat);
+                    const engine = new THREE.Mesh(_sharedGeometries.solid.engine, engineMat);
                     engine.rotation.x = Math.PI / 2;
                     engine.position.set(xPos, -0.3, 0.2);
                     group.add(engine);
                 });
 
-                const lightGeom = new THREE.SphereGeometry(0.15, 8, 8);
-                const lightMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true });
-                const positionLight = new THREE.Mesh(lightGeom, lightMat);
+                const lightMat = getPooledMaterial('basic', { color: 0xff0000, transparent: true });
+                const positionLight = new THREE.Mesh(_sharedGeometries.solid.light, lightMat);
                 positionLight.position.set(0, 0.3, -1.5);
                 group.add(positionLight);
 
                 group.userData = {
                     ...data,
                     noseMaterial: noseMat,
+                    wingMaterial: wingMat,
+                    fuselageMaterial: fuselageMat,
                     positionLight: positionLight,
                     lightPhase: Math.random() * Math.PI * 2,
                     isWireframe: false
@@ -1743,13 +2100,15 @@
             }
 
             // Trail - DO NOT add to scene yet, will be managed separately
-            // Trail points will be collected in userData.trailPoints
-            group.userData.trail = null; // Will be created when needed
+            group.userData.trail = null;
             group.userData.trailPoints = [];
             group.userData.trailMaterial = null;
 
             // Altitude line - also deferred
             group.userData.altLine = null;
+
+            // Distance for LOD calculations
+            group.userData.distanceToCamera = 0;
 
             return group;
         }
@@ -2009,7 +2368,10 @@
                                            plane.userData.trailPoints[0].time < cutoff) {
                                         plane.userData.trailPoints.shift();
                                     }
-                                    updateTrail(plane);
+                                    // Queue trail update for batching instead of immediate update
+                                    if (_trailUpdateQueue.indexOf(plane) === -1) {
+                                        _trailUpdateQueue.push(plane);
+                                    }
                                 }
                             }
                         }
@@ -2151,9 +2513,14 @@
                     const alt = (plane.userData.altitude || 0) * altitudeScale;
                     plane.position.set(pos.x, alt, pos.z);
                     updateAltitudeLine(plane);
+                    // Update trail world positions when map shifts
+                    if (plane.userData.trail && plane.userData.trailPoints.length >= 2) {
+                        updateTrail(plane);
+                    }
                 }
             }
             updateLabels();
+            _needsRender = true;
         }
 
         function updateTrail(plane) {
@@ -2206,6 +2573,7 @@
 
             trail.geometry.attributes.position.needsUpdate = true;
             trail.geometry.setDrawRange(0, validCount);
+            _needsRender = true;
 
             // Save trail to DB periodically (every 10 seconds)
             if (!plane.userData.lastTrailSave || Date.now() - plane.userData.lastTrailSave > 10000) {
@@ -2329,6 +2697,14 @@
             let spriteIndex = 0;
             for (let i = 0; i < _airplanesArray.length; i++) {
                 const plane = _airplanesArray[i];
+
+                // Skip labels for distant aircraft (LOD culling)
+                const dist = plane.userData.distanceToCamera || 0;
+                if (dist > LOD_DISTANCE_CULL) {
+                    plane.userData.label = null;
+                    continue;
+                }
+
                 const canvas = _getPooledCanvas();
                 const ctx = canvas.getContext('2d');
 
@@ -2351,6 +2727,15 @@
 
                 sprite.position.copy(plane.position);
                 sprite.position.y += 8;
+                sprite.visible = true;
+
+                // Scale labels based on distance
+                if (dist > LOD_DISTANCE_FAR) {
+                    const scale = 1 - (dist - LOD_DISTANCE_FAR) / (LOD_DISTANCE_CULL - LOD_DISTANCE_FAR) * 0.4;
+                    sprite.scale.set(15 * scale, 4.7 * scale, 1);
+                } else {
+                    sprite.scale.set(15, 4.7, 1);
+                }
 
                 // Store reference to label on the plane for correct position updates
                 plane.userData.label = sprite;
@@ -2395,6 +2780,7 @@
             renderer.domElement.addEventListener('wheel', (e) => {
                 cameraDistance = Math.max(30, Math.min(500, cameraDistance + e.deltaY * 0.2));
                 updateCameraPosition();
+                _needsRender = true;
             });
         }
 
@@ -2403,6 +2789,7 @@
             camera.position.z = Math.cos(cameraAngle) * cameraDistance;
             camera.position.y = cameraHeight;
             camera.lookAt(0, cameraHeight * 0.2, 0);
+            _needsRender = true;
         }
 
         function resetCamera() {
@@ -2485,6 +2872,7 @@
             } else {
                 deselectPlane();
             }
+            _needsRender = true;
         }
 
         function selectPlane(plane) {
@@ -2511,11 +2899,60 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            _needsRender = true;
         }
 
         let time = 0;
         let lastLabelUpdate = 0;
         const INTERPOLATION_INTERVAL = 1000 / INTERPOLATION_FPS;
+
+        // Update tile fade animations
+        function updateTileFades(now) {
+            let anyFading = false;
+            const FADE_DURATION = 200; // ms
+
+            for (let i = 0; i < mapTiles.length; i++) {
+                const tile = mapTiles[i];
+                if (!tile.material) continue;
+
+                if (tile.userData.fadeIn) {
+                    const elapsed = now - tile.userData.fadeStart;
+                    const progress = Math.min(elapsed / FADE_DURATION, 1);
+                    tile.material.opacity = progress;
+
+                    if (progress >= 1) {
+                        tile.userData.fadeIn = false;
+                        tile.material.transparent = false;
+                        tile.material.opacity = 1;
+                    } else {
+                        anyFading = true;
+                    }
+                    tile.material.needsUpdate = true;
+                }
+
+                if (tile.userData.fadeOut) {
+                    const elapsed = now - tile.userData.fadeStart;
+                    const progress = Math.min(elapsed / (FADE_DURATION * 0.75), 1);
+                    tile.material.opacity = 1 - progress;
+                    tile.material.needsUpdate = true;
+                    anyFading = true;
+                }
+            }
+
+            return anyFading;
+        }
+
+        // Calculate distance from camera to plane for LOD
+        function updateDistances() {
+            const camPos = camera.position;
+            for (let i = 0, len = _airplanesArray.length; i < len; i++) {
+                const plane = _airplanesArray[i];
+                const dx = plane.position.x - camPos.x;
+                const dy = plane.position.y - camPos.y;
+                const dz = plane.position.z - camPos.z;
+                plane.userData.distanceToCamera = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            }
+        }
 
         function animate() {
             requestAnimationFrame(animate);
@@ -2526,15 +2963,26 @@
             const now = Date.now();
             time += 0.016;
 
+            // Update map transitions
+            const isTransitioning = updateMapTransition();
+            if (isTransitioning) _needsRender = true;
+
             // Run interpolation at 30fps
             if (now - lastInterpolationTime >= INTERPOLATION_INTERVAL) {
                 lastInterpolationTime = now;
                 interpolateAircraft();
+                _needsRender = true;
             }
 
             if (autoRotate) {
                 cameraAngle += 0.002;
                 updateCameraPosition();
+                _needsRender = true;
+            }
+
+            // Update tile fade animations
+            if (updateTileFades(now)) {
+                _needsRender = true;
             }
 
             // Update cached array if needed
@@ -2543,10 +2991,16 @@
                 _airplanesArrayDirty = false;
             }
 
+            // Update distances for LOD (every few frames)
+            if ((now % 3) === 0) {
+                updateDistances();
+            }
+
             const needsLabelRedraw = now - lastLabelUpdate > 1000;
             const updateLabelPositions = !needsLabelRedraw && showLabels;
 
             // Single combined loop for lights and label positions
+            let anyLightChange = false;
             for (let i = 0, len = _airplanesArray.length; i < len; i++) {
                 const plane = _airplanesArray[i];
 
@@ -2554,28 +3008,65 @@
                 if (plane.userData.positionLight) {
                     plane.userData.lightPhase += 0.08;
                     const brightness = Math.sin(plane.userData.lightPhase) > 0.7 ? 1 : 0.2;
-                    plane.userData.positionLight.material.opacity = brightness;
+                    const currentOpacity = plane.userData.positionLight.material.opacity;
+
+                    // Only update if brightness changed significantly
+                    if (Math.abs(currentOpacity - brightness) > 0.3) {
+                        plane.userData.positionLight.material.opacity = brightness;
+                        anyLightChange = true;
+                    }
                 }
 
                 // Update label positions between full redraws
                 if (updateLabelPositions && plane.userData.label) {
-                    plane.userData.label.position.x = plane.position.x;
-                    plane.userData.label.position.y = plane.position.y + 8;
-                    plane.userData.label.position.z = plane.position.z;
+                    // Distance-based label culling
+                    const dist = plane.userData.distanceToCamera || 0;
+                    if (dist > LOD_DISTANCE_CULL) {
+                        plane.userData.label.visible = false;
+                    } else {
+                        plane.userData.label.visible = true;
+                        plane.userData.label.position.x = plane.position.x;
+                        plane.userData.label.position.y = plane.position.y + 8;
+                        plane.userData.label.position.z = plane.position.z;
+
+                        // Scale labels based on distance
+                        if (dist > LOD_DISTANCE_FAR) {
+                            const scale = 1 - (dist - LOD_DISTANCE_FAR) / (LOD_DISTANCE_CULL - LOD_DISTANCE_FAR) * 0.4;
+                            plane.userData.label.scale.set(15 * scale, 4.7 * scale, 1);
+                        }
+                    }
                 }
             }
+
+            if (anyLightChange) _needsRender = true;
 
             // Update labels periodically - redraw every 1 second to update speed/altitude
             if (needsLabelRedraw) {
                 lastLabelUpdate = now;
                 updateLabels();
+                _needsRender = true;
 
                 if (selectedPlane && airplanes.has(selectedPlane.userData.hex)) {
                     selectPlane(airplanes.get(selectedPlane.userData.hex));
                 }
             }
 
-            renderer.render(scene, camera);
+            // Process batched trail updates
+            if (now - _lastBatchTrailUpdate >= BATCH_TRAIL_INTERVAL && _trailUpdateQueue.length > 0) {
+                _lastBatchTrailUpdate = now;
+                const batch = _trailUpdateQueue.splice(0, 10); // Process 10 at a time
+                for (let i = 0; i < batch.length; i++) {
+                    updateTrail(batch[i]);
+                }
+                _needsRender = true;
+            }
+
+            // Render only when needed (or throttle to max fps)
+            if (_needsRender || now - _renderThrottleTime > RENDER_THROTTLE_MS) {
+                renderer.render(scene, camera);
+                _renderThrottleTime = now;
+                _needsRender = false;
+            }
         }
 
         // Initialize
