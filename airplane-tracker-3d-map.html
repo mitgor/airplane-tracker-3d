@@ -1717,23 +1717,28 @@
             const color = isRetro ? 0x00ff00 : getAltitudeColor(plane.userData.altitude || 0);
 
             const trailGeom = new THREE.BufferGeometry();
-            const trailPositions = new Float32Array(90 * 3); // 30 points max
+            const trailPositions = new Float32Array(150 * 3); // 50 points max
             trailGeom.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
             trailGeom.setDrawRange(0, 0);
 
             const trailMat = new THREE.LineBasicMaterial({
                 color: color,
                 transparent: true,
-                opacity: 0.6
+                opacity: 0.8,
+                depthTest: true,
+                depthWrite: false,
+                linewidth: 2
             });
 
             const trail = new THREE.Line(trailGeom, trailMat);
             trail.frustumCulled = false;
+            trail.renderOrder = 999; // Render after most objects
             trail.visible = showTrails;
             scene.add(trail);
 
             plane.userData.trail = trail;
             plane.userData.trailMaterial = trailMat;
+            console.log('Trail created for', plane.userData.hex, 'visible:', showTrails);
         }
 
         // Create altitude line for a plane
@@ -1931,25 +1936,25 @@
                     // Add trail point AFTER position update, only if plane has been initialized for a bit
                     // and previous position was valid (not at origin)
                     const timeSinceInit = now - (plane.userData.initTime || now);
-                    if (showTrails &&
-                        timeSinceInit > 500 && // Wait 500ms after init before recording trails
-                        now - (plane.userData.lastTrailTime || 0) > 200) {
+                    if (showTrails && timeSinceInit > 500) {
+                        // Add trail points more frequently (every 100ms instead of 200ms)
+                        if (now - (plane.userData.lastTrailTime || 0) > 100) {
+                            plane.userData.lastTrailTime = now;
 
-                        plane.userData.lastTrailTime = now;
-
-                        // Only add if previous position was valid (not near origin)
-                        const absPrevX = prevX < 0 ? -prevX : prevX;
-                        const absPrevZ = prevZ < 0 ? -prevZ : prevZ;
-                        if (absPrevX > 1 || absPrevZ > 1) {
-                            plane.userData.trailPoints.push({
-                                x: prevX,
-                                y: prevY,
-                                z: prevZ
-                            });
-                            if (plane.userData.trailPoints.length > 30) {
-                                plane.userData.trailPoints.shift();
+                            // Only add if previous position was valid (not near origin)
+                            const absPrevX = prevX < 0 ? -prevX : prevX;
+                            const absPrevZ = prevZ < 0 ? -prevZ : prevZ;
+                            if (absPrevX > 1 || absPrevZ > 1) {
+                                plane.userData.trailPoints.push({
+                                    x: prevX,
+                                    y: prevY,
+                                    z: prevZ
+                                });
+                                if (plane.userData.trailPoints.length > 50) {
+                                    plane.userData.trailPoints.shift();
+                                }
+                                updateTrail(plane);
                             }
-                            updateTrail(plane);
                         }
                     }
 
@@ -2136,7 +2141,7 @@
             // Don't fill(0) - just overwrite needed positions
 
             let validCount = 0;
-            const maxPoints = points.length < 30 ? points.length : 30;
+            const maxPoints = points.length < 50 ? points.length : 50;
             for (let i = 0; i < maxPoints; i++) {
                 const pt = points[i];
                 const idx = validCount * 3;
@@ -2149,7 +2154,7 @@
             // Add current position if valid
             const absPlaneX = plane.position.x < 0 ? -plane.position.x : plane.position.x;
             const absPlaneZ = plane.position.z < 0 ? -plane.position.z : plane.position.z;
-            if (validCount < 30 && (absPlaneX > 1 || absPlaneZ > 1)) {
+            if (validCount < 50 && (absPlaneX > 1 || absPlaneZ > 1)) {
                 const idx = validCount * 3;
                 positions[idx] = plane.position.x;
                 positions[idx + 1] = plane.position.y;
@@ -2159,6 +2164,11 @@
 
             trail.geometry.attributes.position.needsUpdate = true;
             trail.geometry.setDrawRange(0, validCount);
+
+            // Debug: Log trail updates occasionally
+            if (Math.random() < 0.01) {
+                console.log('Trail update:', plane.userData.hex, 'points:', validCount, 'visible:', trail.visible);
+            }
 
             // Save trail to DB periodically (every 5 seconds)
             if (!plane.userData.lastTrailSave || Date.now() - plane.userData.lastTrailSave > 5000) {
