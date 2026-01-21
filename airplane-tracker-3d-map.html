@@ -497,7 +497,7 @@
 
     <div id="altitude-slider-container">
         <h4>Altitude Scale</h4>
-        <input type="range" id="altitude-slider" min="1" max="100" value="30" orient="vertical">
+        <input type="range" id="altitude-slider" min="1" max="200" value="30" orient="vertical">
         <div id="altitude-value">30x</div>
     </div>
 
@@ -588,7 +588,13 @@
         <div class="control-group">
             <button onclick="resetCamera()">Reset</button>
             <button onclick="toggleAutoRotate()" id="btn-rotate">Auto Rotate</button>
-            <button onclick="toggleTrails()" id="btn-trails">Trails</button>
+            <span class="control-label">Trails:</span>
+            <select id="trail-select" onchange="setTrailDuration(this.value)">
+                <option value="0">Off</option>
+                <option value="60">60 sec</option>
+                <option value="120" selected>120 sec</option>
+                <option value="240">240 sec</option>
+            </select>
             <button onclick="toggleLabels()" id="btn-labels">Labels</button>
             <button onclick="toggleGraphs()" id="btn-graphs">Graphs</button>
         </div>
@@ -626,7 +632,7 @@
                 theme: currentTheme,
                 units: currentUnits,
                 showLabels: showLabels,
-                showTrails: showTrails,
+                trailDuration: trailDuration,
                 autoRotate: autoRotate,
                 showGraphs: showGraphs,
                 graphsTimePeriod: graphsTimePeriod,
@@ -641,7 +647,14 @@
                 if (settings.theme) currentTheme = settings.theme;
                 if (settings.units) currentUnits = settings.units;
                 if (settings.showLabels !== undefined) showLabels = settings.showLabels;
-                if (settings.showTrails !== undefined) showTrails = settings.showTrails;
+                if (settings.trailDuration !== undefined) {
+                    trailDuration = settings.trailDuration;
+                    showTrails = trailDuration > 0;
+                } else if (settings.showTrails !== undefined) {
+                    // Backward compatibility with old settings
+                    showTrails = settings.showTrails;
+                    trailDuration = showTrails ? 120 : 0;
+                }
                 if (settings.autoRotate !== undefined) autoRotate = settings.autoRotate;
                 if (settings.showGraphs !== undefined) showGraphs = settings.showGraphs;
                 if (settings.graphsTimePeriod !== undefined) graphsTimePeriod = settings.graphsTimePeriod;
@@ -656,7 +669,8 @@
         let airplanes = new Map();
         let labels = [];
         let showLabels = true;
-        let showTrails = true;
+        let trailDuration = 120; // Trail duration in seconds (0 = off)
+        let showTrails = true; // Derived from trailDuration > 0
         let autoRotate = false;
         let selectedPlane = null;
         let centerLat = 0, centerLon = 0;
@@ -1186,6 +1200,34 @@
             saveSettings();
         };
 
+        window.setTrailDuration = function(seconds) {
+            trailDuration = parseInt(seconds) || 0;
+            showTrails = trailDuration > 0;
+
+            // Update select element
+            document.getElementById('trail-select').value = trailDuration;
+
+            // Update all existing plane trails visibility
+            if (_airplanesArrayDirty) {
+                _airplanesArray = Array.from(airplanes.values());
+                _airplanesArrayDirty = false;
+            }
+            for (let i = 0, len = _airplanesArray.length; i < len; i++) {
+                const plane = _airplanesArray[i];
+                if (plane.userData.trail) {
+                    plane.userData.trail.visible = showTrails;
+                }
+                if (!showTrails) {
+                    plane.userData.trailPoints.length = 0;
+                    if (plane.userData.trail) {
+                        plane.userData.trail.geometry.setDrawRange(0, 0);
+                    }
+                }
+            }
+
+            saveSettings();
+        };
+
         function init() {
             // Load saved settings from cookies
             loadSettings();
@@ -1268,6 +1310,9 @@
             document.querySelectorAll('.time-period-btn').forEach(btn => {
                 btn.classList.toggle('active', parseInt(btn.dataset.period) === graphsTimePeriod);
             });
+
+            // Apply trail duration select state
+            document.getElementById('trail-select').value = trailDuration;
         }
 
         function updateSceneBackground() {
@@ -1955,9 +2000,13 @@
                                     plane.userData.trailPoints.push({
                                         lat: currentLat,
                                         lon: currentLon,
-                                        alt: currentAlt || 0
+                                        alt: currentAlt || 0,
+                                        time: now
                                     });
-                                    if (plane.userData.trailPoints.length > 100) {
+                                    // Remove points older than trailDuration
+                                    const cutoff = now - (trailDuration * 1000);
+                                    while (plane.userData.trailPoints.length > 0 &&
+                                           plane.userData.trailPoints[0].time < cutoff) {
                                         plane.userData.trailPoints.shift();
                                     }
                                     updateTrail(plane);
@@ -2411,26 +2460,6 @@
             saveSettings();
         }
 
-        function toggleTrails() {
-            showTrails = !showTrails;
-            document.getElementById('btn-trails').classList.toggle('active', showTrails);
-            // Use cached array
-            if (_airplanesArrayDirty) {
-                _airplanesArray = Array.from(airplanes.values());
-                _airplanesArrayDirty = false;
-            }
-            for (let i = 0, len = _airplanesArray.length; i < len; i++) {
-                const plane = _airplanesArray[i];
-                if (plane.userData.trail) {
-                    plane.userData.trail.visible = showTrails;
-                }
-                if (!showTrails) {
-                    plane.userData.trailPoints.length = 0;
-                }
-            }
-            saveSettings();
-        }
-
         function onMouseClick(event) {
             // Reuse cached objects to avoid GC pressure
             _mouseVec.x = (event.clientX / window.innerWidth) * 2 - 1;
@@ -2554,7 +2583,6 @@
 
         // Set button states based on loaded settings
         document.getElementById('btn-labels').classList.toggle('active', showLabels);
-        document.getElementById('btn-trails').classList.toggle('active', showTrails);
         document.getElementById('btn-rotate').classList.toggle('active', autoRotate);
         document.getElementById('btn-graphs').classList.toggle('active', showGraphs);
     </script>
