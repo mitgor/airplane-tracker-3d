@@ -605,8 +605,8 @@
         // Configuration
         const DATA_URL = '/dump1090/data/aircraft.json';
         const REFRESH_INTERVAL = 1000;
-        const MAP_GROUND_SIZE = 400;
-        const TILES_PER_SIDE = 6;
+        const MAP_GROUND_SIZE = 800;
+        const TILES_PER_SIDE = 10;
         const BASE_ALT_SCALE = 0.00001;
 
         // Cookie helper functions
@@ -711,8 +711,8 @@
         const MAX_TRAIL_POOL_SIZE = 50;
 
         // Performance: Distance-based LOD thresholds
-        const LOD_DISTANCE_FAR = 250; // Distance for simplified rendering
-        const LOD_DISTANCE_CULL = 400; // Distance for label culling
+        const LOD_DISTANCE_FAR = 400; // Distance for simplified rendering
+        const LOD_DISTANCE_CULL = 700; // Distance for label culling
 
         // Performance: Batch update flags
         let _trailUpdateQueue = [];
@@ -737,7 +737,7 @@
         const MAX_ZOOM = 12;
         let mapTiles = [];
         let tileCache = new Map();
-        const MAX_TILE_CACHE_SIZE = 150; // Limit texture cache memory
+        const MAX_TILE_CACHE_SIZE = 300; // Limit texture cache memory (increased for larger map)
 
         // Smooth map transition state
         let mapTransition = {
@@ -1371,13 +1371,13 @@
         function updateSceneBackground() {
             if (currentTheme === 'day') {
                 scene.background = new THREE.Color(0x87CEEB);
-                scene.fog = new THREE.Fog(0x87CEEB, 300, 800);
+                scene.fog = new THREE.Fog(0x87CEEB, 500, 1200);
             } else if (currentTheme === 'night') {
                 scene.background = new THREE.Color(0x0a0a1a);
-                scene.fog = new THREE.Fog(0x0a0a1a, 300, 800);
+                scene.fog = new THREE.Fog(0x0a0a1a, 500, 1200);
             } else if (currentTheme === 'retro') {
                 scene.background = new THREE.Color(0x000800);
-                scene.fog = new THREE.Fog(0x000800, 300, 800);
+                scene.fog = new THREE.Fog(0x000800, 500, 1200);
             }
         }
 
