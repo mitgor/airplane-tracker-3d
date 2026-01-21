@@ -525,8 +525,8 @@
         </div>
 
         <div class="graph-card" id="card-aircraft">
-            <h4>Aircraft Seen / Tracked</h4>
-            <div class="graph-current-value" id="aircraft-value">-- / --</div>
+            <h4>Aircraft Tracked</h4>
+            <div class="graph-current-value" id="aircraft-value">--</div>
             <div class="graph-canvas-container">
                 <canvas class="graph-canvas" id="canvas-aircraft"></canvas>
             </div>
@@ -711,8 +711,7 @@
         let graphsTimePeriod = 3600; // Default 1 hour in seconds
         let statsHistory = {
             messageRate: [],
-            aircraftSeen: [],
-            aircraftTracked: [],
+            aircraftCount: [],
             signalLevel: []
         };
         const STATS_HISTORY_MAX = 172800; // 48 hours at 1s intervals
@@ -733,7 +732,7 @@
         // Initialize IndexedDB for stats storage
         function initStatsDatabase() {
             return new Promise((resolve, reject) => {
-                const request = indexedDB.open('FlightTrackerStats', 1);
+                const request = indexedDB.open('FlightTrackerStats', 2);
 
                 request.onerror = () => {
                     console.warn('IndexedDB not available, using memory only');
@@ -755,6 +754,11 @@
                     if (!db.objectStoreNames.contains('signal')) {
                         const sigStore = db.createObjectStore('signal', { keyPath: 'timestamp' });
                         sigStore.createIndex('timestamp', 'timestamp', { unique: true });
+                    }
+                    // Trail history store - keyed by aircraft hex
+                    if (!db.objectStoreNames.contains('trails')) {
+                        const trailStore = db.createObjectStore('trails', { keyPath: 'hex' });
+                        trailStore.createIndex('lastSeen', 'lastSeen', { unique: false });
                     }
                 };
 
@@ -785,8 +789,7 @@
                             if (storeName === 'messageRate') {
                                 statsHistory.messageRate.push(cursor.value);
                             } else if (storeName === 'aircraft') {
-                                statsHistory.aircraftSeen.push({ timestamp: cursor.value.timestamp, value: cursor.value.seen });
-                                statsHistory.aircraftTracked.push({ timestamp: cursor.value.timestamp, value: cursor.value.tracked });
+                                statsHistory.aircraftCount.push({ timestamp: cursor.value.timestamp, value: cursor.value.count || cursor.value.tracked || 0 });
                             } else if (storeName === 'signal') {
                                 statsHistory.signalLevel.push(cursor.value);
                             }
@@ -819,6 +822,76 @@
             };
         }
 
+        // Save trail history to IndexedDB
+        function saveTrailToDb(hex, trailPoints, lat, lon) {
+            if (!statsDb || !hex || trailPoints.length < 2) return;
+
+            try {
+                const transaction = statsDb.transaction(['trails'], 'readwrite');
+                const store = transaction.objectStore('trails');
+                store.put({
+                    hex: hex,
+                    points: trailPoints.slice(-50), // Keep last 50 points
+                    lastSeen: Date.now(),
+                    lastLat: lat,
+                    lastLon: lon
+                });
+            } catch (e) {
+                // Ignore DB errors
+            }
+        }
+
+        // Load trail history from IndexedDB
+        function loadTrailFromDb(hex, callback) {
+            if (!statsDb || !hex) {
+                callback(null);
+                return;
+            }
+
+            try {
+                const transaction = statsDb.transaction(['trails'], 'readonly');
+                const store = transaction.objectStore('trails');
+                const request = store.get(hex);
+
+                request.onsuccess = (event) => {
+                    const result = event.target.result;
+                    // Only use trail if seen within last hour
+                    if (result && (Date.now() - result.lastSeen) < 3600000) {
+                        callback(result);
+                    } else {
+                        callback(null);
+                    }
+                };
+
+                request.onerror = () => callback(null);
+            } catch (e) {
+                callback(null);
+            }
+        }
+
+        // Clean up old trails from IndexedDB
+        function cleanupOldTrails() {
+            if (!statsDb) return;
+
+            try {
+                const cutoff = Date.now() - (24 * 60 * 60 * 1000); // 24 hours
+                const transaction = statsDb.transaction(['trails'], 'readwrite');
+                const store = transaction.objectStore('trails');
+                const index = store.index('lastSeen');
+                const range = IDBKeyRange.upperBound(cutoff);
+
+                index.openCursor(range).onsuccess = (event) => {
+                    const cursor = event.target.result;
+                    if (cursor) {
+                        cursor.delete();
+                        cursor.continue();
+                    }
+                };
+            } catch (e) {
+                // Ignore errors
+            }
+        }
+
         // Check if graphs1090 is available
         async function checkGraphs1090() {
             try {
@@ -845,10 +918,15 @@
 
         // Fetch stats from dump1090 stats.json
         async function fetchStats() {
+            const now = Date.now();
+
+            // Always get current aircraft count from the UI
+            const planeCountEl = document.getElementById('plane-count');
+            const aircraftCount = planeCountEl ? (parseInt(planeCountEl.textContent) || 0) : 0;
+
             try {
                 const response = await fetch(STATS_URL, { cache: 'no-store' });
                 const data = await response.json();
-                const now = Date.now();
 
                 // Extract message rate from last1min
                 let messageRate = 0;
@@ -861,18 +939,6 @@
                     messageRate = duration > 0 ? totalAccepted / duration : 0;
                 }
 
-                // Extract aircraft counts
-                let aircraftSeen = 0;
-                let aircraftTracked = 0;
-                if (data.last1min && data.last1min.tracks) {
-                    aircraftSeen = data.last1min.tracks.all || 0;
-                }
-                // Also try to get current aircraft count from the main aircraft data
-                const planeCountEl = document.getElementById('plane-count');
-                if (planeCountEl) {
-                    aircraftTracked = parseInt(planeCountEl.textContent) || 0;
-                }
-
                 // Extract signal level
                 let signalLevel = -50; // Default
                 if (data.last1min && data.last1min.local) {
@@ -881,19 +947,15 @@
 
                 // Store in history
                 statsHistory.messageRate.push({ timestamp: now, value: messageRate });
-                statsHistory.aircraftSeen.push({ timestamp: now, value: aircraftSeen });
-                statsHistory.aircraftTracked.push({ timestamp: now, value: aircraftTracked });
+                statsHistory.aircraftCount.push({ timestamp: now, value: aircraftCount });
                 statsHistory.signalLevel.push({ timestamp: now, value: signalLevel });
 
                 // Trim history
                 if (statsHistory.messageRate.length > STATS_HISTORY_MAX) {
                     statsHistory.messageRate.shift();
                 }
-                if (statsHistory.aircraftSeen.length > STATS_HISTORY_MAX) {
-                    statsHistory.aircraftSeen.shift();
-                }
-                if (statsHistory.aircraftTracked.length > STATS_HISTORY_MAX) {
-                    statsHistory.aircraftTracked.shift();
+                if (statsHistory.aircraftCount.length > STATS_HISTORY_MAX) {
+                    statsHistory.aircraftCount.shift();
                 }
                 if (statsHistory.signalLevel.length > STATS_HISTORY_MAX) {
                     statsHistory.signalLevel.shift();
@@ -901,23 +963,20 @@
 
                 // Save to IndexedDB
                 saveStatsToDb('messageRate', { timestamp: now, value: messageRate });
-                saveStatsToDb('aircraft', { timestamp: now, seen: aircraftSeen, tracked: aircraftTracked });
+                saveStatsToDb('aircraft', { timestamp: now, count: aircraftCount });
                 saveStatsToDb('signal', { timestamp: now, value: signalLevel });
 
                 // Update display
                 updateGraphsDisplay();
 
             } catch (error) {
-                // stats.json not available - use basic aircraft data
-                const now = Date.now();
-                const planeCountEl = document.getElementById('plane-count');
-                const aircraftTracked = planeCountEl ? (parseInt(planeCountEl.textContent) || 0) : 0;
-
-                statsHistory.aircraftTracked.push({ timestamp: now, value: aircraftTracked });
-                if (statsHistory.aircraftTracked.length > STATS_HISTORY_MAX) {
-                    statsHistory.aircraftTracked.shift();
+                // stats.json not available - still track aircraft count
+                statsHistory.aircraftCount.push({ timestamp: now, value: aircraftCount });
+                if (statsHistory.aircraftCount.length > STATS_HISTORY_MAX) {
+                    statsHistory.aircraftCount.shift();
                 }
 
+                saveStatsToDb('aircraft', { timestamp: now, count: aircraftCount });
                 updateGraphsDisplay();
             }
         }
@@ -927,20 +986,6 @@
             const now = Date.now();
             const cutoff = now - (graphsTimePeriod * 1000);
             return historyArray.filter(d => d.timestamp >= cutoff);
-        }
-
-        // Set graphs time period
-        function setGraphsTimePeriod(seconds) {
-            graphsTimePeriod = seconds;
-
-            // Update button states
-            document.querySelectorAll('.time-period-btn').forEach(btn => {
-                btn.classList.toggle('active', parseInt(btn.dataset.period) === seconds);
-            });
-
-            // Refresh display
-            updateGraphsDisplay();
-            saveSettings();
         }
 
         // Update the graphs display
@@ -954,8 +999,7 @@
 
             // Filter data by selected time period
             const filteredMsgRate = filterHistoryByPeriod(statsHistory.messageRate);
-            const filteredAircraftSeen = filterHistoryByPeriod(statsHistory.aircraftSeen);
-            const filteredAircraftTracked = filterHistoryByPeriod(statsHistory.aircraftTracked);
+            const filteredAircraftCount = filterHistoryByPeriod(statsHistory.aircraftCount);
             const filteredSignal = filterHistoryByPeriod(statsHistory.signalLevel);
 
             // Message Rate Graph
@@ -973,25 +1017,19 @@
                 drawMiniGraph('canvas-msg-rate', values, lineColor, fillColor);
             }
 
-            // Aircraft Graph (seen & tracked)
-            if (filteredAircraftTracked.length > 0) {
-                const latestTracked = statsHistory.aircraftTracked.length > 0 ?
-                    statsHistory.aircraftTracked[statsHistory.aircraftTracked.length - 1].value : 0;
-                const latestSeen = statsHistory.aircraftSeen.length > 0 ?
-                    statsHistory.aircraftSeen[statsHistory.aircraftSeen.length - 1].value : latestTracked;
-                document.getElementById('aircraft-value').textContent = latestSeen + ' / ' + latestTracked;
+            // Aircraft Count Graph
+            if (filteredAircraftCount.length > 0) {
+                const latest = statsHistory.aircraftCount.length > 0 ?
+                    statsHistory.aircraftCount[statsHistory.aircraftCount.length - 1].value : 0;
+                document.getElementById('aircraft-value').textContent = latest;
 
-                const trackedValues = filteredAircraftTracked.map(d => d.value);
-                const seenValues = filteredAircraftSeen.length > 0 ?
-                    filteredAircraftSeen.map(d => d.value) : trackedValues;
-
-                const allValues = [...trackedValues, ...seenValues];
-                const min = Math.min(...allValues);
-                const max = Math.max(...allValues);
+                const values = filteredAircraftCount.map(d => d.value);
+                const min = Math.min(...values);
+                const max = Math.max(...values);
                 document.getElementById('aircraft-min').textContent = 'Min: ' + min;
                 document.getElementById('aircraft-max').textContent = 'Max: ' + max;
 
-                drawMiniGraph('canvas-aircraft', trackedValues, lineColor, fillColor, seenValues, secondLineColor);
+                drawMiniGraph('canvas-aircraft', values, lineColor, fillColor);
             }
 
             // Signal Level Graph
@@ -1098,8 +1136,40 @@
             }
         }
 
-        // Toggle graphs panel visibility
-        function toggleGraphs() {
+        // Initialize graphs system
+        async function initGraphsSystem() {
+            await initStatsDatabase();
+            await checkGraphs1090();
+
+            // Clean up old trails
+            cleanupOldTrails();
+
+            // Start fetching stats
+            fetchStats();
+            setInterval(fetchStats, 1000);
+
+            // Re-check graphs1090 periodically (every 5 minutes)
+            setInterval(checkGraphs1090, 300000);
+
+            // Clean up old trails periodically (every hour)
+            setInterval(cleanupOldTrails, 3600000);
+        }
+
+        // Expose functions globally for onclick handlers
+        window.setGraphsTimePeriod = function(seconds) {
+            graphsTimePeriod = seconds;
+
+            // Update button states
+            document.querySelectorAll('.time-period-btn').forEach(btn => {
+                btn.classList.toggle('active', parseInt(btn.dataset.period) === seconds);
+            });
+
+            // Refresh display
+            updateGraphsDisplay();
+            saveSettings();
+        };
+
+        window.toggleGraphs = function() {
             showGraphs = !showGraphs;
             const panel = document.getElementById('graphs-panel');
             const btn = document.getElementById('btn-graphs');
@@ -1114,20 +1184,7 @@
             }
 
             saveSettings();
-        }
-
-        // Initialize graphs system
-        async function initGraphsSystem() {
-            await initStatsDatabase();
-            await checkGraphs1090();
-
-            // Start fetching stats
-            fetchStats();
-            setInterval(fetchStats, 1000);
-
-            // Re-check graphs1090 periodically (every 5 minutes)
-            setInterval(checkGraphs1090, 300000);
-        }
+        };
 
         function init() {
             // Load saved settings from cookies
@@ -1952,6 +2009,15 @@
                     airplanes.set(hex, plane);
                     planesChanged = true;
 
+                    // Load trail history from DB
+                    loadTrailFromDb(hex, (trailData) => {
+                        if (trailData && trailData.points && trailData.points.length > 0 && showTrails) {
+                            // Restore trail points
+                            plane.userData.trailPoints = trailData.points.slice();
+                            updateTrail(plane);
+                        }
+                    });
+
                     // Create altitude line after plane is positioned
                     createAltLineForPlane(plane);
                     updateAltitudeLine(plane);
@@ -2093,6 +2159,12 @@
 
             trail.geometry.attributes.position.needsUpdate = true;
             trail.geometry.setDrawRange(0, validCount);
+
+            // Save trail to DB periodically (every 5 seconds)
+            if (!plane.userData.lastTrailSave || Date.now() - plane.userData.lastTrailSave > 5000) {
+                plane.userData.lastTrailSave = Date.now();
+                saveTrailToDb(plane.userData.hex, plane.userData.trailPoints, plane.userData.lat, plane.userData.lon);
+            }
         }
 
         // Get vertical speed arrow character and size
