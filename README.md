@@ -6,6 +6,12 @@ An interactive 3D airplane tracking visualization that displays real-time aircra
 ![THREE.js](https://img.shields.io/badge/THREE.js-r128-blue)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
+## Screenshot
+
+![3D Flight Tracker - Retro 80s Theme](screenshot.png)
+
+*Retro 80s theme showing aircraft over Germany with ADS-B statistics panel*
+
 ## Features
 
 - **3D Aircraft Visualization** - Renders aircraft models in 3D space with altitude-based positioning
