@@ -4205,7 +4205,9 @@
                         type: data.Type || null,
                         model: data.ICAOTypeCode || null,
                         operator: data.RegisteredOwners || null,
-                        country: data.OperatorFlagCode || null
+                        country: data.OperatorFlagCode || null,
+                        origin: null,
+                        destination: null
                     };
                     aircraftInfoCache.set(hex, info);
                     return info;
@@ -4216,6 +4218,81 @@
 
             // Cache null result to avoid repeated failed requests
             aircraftInfoCache.set(hex, null);
+            return null;
+        }
+
+        // Fetch route information from ADS-B Exchange or adsbdb
+        async function fetchRouteInfo(callsign, hex) {
+            if (!callsign && !hex) return null;
+
+            const cacheKey = `route-${callsign || hex}`;
+            if (aircraftInfoCache.has(cacheKey)) {
+                return aircraftInfoCache.get(cacheKey);
+            }
+
+            // Try adsbdb.com for callsign-based route lookup
+            if (callsign) {
+                try {
+                    const cleanCallsign = callsign.trim().toUpperCase();
+                    const response = await fetch(`https://api.adsbdb.com/v0/callsign/${cleanCallsign}`, {
+                        cache: 'force-cache'
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.response && data.response.flightroute) {
+                            const route = data.response.flightroute;
+                            const routeInfo = {
+                                origin: route.origin ? `${route.origin.iata_code || route.origin.icao_code} - ${route.origin.name || ''}`.trim() : null,
+                                originCode: route.origin ? (route.origin.iata_code || route.origin.icao_code) : null,
+                                destination: route.destination ? `${route.destination.iata_code || route.destination.icao_code} - ${route.destination.name || ''}`.trim() : null,
+                                destinationCode: route.destination ? (route.destination.iata_code || route.destination.icao_code) : null,
+                                airline: route.airline ? route.airline.name : null
+                            };
+                            aircraftInfoCache.set(cacheKey, routeInfo);
+                            return routeInfo;
+                        }
+                    }
+                } catch (e) {
+                    // adsbdb not available
+                }
+            }
+
+            // Try ADS-B Exchange API as fallback
+            if (hex) {
+                try {
+                    const response = await fetch(`https://api.adsb.lol/v2/hex/${hex}`, {
+                        cache: 'no-store'
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.ac && data.ac.length > 0) {
+                            const ac = data.ac[0];
+                            // adsb.lol provides route in 'r' field sometimes
+                            if (ac.flight) {
+                                // Try to get route from the response
+                                const routeInfo = {
+                                    origin: ac.dep || null,
+                                    originCode: ac.dep || null,
+                                    destination: ac.arr || null,
+                                    destinationCode: ac.arr || null,
+                                    airline: null
+                                };
+                                if (routeInfo.origin || routeInfo.destination) {
+                                    aircraftInfoCache.set(cacheKey, routeInfo);
+                                    return routeInfo;
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {
+                    // adsb.lol not available
+                }
+            }
+
+            // Cache null to avoid repeated requests
+            aircraftInfoCache.set(cacheKey, null);
             return null;
         }
 
@@ -4233,15 +4310,22 @@
             loadingEl.style.display = 'block';
             dataEl.style.display = 'none';
 
-            const info = await fetchAircraftInfo(plane.userData.hex);
+            // Fetch aircraft info and route info in parallel
+            const [info, routeInfo] = await Promise.all([
+                fetchAircraftInfo(plane.userData.hex),
+                fetchRouteInfo(plane.userData.flight, plane.userData.hex)
+            ]);
 
-            if (info) {
-                document.getElementById('sel-registration').textContent = info.registration || '--';
+            if (info || routeInfo) {
+                document.getElementById('sel-registration').textContent = (info && info.registration) || '--';
                 document.getElementById('sel-aircraft-type').textContent =
-                    [info.manufacturer, info.type].filter(Boolean).join(' ') || '--';
-                document.getElementById('sel-operator').textContent = info.operator || '--';
-                document.getElementById('sel-origin').textContent = '--'; // Would need flight tracking API
-                document.getElementById('sel-destination').textContent = '--';
+                    (info && [info.manufacturer, info.type].filter(Boolean).join(' ')) || '--';
+                document.getElementById('sel-operator').textContent =
+                    (routeInfo && routeInfo.airline) || (info && info.operator) || '--';
+                document.getElementById('sel-origin').textContent =
+                    (routeInfo && routeInfo.origin) || '--';
+                document.getElementById('sel-destination').textContent =
+                    (routeInfo && routeInfo.destination) || '--';
 
                 // Update external links
                 const callsign = plane.userData.flight || '';
