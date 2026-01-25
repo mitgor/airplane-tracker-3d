@@ -1035,8 +1035,8 @@
         const REFRESH_INTERVAL = 1000;
         const MAP_GROUND_SIZE = 800;
         const TILES_PER_SIDE = 10;
-        // Altitude scale: 1x-300x range (1x = 0.00001, 300x = 0.003)
-        const BASE_ALT_SCALE = 0.00001;
+        // Altitude scale: 1x-300x range, reduced by 30x (new 300x = old 10x effect)
+        const BASE_ALT_SCALE = 0.000000333;
 
         // Cookie helper functions
         function setCookie(name, value, days = 365) {
