@@ -985,7 +985,7 @@
 
         <div class="control-group altitude-control">
             <span class="control-label">Alt:</span>
-            <input type="range" id="altitude-slider" min="1" max="12" value="1" step="0.5">
+            <input type="range" id="altitude-slider" min="1" max="3" value="1" step="0.01">
             <span id="altitude-value">1x</span>
         </div>
 
@@ -1089,8 +1089,8 @@
                 if (settings.altitudeScaleValue !== undefined) {
                     // Convert old scale values to new scale (old 100 = new 1)
                     let newScale = settings.altitudeScaleValue;
-                    if (newScale > 12) newScale = Math.round(newScale / 100); // Convert old values
-                    altitudeScale = Math.max(1, Math.min(12, newScale)) * BASE_ALT_SCALE;
+                    if (newScale > 3) newScale = Math.round(newScale / 100); // Convert old values
+                    altitudeScale = Math.max(1, Math.min(3, newScale)) * BASE_ALT_SCALE;
                 }
             }
         }
