@@ -1134,61 +1134,6 @@
         // Performance: Shared geometry instances (created once, reused for all aircraft)
         let _sharedGeometries = null;
 
-        // Glow effect texture and materials
-        let _glowTexture = null;
-        let _glowMaterials = {}; // Cache by color
-
-        // Create glow texture using canvas radial gradient
-        function createGlowTexture() {
-            const size = 64;
-            const canvas = document.createElement('canvas');
-            canvas.width = size;
-            canvas.height = size;
-            const ctx = canvas.getContext('2d');
-
-            // Create radial gradient from center (bright) to edges (transparent)
-            const gradient = ctx.createRadialGradient(
-                size / 2, size / 2, 0,
-                size / 2, size / 2, size / 2
-            );
-            gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
-            gradient.addColorStop(0.2, 'rgba(255, 255, 255, 0.8)');
-            gradient.addColorStop(0.4, 'rgba(255, 255, 255, 0.4)');
-            gradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.1)');
-            gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
-
-            ctx.fillStyle = gradient;
-            ctx.fillRect(0, 0, size, size);
-
-            const texture = new THREE.CanvasTexture(canvas);
-            texture.needsUpdate = true;
-            return texture;
-        }
-
-        // Get or create glow sprite material for a color
-        function getGlowMaterial(color, isRetro) {
-            const key = `${color}_${isRetro}`;
-            if (_glowMaterials[key]) {
-                return _glowMaterials[key];
-            }
-
-            if (!_glowTexture) {
-                _glowTexture = createGlowTexture();
-            }
-
-            const material = new THREE.SpriteMaterial({
-                map: _glowTexture,
-                color: color,
-                transparent: true,
-                blending: THREE.AdditiveBlending,
-                opacity: isRetro ? 0.6 : 0.5,
-                depthWrite: false
-            });
-
-            _glowMaterials[key] = material;
-            return material;
-        }
-
         // Performance: Material pools
         const _materialPool = {
             wireframe: [],
@@ -2938,16 +2883,6 @@
             // Distance for LOD calculations
             group.userData.distanceToCamera = 0;
 
-            // Add glow effect sprite
-            const glowColor = isRetro ? 0x00ff00 : color;
-            const glowMat = getGlowMaterial(glowColor, isRetro).clone();
-            const glowSprite = new THREE.Sprite(glowMat);
-            glowSprite.scale.set(4, 4, 1); // Size of the glow
-            glowSprite.position.set(0, 0, 0); // Center of aircraft
-            group.add(glowSprite);
-            group.userData.glowSprite = glowSprite;
-            group.userData.glowColor = glowColor;
-
             return group;
         }
 
@@ -3226,11 +3161,6 @@
                     }
                     if (plane.userData.trailMaterial && currentTheme !== 'retro') {
                         plane.userData.trailMaterial.color.setHex(newColor);
-                    }
-                    // Update glow color
-                    if (plane.userData.glowSprite && currentTheme !== 'retro') {
-                        plane.userData.glowSprite.material.color.setHex(newColor);
-                        plane.userData.glowColor = newColor;
                     }
 
                     // Update userData without creating new object
@@ -3890,20 +3820,6 @@
                     // Only update if brightness changed significantly
                     if (Math.abs(currentOpacity - brightness) > 0.3) {
                         plane.userData.positionLight.material.opacity = brightness;
-                        anyLightChange = true;
-                    }
-                }
-
-                // Animate glow effect
-                if (plane.userData.glowSprite) {
-                    // Subtle pulsing glow synchronized with light phase
-                    const glowPulse = 0.4 + 0.2 * Math.sin(plane.userData.lightPhase * 0.5);
-                    const glowScale = 3.5 + 0.5 * Math.sin(plane.userData.lightPhase * 0.3);
-
-                    const glowMat = plane.userData.glowSprite.material;
-                    if (Math.abs(glowMat.opacity - glowPulse) > 0.05) {
-                        glowMat.opacity = glowPulse;
-                        plane.userData.glowSprite.scale.set(glowScale, glowScale, 1);
                         anyLightChange = true;
                     }
                 }
