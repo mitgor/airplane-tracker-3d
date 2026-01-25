@@ -985,7 +985,7 @@
 
         <div class="control-group altitude-control">
             <span class="control-label">Alt:</span>
-            <input type="range" id="altitude-slider" min="1" max="3" value="1" step="0.01">
+            <input type="range" id="altitude-slider" min="100" max="30000" value="100" step="100">
             <span id="altitude-value">1x</span>
         </div>
 
@@ -1035,8 +1035,8 @@
         const REFRESH_INTERVAL = 1000;
         const MAP_GROUND_SIZE = 800;
         const TILES_PER_SIDE = 10;
-        // Altitude scale: new 1x = old 100x, new 12x = old 1200x
-        const BASE_ALT_SCALE = 0.001; // 100x larger than before
+        // Altitude scale: 1x-300x range (1x = 0.00001, 300x = 0.003)
+        const BASE_ALT_SCALE = 0.00001;
 
         // Cookie helper functions
         function setCookie(name, value, days = 365) {
@@ -1087,10 +1087,11 @@
                 if (settings.showGraphs !== undefined) showGraphs = settings.showGraphs;
                 if (settings.graphsTimePeriod !== undefined) graphsTimePeriod = settings.graphsTimePeriod;
                 if (settings.altitudeScaleValue !== undefined) {
-                    // Convert old scale values to new scale (old 100 = new 1)
+                    // Internal scale: 100-30000 (displayed as 1x-300x)
                     let newScale = settings.altitudeScaleValue;
-                    if (newScale > 3) newScale = Math.round(newScale / 100); // Convert old values
-                    altitudeScale = Math.max(1, Math.min(3, newScale)) * BASE_ALT_SCALE;
+                    // Clamp to valid range
+                    newScale = Math.max(100, Math.min(30000, newScale));
+                    altitudeScale = newScale * BASE_ALT_SCALE;
                 }
             }
         }
@@ -1787,10 +1788,10 @@
             document.getElementById('theme-select').value = currentTheme;
             document.getElementById('units-select').value = currentUnits;
 
-            // Apply altitude scale to slider (new scale: 1x-12x)
+            // Apply altitude scale to slider (1x-300x, internal 100-30000)
             const scaleValue = Math.round(altitudeScale / BASE_ALT_SCALE);
             document.getElementById('altitude-slider').value = scaleValue;
-            document.getElementById('altitude-value').textContent = scaleValue + 'x';
+            document.getElementById('altitude-value').textContent = Math.round(scaleValue / 100) + 'x';
 
             // Apply trail settings to UI
             document.getElementById('btn-trails').classList.toggle('active', trailEnabled);
@@ -1846,12 +1847,12 @@
             // Keyboard shortcuts
             setupKeyboardShortcuts();
 
-            // Altitude slider
+            // Altitude slider (internal 100-30000, displayed as 1x-300x)
             const slider = document.getElementById('altitude-slider');
             slider.addEventListener('input', (e) => {
                 const value = parseInt(e.target.value);
                 altitudeScale = value * BASE_ALT_SCALE;
-                document.getElementById('altitude-value').textContent = value + 'x';
+                document.getElementById('altitude-value').textContent = Math.round(value / 100) + 'x';
                 updateAllAircraftPositions();
                 saveSettings();
             });
