@@ -184,6 +184,22 @@
             margin-right: 5px;
         }
 
+        /* Trail controls - inline in controls */
+        .trail-control {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .trail-control input[type="range"] {
+            width: 60px;
+            height: 6px;
+            cursor: pointer;
+        }
+        #trail-length-value {
+            font-size: 0.75em;
+            min-width: 25px;
+        }
+
         /* Altitude slider - inline in controls */
         .altitude-control {
             display: flex;
@@ -952,22 +968,25 @@
         <div class="control-group">
             <button onclick="resetCamera()">Reset</button>
             <button onclick="toggleAutoRotate()" id="btn-rotate">Auto Rotate</button>
-            <span class="control-label">Trails:</span>
-            <select id="trail-select" onchange="setTrailDuration(this.value)">
-                <option value="0">Off</option>
-                <option value="60">60 sec</option>
-                <option value="120" selected>120 sec</option>
-                <option value="240">240 sec</option>
-            </select>
             <button onclick="toggleLabels()" id="btn-labels">Labels</button>
             <button onclick="toggleGraphs()" id="btn-graphs">Graphs</button>
             <button onclick="toggleStats()" id="btn-stats">Stats</button>
         </div>
 
+        <div class="control-group trail-control">
+            <button onclick="toggleTrails()" id="btn-trails">Trails</button>
+            <span class="control-label">Length:</span>
+            <input type="range" id="trail-length-slider" min="50" max="500" value="200" oninput="setTrailLength(this.value)">
+            <span id="trail-length-value">200</span>
+            <span class="control-label">Width:</span>
+            <input type="range" id="trail-thickness-slider" min="1" max="5" value="2" oninput="setTrailThickness(this.value)">
+            <button onclick="clearAllTrails()" title="Clear all trails">Clear</button>
+        </div>
+
         <div class="control-group altitude-control">
             <span class="control-label">Alt:</span>
-            <input type="range" id="altitude-slider" min="1" max="200" value="30">
-            <span id="altitude-value">30x</span>
+            <input type="range" id="altitude-slider" min="1" max="12" value="1" step="0.5">
+            <span id="altitude-value">1x</span>
         </div>
 
         <div class="control-group">
@@ -993,7 +1012,8 @@
                 <div class="shortcut-row"><span class="shortcut-key">L</span><span class="shortcut-desc">Toggle labels</span></div>
                 <div class="shortcut-row"><span class="shortcut-key">G</span><span class="shortcut-desc">Toggle graphs</span></div>
                 <div class="shortcut-row"><span class="shortcut-key">A</span><span class="shortcut-desc">Toggle auto-rotate</span></div>
-                <div class="shortcut-row"><span class="shortcut-key">T</span><span class="shortcut-desc">Cycle trail duration</span></div>
+                <div class="shortcut-row"><span class="shortcut-key">T</span><span class="shortcut-desc">Toggle trails</span></div>
+                <div class="shortcut-row"><span class="shortcut-key">C</span><span class="shortcut-desc">Clear all trails</span></div>
                 <div class="shortcut-row"><span class="shortcut-key">S</span><span class="shortcut-desc">Toggle stats panel</span></div>
                 <div class="shortcut-row"><span class="shortcut-key">1 / 2 / 3</span><span class="shortcut-desc">Switch theme (Day/Night/Retro)</span></div>
             </div>
@@ -1015,7 +1035,8 @@
         const REFRESH_INTERVAL = 1000;
         const MAP_GROUND_SIZE = 800;
         const TILES_PER_SIDE = 10;
-        const BASE_ALT_SCALE = 0.00001;
+        // Altitude scale: new 1x = old 100x, new 12x = old 1200x
+        const BASE_ALT_SCALE = 0.001; // 100x larger than before
 
         // Cookie helper functions
         function setCookie(name, value, days = 365) {
@@ -1040,7 +1061,10 @@
                 theme: currentTheme,
                 units: currentUnits,
                 showLabels: showLabels,
-                trailDuration: trailDuration,
+                trailEnabled: trailEnabled,
+                trailMaxLength: trailMaxLength,
+                trailThickness: trailThickness,
+                trailColorMode: trailColorMode,
                 autoRotate: autoRotate,
                 showGraphs: showGraphs,
                 graphsTimePeriod: graphsTimePeriod,
@@ -1055,19 +1079,18 @@
                 if (settings.theme) currentTheme = settings.theme;
                 if (settings.units) currentUnits = settings.units;
                 if (settings.showLabels !== undefined) showLabels = settings.showLabels;
-                if (settings.trailDuration !== undefined) {
-                    trailDuration = settings.trailDuration;
-                    showTrails = trailDuration > 0;
-                } else if (settings.showTrails !== undefined) {
-                    // Backward compatibility with old settings
-                    showTrails = settings.showTrails;
-                    trailDuration = showTrails ? 120 : 0;
-                }
+                if (settings.trailEnabled !== undefined) trailEnabled = settings.trailEnabled;
+                if (settings.trailMaxLength !== undefined) trailMaxLength = settings.trailMaxLength;
+                if (settings.trailThickness !== undefined) trailThickness = settings.trailThickness;
+                if (settings.trailColorMode !== undefined) trailColorMode = settings.trailColorMode;
                 if (settings.autoRotate !== undefined) autoRotate = settings.autoRotate;
                 if (settings.showGraphs !== undefined) showGraphs = settings.showGraphs;
                 if (settings.graphsTimePeriod !== undefined) graphsTimePeriod = settings.graphsTimePeriod;
                 if (settings.altitudeScaleValue !== undefined) {
-                    altitudeScale = settings.altitudeScaleValue * BASE_ALT_SCALE;
+                    // Convert old scale values to new scale (old 100 = new 1)
+                    let newScale = settings.altitudeScaleValue;
+                    if (newScale > 12) newScale = Math.round(newScale / 100); // Convert old values
+                    altitudeScale = Math.max(1, Math.min(12, newScale)) * BASE_ALT_SCALE;
                 }
             }
         }
@@ -1077,12 +1100,16 @@
         let airplanes = new Map();
         let labels = [];
         let showLabels = true;
-        let trailDuration = 120; // Trail duration in seconds (0 = off)
-        let showTrails = true; // Derived from trailDuration > 0
         let autoRotate = false;
         let selectedPlane = null;
         let centerLat = 0, centerLon = 0;
         let centerInitialized = false;
+
+        // Trail settings (airloom-style)
+        let trailEnabled = true;
+        let trailMaxLength = 200; // Max trail points
+        let trailThickness = 2; // Line thickness (1-5)
+        let trailColorMode = 'altitude'; // 'altitude' or 'speed'
 
         // Interpolation state
         const INTERPOLATION_DELAY = 2000; // 2 second delay
@@ -1678,12 +1705,10 @@
             saveSettings();
         };
 
-        window.setTrailDuration = function(seconds) {
-            trailDuration = parseInt(seconds) || 0;
-            showTrails = trailDuration > 0;
-
-            // Update select element
-            document.getElementById('trail-select').value = trailDuration;
+        // Trail control functions (airloom-style)
+        window.toggleTrails = function() {
+            trailEnabled = !trailEnabled;
+            document.getElementById('btn-trails').classList.toggle('active', trailEnabled);
 
             // Update all existing plane trails visibility
             if (_airplanesArrayDirty) {
@@ -1693,17 +1718,64 @@
             for (let i = 0, len = _airplanesArray.length; i < len; i++) {
                 const plane = _airplanesArray[i];
                 if (plane.userData.trail) {
-                    plane.userData.trail.visible = showTrails;
-                }
-                if (!showTrails) {
-                    plane.userData.trailPoints.length = 0;
-                    if (plane.userData.trail) {
-                        plane.userData.trail.geometry.setDrawRange(0, 0);
-                    }
+                    plane.userData.trail.visible = trailEnabled;
                 }
             }
-
             saveSettings();
+            _needsRender = true;
+        };
+
+        window.setTrailLength = function(length) {
+            trailMaxLength = parseInt(length) || 200;
+            document.getElementById('trail-length-value').textContent = trailMaxLength;
+
+            // Trim existing trails if needed
+            if (_airplanesArrayDirty) {
+                _airplanesArray = Array.from(airplanes.values());
+                _airplanesArrayDirty = false;
+            }
+            for (let i = 0, len = _airplanesArray.length; i < len; i++) {
+                const plane = _airplanesArray[i];
+                if (plane.userData.trailPoints && plane.userData.trailPoints.length > trailMaxLength) {
+                    plane.userData.trailPoints = plane.userData.trailPoints.slice(-trailMaxLength);
+                    updateTrail(plane);
+                }
+            }
+            saveSettings();
+        };
+
+        window.setTrailThickness = function(thickness) {
+            trailThickness = parseInt(thickness) || 2;
+
+            // Update all trail materials
+            if (_airplanesArrayDirty) {
+                _airplanesArray = Array.from(airplanes.values());
+                _airplanesArrayDirty = false;
+            }
+            for (let i = 0, len = _airplanesArray.length; i < len; i++) {
+                const plane = _airplanesArray[i];
+                if (plane.userData.trailMaterial) {
+                    plane.userData.trailMaterial.linewidth = trailThickness;
+                    plane.userData.trailMaterial.needsUpdate = true;
+                }
+            }
+            saveSettings();
+            _needsRender = true;
+        };
+
+        window.clearAllTrails = function() {
+            if (_airplanesArrayDirty) {
+                _airplanesArray = Array.from(airplanes.values());
+                _airplanesArrayDirty = false;
+            }
+            for (let i = 0, len = _airplanesArray.length; i < len; i++) {
+                const plane = _airplanesArray[i];
+                plane.userData.trailPoints = [];
+                if (plane.userData.trail) {
+                    plane.userData.trail.geometry.setDrawRange(0, 0);
+                }
+            }
+            _needsRender = true;
         };
 
         function init() {
@@ -1715,10 +1787,16 @@
             document.getElementById('theme-select').value = currentTheme;
             document.getElementById('units-select').value = currentUnits;
 
-            // Apply altitude scale to slider
+            // Apply altitude scale to slider (new scale: 1x-12x)
             const scaleValue = Math.round(altitudeScale / BASE_ALT_SCALE);
             document.getElementById('altitude-slider').value = scaleValue;
             document.getElementById('altitude-value').textContent = scaleValue + 'x';
+
+            // Apply trail settings to UI
+            document.getElementById('btn-trails').classList.toggle('active', trailEnabled);
+            document.getElementById('trail-length-slider').value = trailMaxLength;
+            document.getElementById('trail-length-value').textContent = trailMaxLength;
+            document.getElementById('trail-thickness-slider').value = trailThickness;
 
             // Initialize shared geometry pools
             initSharedGeometries();
@@ -1798,8 +1876,11 @@
                 btn.classList.toggle('active', parseInt(btn.dataset.period) === graphsTimePeriod);
             });
 
-            // Apply trail duration select state
-            document.getElementById('trail-select').value = trailDuration;
+            // Apply trail settings state
+            document.getElementById('btn-trails').classList.toggle('active', trailEnabled);
+            document.getElementById('trail-length-slider').value = trailMaxLength;
+            document.getElementById('trail-length-value').textContent = trailMaxLength;
+            document.getElementById('trail-thickness-slider').value = trailThickness;
         }
 
         function updateSceneBackground() {
@@ -2804,15 +2885,17 @@
             return group;
         }
 
-        // Create trail line for a plane (only when it has points)
+        // Create trail line for a plane (airloom-style with smooth curves)
         function createTrailForPlane(plane) {
             if (plane.userData.trail) return; // Already has trail
 
             const isRetro = currentTheme === 'retro';
             const color = isRetro ? 0x00ff00 : getAltitudeColor(plane.userData.altitude || 0);
 
+            // Use larger buffer for smooth trail with many points
             const trailGeom = new THREE.BufferGeometry();
-            const trailPositions = new Float32Array(300 * 3); // 100 points max
+            const maxPoints = 600; // Enough for smooth curves
+            const trailPositions = new Float32Array(maxPoints * 3);
             trailGeom.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
             trailGeom.setDrawRange(0, 0);
 
@@ -2822,13 +2905,13 @@
                 opacity: 0.8,
                 depthTest: true,
                 depthWrite: false,
-                linewidth: 2
+                linewidth: trailThickness
             });
 
             const trail = new THREE.Line(trailGeom, trailMat);
             trail.frustumCulled = false;
             trail.renderOrder = 999; // Render after most objects
-            trail.visible = showTrails;
+            trail.visible = trailEnabled;
             scene.add(trail);
 
             plane.userData.trail = trail;
@@ -3030,7 +3113,7 @@
                     // Add trail point using lat/lon coordinates (not world coords)
                     // This ensures trails remain valid when map bounds change
                     const timeSinceInit = now - (plane.userData.initTime || now);
-                    if (showTrails && timeSinceInit > 500) {
+                    if (trailEnabled && timeSinceInit > 500) {
                         if (now - (plane.userData.lastTrailTime || 0) > 100) {
                             plane.userData.lastTrailTime = now;
 
@@ -3053,10 +3136,8 @@
                                         alt: currentAlt || 0,
                                         time: now
                                     });
-                                    // Remove points older than trailDuration
-                                    const cutoff = now - (trailDuration * 1000);
-                                    while (plane.userData.trailPoints.length > 0 &&
-                                           plane.userData.trailPoints[0].time < cutoff) {
+                                    // Keep only the max trail length (airloom-style)
+                                    while (plane.userData.trailPoints.length > trailMaxLength) {
                                         plane.userData.trailPoints.shift();
                                     }
                                     // Queue trail update for batching instead of immediate update
@@ -3126,9 +3207,9 @@
 
                     // Load trail history from DB
                     loadTrailFromDb(hex, (trailData) => {
-                        if (trailData && trailData.points && trailData.points.length > 0 && showTrails) {
-                            // Restore trail points
-                            plane.userData.trailPoints = trailData.points.slice();
+                        if (trailData && trailData.points && trailData.points.length > 0 && trailEnabled) {
+                            // Restore trail points (limit to max length)
+                            plane.userData.trailPoints = trailData.points.slice(-trailMaxLength);
                             updateTrail(plane);
                         }
                     });
@@ -3236,30 +3317,59 @@
             const positions = trail.geometry.attributes.position.array;
 
             // Convert lat/lon trail points to world coordinates
-            let validCount = 0;
-            const maxPoints = Math.min(points.length, 100);
+            const worldPoints = [];
+            const maxPoints = Math.min(points.length, trailMaxLength);
 
             for (let i = 0; i < maxPoints; i++) {
-                const pt = points[i];
-                // Points are stored as {lat, lon, alt}
-                if (pt.lat !== undefined && pt.lon !== undefined) {
+                const pt = points[points.length - maxPoints + i];
+                if (pt && pt.lat !== undefined && pt.lon !== undefined) {
                     const worldPos = latLonToXZ(pt.lat, pt.lon);
                     const alt = (pt.alt || 0) * altitudeScale;
-                    const idx = validCount * 3;
-                    positions[idx] = worldPos.x;
-                    positions[idx + 1] = alt;
-                    positions[idx + 2] = worldPos.z;
-                    validCount++;
+                    worldPoints.push(new THREE.Vector3(worldPos.x, alt, worldPos.z));
                 }
             }
 
             // Add current plane position as the final point
-            if (validCount < 100 && plane.userData.lat && plane.userData.lon) {
-                const idx = validCount * 3;
-                positions[idx] = plane.position.x;
-                positions[idx + 1] = plane.position.y;
-                positions[idx + 2] = plane.position.z;
-                validCount++;
+            if (plane.userData.lat && plane.userData.lon) {
+                worldPoints.push(new THREE.Vector3(plane.position.x, plane.position.y, plane.position.z));
+            }
+
+            if (worldPoints.length < 2) {
+                trail.geometry.setDrawRange(0, 0);
+                return;
+            }
+
+            // Use Catmull-Rom curve for smooth interpolation (airloom-style)
+            let smoothPoints;
+            if (worldPoints.length >= 3) {
+                try {
+                    const curve = new THREE.CatmullRomCurve3(worldPoints, false, 'centripetal', 0.5);
+                    // Get more points for smoother curve (2 per original point)
+                    const numSmoothPoints = Math.min(worldPoints.length * 2, 500);
+                    smoothPoints = curve.getPoints(numSmoothPoints);
+                } catch (e) {
+                    // Fallback to original points if curve fails
+                    smoothPoints = worldPoints;
+                }
+            } else {
+                smoothPoints = worldPoints;
+            }
+
+            // Fill position buffer with smooth points
+            const validCount = Math.min(smoothPoints.length, 600);
+            for (let i = 0; i < validCount; i++) {
+                const pt = smoothPoints[i];
+                const idx = i * 3;
+                positions[idx] = pt.x;
+                positions[idx + 1] = pt.y;
+                positions[idx + 2] = pt.z;
+            }
+
+            // Update trail color based on current altitude
+            if (plane.userData.trailMaterial && trailColorMode === 'altitude') {
+                const isRetro = currentTheme === 'retro';
+                const newColor = isRetro ? 0x00ff00 : getAltitudeColor(plane.userData.altitude || 0);
+                plane.userData.trailMaterial.color.setHex(newColor);
             }
 
             trail.geometry.attributes.position.needsUpdate = true;
@@ -3853,14 +3963,11 @@
                 // Toggle auto-rotate
                 if (key === 'a') { toggleAutoRotate(); e.preventDefault(); }
 
-                // Cycle trail duration
-                if (key === 't' && !e.ctrlKey) {
-                    const durations = [0, 60, 120, 240];
-                    const currentIdx = durations.indexOf(trailDuration);
-                    const nextIdx = (currentIdx + 1) % durations.length;
-                    setTrailDuration(durations[nextIdx]);
-                    e.preventDefault();
-                }
+                // Toggle trails
+                if (key === 't' && !e.ctrlKey) { toggleTrails(); e.preventDefault(); }
+
+                // Clear all trails
+                if (key === 'c' && !e.ctrlKey && !e.metaKey) { clearAllTrails(); e.preventDefault(); }
 
                 // Toggle stats panel
                 if (key === 's') { toggleStats(); e.preventDefault(); }
@@ -4429,6 +4536,7 @@
         // Set button states based on loaded settings
         document.getElementById('btn-labels').classList.toggle('active', showLabels);
         document.getElementById('btn-rotate').classList.toggle('active', autoRotate);
+        document.getElementById('btn-trails').classList.toggle('active', trailEnabled);
         document.getElementById('btn-graphs').classList.toggle('active', showGraphs);
         document.getElementById('btn-stats').classList.toggle('active', showStats);
 
