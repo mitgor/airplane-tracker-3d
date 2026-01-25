@@ -1134,6 +1134,11 @@
         // Performance: Shared geometry instances (created once, reused for all aircraft)
         let _sharedGeometries = null;
 
+        // Glow effect texture and material (sprite-based glow like airloom)
+        let _glowTexture = null;
+        let _glowMaterialRetro = null;
+        let _glowMaterialDay = null;
+
         // Performance: Material pools
         const _materialPool = {
             wireframe: [],
@@ -2109,6 +2114,57 @@
             _sharedGeometries.solid.milWing = new THREE.BufferGeometry();
             _sharedGeometries.solid.milWing.setAttribute('position', new THREE.BufferAttribute(milWingVerts, 3));
             _sharedGeometries.solid.milWing.computeVertexNormals();
+
+            // Initialize glow texture for aircraft
+            initGlowTexture();
+        }
+
+        // Create glow texture for aircraft (sprite-based approach like airloom)
+        function initGlowTexture() {
+            if (_glowTexture) return;
+
+            // Create radial gradient canvas texture
+            const size = 64;
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+
+            // Create radial gradient: bright center fading to transparent edges
+            const gradient = ctx.createRadialGradient(
+                size / 2, size / 2, 0,
+                size / 2, size / 2, size / 2
+            );
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+            gradient.addColorStop(0.3, 'rgba(255, 255, 255, 0.5)');
+            gradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.1)');
+            gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, size, size);
+
+            _glowTexture = new THREE.CanvasTexture(canvas);
+            _glowTexture.needsUpdate = true;
+        }
+
+        // Create glow sprite for an aircraft
+        function createGlowSprite(color, isRetro) {
+            if (!_glowTexture) initGlowTexture();
+
+            const glowMaterial = new THREE.SpriteMaterial({
+                map: _glowTexture,
+                color: color,
+                transparent: true,
+                opacity: 0.4,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                sizeAttenuation: true
+            });
+
+            const glowSprite = new THREE.Sprite(glowMaterial);
+            // Scale to 2.5x aircraft size for visible glow effect
+            glowSprite.scale.set(8, 8, 1);
+            return glowSprite;
         }
 
         // Get pooled material or create new one
@@ -2675,11 +2731,17 @@
                     group.add(positionLight);
                 }
 
+                // Add glow sprite (retro green glow)
+                const glowSprite = createGlowSprite(0x00ff00, true);
+                glowSprite.position.set(0, 0, 0);
+                group.add(glowSprite);
+
                 group.userData = {
                     ...data,
                     category: category,
                     noseMaterial: null,
                     positionLight: positionLight,
+                    glowSprite: glowSprite,
                     lightPhase: Math.random() * Math.PI * 2,
                     isWireframe: true
                 };
@@ -2860,6 +2922,11 @@
                     group.add(positionLight);
                 }
 
+                // Add glow sprite (color matches altitude)
+                const glowSprite = createGlowSprite(color, false);
+                glowSprite.position.set(0, 0, 0);
+                group.add(glowSprite);
+
                 group.userData = {
                     ...data,
                     category: category,
@@ -2867,6 +2934,7 @@
                     wingMaterial: wingMat,
                     fuselageMaterial: fuselageMat,
                     positionLight: positionLight,
+                    glowSprite: glowSprite,
                     lightPhase: Math.random() * Math.PI * 2,
                     isWireframe: false
                 };
@@ -3161,6 +3229,10 @@
                     }
                     if (plane.userData.trailMaterial && currentTheme !== 'retro') {
                         plane.userData.trailMaterial.color.setHex(newColor);
+                    }
+                    // Update glow color for day/night themes (retro stays green)
+                    if (plane.userData.glowSprite && currentTheme !== 'retro') {
+                        plane.userData.glowSprite.material.color.setHex(newColor);
                     }
 
                     // Update userData without creating new object
@@ -3822,6 +3894,15 @@
                         plane.userData.positionLight.material.opacity = brightness;
                         anyLightChange = true;
                     }
+                }
+
+                // Animate glow sprite (subtle pulsing synced with position lights)
+                if (plane.userData.glowSprite) {
+                    const glowPulse = 0.3 + 0.15 * Math.sin(plane.userData.lightPhase * 0.5);
+                    const glowScale = 7 + 1.5 * Math.sin(plane.userData.lightPhase * 0.3);
+                    plane.userData.glowSprite.material.opacity = glowPulse;
+                    plane.userData.glowSprite.scale.set(glowScale, glowScale, 1);
+                    anyLightChange = true;
                 }
 
                 // Animate rotors and propellers
