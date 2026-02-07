@@ -1045,8 +1045,8 @@
         <div class="control-group trail-control">
             <button onclick="toggleTrails()" id="btn-trails">Trails</button>
             <span class="control-label">Length:</span>
-            <input type="range" id="trail-length-slider" min="50" max="500" value="200" oninput="setTrailLength(this.value)">
-            <span id="trail-length-value">200</span>
+            <input type="range" id="trail-length-slider" min="50" max="4000" value="500" step="50" oninput="setTrailLength(this.value)">
+            <span id="trail-length-value">500</span>
             <span class="control-label">Width:</span>
             <input type="range" id="trail-thickness-slider" min="1" max="5" value="2" oninput="setTrailThickness(this.value)">
             <button onclick="clearAllTrails()" title="Clear all trails">Clear</button>
@@ -1104,6 +1104,14 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Line2 fat lines for trails (Air Loom style) -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineSegmentsGeometry.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineGeometry.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineMaterial.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/Line2.js"></script>
+    <!-- 3D text for airport labels -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FontLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/geometries/TextGeometry.js"></script>
     <script>
         // Configuration
         const DATA_URL = '/dump1090/data/aircraft.json';
@@ -1220,6 +1228,39 @@
         const AIRPORT_LABEL_DISTANCE_LARGE = 500;  // Show large airports within this distance
         const AIRPORT_LABEL_DISTANCE_MEDIUM = 250; // Show medium airports within this distance
         const MAX_VISIBLE_AIRPORT_LABELS = 40;
+
+        // 3D text label system (Air Loom style)
+        let _airportFont = null;
+        const _airportTextGeoCache = new Map(); // code string -> THREE.BufferGeometry
+        const AIRPORT_FONT_URL = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/fonts/helvetiker_bold.typeface.json';
+
+        function _loadAirportFont() {
+            if (!THREE.FontLoader) return;
+            const loader = new THREE.FontLoader();
+            loader.load(AIRPORT_FONT_URL, (font) => {
+                _airportFont = font;
+                console.log('Airport 3D font loaded');
+                if (AirportDB.loaded) AirportDB.updateLabels();
+            }, undefined, (err) => {
+                console.warn('Failed to load 3D font, using sprite fallback:', err);
+            });
+        }
+
+        function _getAirportTextGeo(code) {
+            if (_airportTextGeoCache.has(code)) return _airportTextGeoCache.get(code);
+            if (!_airportFont) return null;
+            const geo = new THREE.TextGeometry(code, {
+                font: _airportFont,
+                size: 2.5,
+                height: 0.4,
+                curveSegments: 3,
+                bevelEnabled: false
+            });
+            geo.computeBoundingBox();
+            geo.center();
+            _airportTextGeoCache.set(code, geo);
+            return geo;
+        }
 
         const AirportDB = {
             airports: [],
@@ -1389,30 +1430,58 @@
 
                 // Remove old labels
                 for (let i = 0; i < this.airportLabels.length; i++) {
-                    scene.remove(this.airportLabels[i]);
-                    this.airportLabelPool.push(this.airportLabels[i]);
+                    const lbl = this.airportLabels[i];
+                    scene.remove(lbl);
+                    // Dispose non-cached materials (geometries are cached, don't dispose)
+                    if (lbl.userData && lbl.userData._disposeMat && lbl.material) {
+                        lbl.material.dispose();
+                    }
                 }
                 this.airportLabels = [];
 
-                // Create/reuse labels for visible airports
+                // Create labels for visible airports
+                const isRetro = currentTheme === 'retro';
+                const isNight = currentTheme === 'night';
+                const labelColor = isRetro ? 0x00ff00 : isNight ? 0x66bbff : 0x0066cc;
+
                 for (let i = 0; i < toShow.length; i++) {
                     const item = toShow[i];
                     const a = item.airport;
-                    const label = this._getOrCreateLabel(a);
-                    label.position.set(item.pos.x, 0.5, item.pos.z);
+                    const code = a.iata || a.icao;
 
-                    // Scale based on airport type and distance
-                    const baseScale = a.type === 'large_airport' ? 18 : 12;
-                    const distScale = Math.max(0.4, 1 - item.dist / 500);
-                    label.scale.set(baseScale * distScale, baseScale * distScale * 0.3, 1);
+                    // Try 3D text first, fall back to sprite
+                    const geo = _getAirportTextGeo(code);
+                    if (geo) {
+                        // 3D extruded text (Air Loom style)
+                        const mat = new THREE.MeshBasicMaterial({ color: labelColor });
+                        const mesh = new THREE.Mesh(geo, mat);
+                        mesh.rotation.x = -Math.PI / 2; // Lay flat on ground
+                        mesh.position.set(item.pos.x, 0.5, item.pos.z);
 
-                    scene.add(label);
-                    this.airportLabels.push(label);
+                        const baseScale = a.type === 'large_airport' ? 2.5 : 1.6;
+                        const distScale = Math.max(0.5, 1 - item.dist / 600);
+                        const s = baseScale * distScale;
+                        mesh.scale.set(s, s, s);
+                        mesh.renderOrder = 1;
+                        mesh.userData._disposeMat = true;
+
+                        scene.add(mesh);
+                        this.airportLabels.push(mesh);
+                    } else {
+                        // Sprite fallback (font not loaded yet)
+                        const label = this._getOrCreateSpriteLabel(a);
+                        label.position.set(item.pos.x, 0.5, item.pos.z);
+                        const baseScale = a.type === 'large_airport' ? 18 : 12;
+                        const distScale = Math.max(0.4, 1 - item.dist / 500);
+                        label.scale.set(baseScale * distScale, baseScale * distScale * 0.3, 1);
+                        scene.add(label);
+                        this.airportLabels.push(label);
+                    }
                 }
                 _needsRender = true;
             },
 
-            _getOrCreateLabel(airport) {
+            _getOrCreateSpriteLabel(airport) {
                 let sprite;
                 if (this.airportLabelPool.length > 0) {
                     sprite = this.airportLabelPool.pop();
@@ -1421,7 +1490,6 @@
                     sprite = new THREE.Sprite(spriteMat);
                 }
 
-                // Render label text to canvas
                 const canvas = document.createElement('canvas');
                 canvas.width = 512;
                 canvas.height = 128;
@@ -1433,17 +1501,12 @@
                 const code = airport.iata || airport.icao;
                 const city = airport.municipality || airport.name;
 
-                // Background
                 ctx.fillStyle = isRetro ? 'rgba(0,20,0,0.7)' : isNight ? 'rgba(0,15,30,0.7)' : 'rgba(255,255,255,0.7)';
                 ctx.fillRect(0, 0, 512, 128);
-
-                // Code text
                 ctx.font = 'bold 48px monospace';
                 ctx.fillStyle = isRetro ? '#00ff00' : isNight ? '#66bbff' : '#0066cc';
                 ctx.textAlign = 'center';
                 ctx.fillText(code, 256, 50);
-
-                // City text
                 ctx.font = '28px sans-serif';
                 ctx.fillStyle = isRetro ? '#00cc00' : isNight ? '#88ccff' : '#444444';
                 ctx.fillText(city.substring(0, 25), 256, 100);
@@ -1717,8 +1780,8 @@
                         loader.crossOrigin = 'anonymous';
                         loader.load(url, (tex) => resolve(tex), undefined, () => resolve(null));
                     } else {
-                        // Day: use ArcGIS satellite imagery
-                        const url = this.getSatelliteUrl(tileX, tileY, zoom);
+                        // Day: use light map tiles (matching base map)
+                        const url = getTileUrl(tileX, tileY, zoom);
                         const loader = new THREE.TextureLoader();
                         loader.crossOrigin = 'anonymous';
                         loader.load(url, (tex) => resolve(tex), undefined, () => resolve(null));
@@ -2000,7 +2063,7 @@
 
         // Trail settings (airloom-style)
         let trailEnabled = true;
-        let trailMaxLength = 200; // Max trail points
+        let trailMaxLength = 500; // Max trail points (slider goes up to 4000)
         let trailThickness = 2; // Line thickness (1-5)
         let trailColorMode = 'altitude'; // 'altitude' or 'speed'
 
@@ -2645,7 +2708,7 @@
         window.setTrailThickness = function(thickness) {
             trailThickness = parseInt(thickness) || 2;
 
-            // Update all trail materials
+            // Update all Line2 trail materials (linewidth is in world units / 1000)
             if (_airplanesArrayDirty) {
                 _airplanesArray = Array.from(airplanes.values());
                 _airplanesArrayDirty = false;
@@ -2653,7 +2716,7 @@
             for (let i = 0, len = _airplanesArray.length; i < len; i++) {
                 const plane = _airplanesArray[i];
                 if (plane.userData.trailMaterial) {
-                    plane.userData.trailMaterial.linewidth = trailThickness;
+                    plane.userData.trailMaterial.linewidth = trailThickness / 1000;
                     plane.userData.trailMaterial.needsUpdate = true;
                 }
             }
@@ -2670,7 +2733,7 @@
                 const plane = _airplanesArray[i];
                 plane.userData.trailPoints = [];
                 if (plane.userData.trail) {
-                    plane.userData.trail.geometry.setDrawRange(0, 0);
+                    plane.userData.trail.visible = false;
                 }
             }
             _needsRender = true;
@@ -2786,6 +2849,7 @@
             // Initialize airport search and load data asynchronously
             initAirportSearch();
             AirportDB.load();
+            _loadAirportFont();
 
             // Apply graphs panel state from settings
             if (showGraphs) {
@@ -2912,7 +2976,7 @@
         function createGroundPlaceholder() {
             const geometry = new THREE.PlaneGeometry(MAP_GROUND_SIZE, MAP_GROUND_SIZE);
             const material = new THREE.MeshBasicMaterial({
-                color: currentTheme === 'retro' ? 0x001100 : 0x1a4d1a,
+                color: currentTheme === 'retro' ? 0x001100 : currentTheme === 'night' ? 0x1a2a3a : 0xd4ddd4,
                 side: THREE.DoubleSide
             });
             const ground = new THREE.Mesh(geometry, material);
@@ -2930,10 +2994,10 @@
                 // Use CartoDB dark tiles for night theme
                 return `https://a.basemaps.cartocdn.com/dark_all/${zoom}/${x}/${y}.png`;
             } else {
-                // Standard OSM for day theme
-                const servers = ['a', 'b', 'c'];
-                const server = servers[Math.abs(x + y) % 3];
-                return `https://${server}.tile.openstreetmap.org/${zoom}/${x}/${y}.png`;
+                // CartoDB Positron (light/bright) for day theme
+                const servers = ['a', 'b', 'c', 'd'];
+                const server = servers[Math.abs(x + y) % 4];
+                return `https://${server}.basemaps.cartocdn.com/light_all/${zoom}/${x}/${y}@2x.png`;
             }
         }
 
@@ -3311,7 +3375,7 @@
                         // Create new tile using shared geometry
                         const geometry = _sharedGeometries.tile;
                         const material = new THREE.MeshBasicMaterial({
-                            color: currentTheme === 'retro' ? 0x001100 : 0x1a4d1a,
+                            color: currentTheme === 'retro' ? 0x001100 : currentTheme === 'night' ? 0x1a2a3a : 0xd4ddd4,
                             side: THREE.DoubleSide,
                             transparent: true,
                             opacity: 0 // Start transparent for fade-in
@@ -3888,32 +3952,30 @@
             return group;
         }
 
-        // Create trail line for a plane (airloom-style with smooth curves)
+        // Create trail line for a plane (Air Loom style: fat lines with altitude gradient)
         function createTrailForPlane(plane) {
             if (plane.userData.trail) return; // Already has trail
 
-            const isRetro = currentTheme === 'retro';
-            const color = isRetro ? 0x00ff00 : getAltitudeColor(plane.userData.altitude || 0);
+            const trailGeom = new THREE.LineGeometry();
+            // Initialize with minimal data (2 points at origin)
+            trailGeom.setPositions([0,0,0, 0,0,0]);
+            trailGeom.setColors([1,1,1, 1,1,1]);
 
-            // Use larger buffer for smooth trail with many points
-            const trailGeom = new THREE.BufferGeometry();
-            const maxPoints = 600; // Enough for smooth curves
-            const trailPositions = new Float32Array(maxPoints * 3);
-            trailGeom.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
-            trailGeom.setDrawRange(0, 0);
-
-            const trailMat = new THREE.LineBasicMaterial({
-                color: color,
+            const trailMat = new THREE.LineMaterial({
+                color: 0xffffff,
+                linewidth: trailThickness / 1000,
+                vertexColors: true,
                 transparent: true,
-                opacity: 0.8,
+                opacity: 0.85,
                 depthTest: true,
                 depthWrite: false,
-                linewidth: trailThickness
+                resolution: new THREE.Vector2(window.innerWidth, window.innerHeight)
             });
 
-            const trail = new THREE.Line(trailGeom, trailMat);
+            const trail = new THREE.Line2(trailGeom, trailMat);
+            trail.computeLineDistances();
             trail.frustumCulled = false;
-            trail.renderOrder = 999; // Render after most objects
+            trail.renderOrder = 999;
             trail.visible = trailEnabled;
             scene.add(trail);
 
@@ -4183,9 +4245,7 @@
                         plane.userData.noseMaterial.color.setHex(newColor);
                         plane.userData.noseMaterial.emissive.setHex(newColor);
                     }
-                    if (plane.userData.trailMaterial && currentTheme !== 'retro') {
-                        plane.userData.trailMaterial.color.setHex(newColor);
-                    }
+                    // Trail colors are now per-vertex (set in updateTrail), no single-color update needed
                     // Update glow color for day/night themes (retro stays green)
                     if (plane.userData.glowSprite && currentTheme !== 'retro') {
                         plane.userData.glowSprite.material.color.setHex(newColor);
@@ -4324,13 +4384,16 @@
             _needsRender = true;
         }
 
+        // Reusable color object for trail gradient calculation
+        const _trailColor = new THREE.Color();
+
         function updateTrail(plane) {
             const points = plane.userData.trailPoints;
 
             // Need at least 2 valid points to draw a trail
             if (points.length < 2) {
                 if (plane.userData.trail) {
-                    plane.userData.trail.geometry.setDrawRange(0, 0);
+                    plane.userData.trail.visible = false;
                 }
                 return;
             }
@@ -4343,66 +4406,68 @@
             const trail = plane.userData.trail;
             if (!trail) return;
 
-            const positions = trail.geometry.attributes.position.array;
+            // LOD: limit rendered points based on distance to camera (Air Loom style)
+            let renderMax = trailMaxLength;
+            if (camera) {
+                const dx = plane.position.x - camera.position.x;
+                const dz = plane.position.z - camera.position.z;
+                const distSq = dx * dx + dz * dz;
+                if (distSq > 490000) renderMax = Math.min(renderMax, 40);       // >700 units
+                else if (distSq > 90000) renderMax = Math.min(renderMax, 100);  // >300 units
+                else if (distSq > 40000) renderMax = Math.min(renderMax, 300);  // >200 units
+            }
 
             // Convert lat/lon trail points to world coordinates
-            const worldPoints = [];
-            const maxPoints = Math.min(points.length, trailMaxLength);
+            const maxPoints = Math.min(points.length, renderMax);
+            const posArray = [];
+            const colorArray = [];
+            const isRetro = currentTheme === 'retro';
 
             for (let i = 0; i < maxPoints; i++) {
                 const pt = points[points.length - maxPoints + i];
                 if (pt && pt.lat !== undefined && pt.lon !== undefined) {
                     const worldPos = latLonToXZ(pt.lat, pt.lon);
                     const alt = (pt.alt || 0) * altitudeScale;
-                    worldPoints.push(new THREE.Vector3(worldPos.x, alt, worldPos.z));
+                    posArray.push(worldPos.x, alt, worldPos.z);
+
+                    // Per-vertex altitude color (Air Loom style: blue low → red high)
+                    if (isRetro) {
+                        const g = Math.max(0.3, 1.0 - (pt.alt || 0) / 50000);
+                        colorArray.push(0, g, 0);
+                    } else {
+                        const normalizedAlt = Math.min((pt.alt || 0) / 45000, 1.0);
+                        const hue = (1 - normalizedAlt) * 0.667; // 240deg (blue) → 0deg (red)
+                        _trailColor.setHSL(hue, 1.0, 0.5);
+                        colorArray.push(_trailColor.r, _trailColor.g, _trailColor.b);
+                    }
                 }
             }
 
             // Add current plane position as the final point
             if (plane.userData.lat && plane.userData.lon) {
-                worldPoints.push(new THREE.Vector3(plane.position.x, plane.position.y, plane.position.z));
+                posArray.push(plane.position.x, plane.position.y, plane.position.z);
+                const curAlt = plane.userData.altitude || 0;
+                if (isRetro) {
+                    const g = Math.max(0.3, 1.0 - curAlt / 50000);
+                    colorArray.push(0, g, 0);
+                } else {
+                    const normalizedAlt = Math.min(curAlt / 45000, 1.0);
+                    const hue = (1 - normalizedAlt) * 0.667;
+                    _trailColor.setHSL(hue, 1.0, 0.5);
+                    colorArray.push(_trailColor.r, _trailColor.g, _trailColor.b);
+                }
             }
 
-            if (worldPoints.length < 2) {
-                trail.geometry.setDrawRange(0, 0);
+            if (posArray.length < 6) { // Less than 2 points (6 floats)
+                trail.visible = false;
                 return;
             }
 
-            // Use Catmull-Rom curve for smooth interpolation (airloom-style)
-            let smoothPoints;
-            if (worldPoints.length >= 3) {
-                try {
-                    const curve = new THREE.CatmullRomCurve3(worldPoints, false, 'centripetal', 0.5);
-                    // Get more points for smoother curve (2 per original point)
-                    const numSmoothPoints = Math.min(worldPoints.length * 2, 500);
-                    smoothPoints = curve.getPoints(numSmoothPoints);
-                } catch (e) {
-                    // Fallback to original points if curve fails
-                    smoothPoints = worldPoints;
-                }
-            } else {
-                smoothPoints = worldPoints;
-            }
-
-            // Fill position buffer with smooth points
-            const validCount = Math.min(smoothPoints.length, 600);
-            for (let i = 0; i < validCount; i++) {
-                const pt = smoothPoints[i];
-                const idx = i * 3;
-                positions[idx] = pt.x;
-                positions[idx + 1] = pt.y;
-                positions[idx + 2] = pt.z;
-            }
-
-            // Update trail color based on current altitude
-            if (plane.userData.trailMaterial && trailColorMode === 'altitude') {
-                const isRetro = currentTheme === 'retro';
-                const newColor = isRetro ? 0x00ff00 : getAltitudeColor(plane.userData.altitude || 0);
-                plane.userData.trailMaterial.color.setHex(newColor);
-            }
-
-            trail.geometry.attributes.position.needsUpdate = true;
-            trail.geometry.setDrawRange(0, validCount);
+            // Update Line2 geometry with positions and colors
+            trail.geometry.setPositions(posArray);
+            trail.geometry.setColors(colorArray);
+            trail.computeLineDistances();
+            trail.visible = trailEnabled;
             _needsRender = true;
 
             // Save trail to DB periodically (every 10 seconds)
@@ -4734,6 +4799,13 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            // Update Line2 trail material resolution
+            const res = new THREE.Vector2(window.innerWidth, window.innerHeight);
+            for (const [hex, plane] of airplanes) {
+                if (plane.userData.trailMaterial && plane.userData.trailMaterial.resolution) {
+                    plane.userData.trailMaterial.resolution.copy(res);
+                }
+            }
             _needsRender = true;
         }
 
