@@ -30,15 +30,15 @@ Real-time 3D flight visualization that works both as a personal ADS-B receiver d
 
 ### Active
 
-- [ ] Data source abstraction layer with mode switch (local dump1090 / global APIs)
-- [ ] Global data sourcing from multiple APIs with fallback (airplanes.live, ADS-B Exchange, adsb.lol)
-- [ ] Airport locator with search by name, IATA/ICAO code, and autocomplete
-- [ ] Browse nearby airports list
-- [ ] 3D text labels on ground for major airports (city/airport name)
-- [ ] 3D terrain elevation with satellite imagery
-- [ ] Airspace volume rendering (Class B/C/D boundaries)
-- [ ] Both modes share all new features (terrain, labels, airspace)
-- [ ] Camera fly-to animation when selecting airport from search
+- [ ] DATA-01: Data source abstraction layer with mode switch (local dump1090 / global APIs)
+- [ ] DATA-02: Global data sourcing from multiple APIs with fallback (airplanes.live, ADS-B Exchange, adsb.lol)
+- [ ] ARPT-01: Airport locator with search by name, IATA/ICAO code, and autocomplete
+- [ ] ARPT-02: Browse nearby airports list
+- [ ] ARPT-03: 3D text labels on ground for major airports (city/airport name)
+- [ ] TERR-01: 3D terrain elevation with satellite imagery
+- [ ] ASPC-01: Airspace volume rendering (Class B/C/D boundaries)
+- [ ] CORE-01: Both modes share all new features (terrain, labels, airspace)
+- [ ] ARPT-04: Camera fly-to animation when selecting airport from search
 
 ### Out of Scope
 
@@ -47,6 +47,20 @@ Real-time 3D flight visualization that works both as a personal ADS-B receiver d
 - Mobile native app — web-first, works in mobile browser
 - User accounts or authentication — client-side only
 - Real-time chat or social features — this is a visualization tool
+
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| DATA-01 | Phase 1: Data Source Abstraction | Pending |
+| DATA-02 | Phase 1: Data Source Abstraction | Pending |
+| CORE-01 | Phase 1: Data Source Abstraction | Pending |
+| ARPT-01 | Phase 2: Airport Search and Labels | Pending |
+| ARPT-02 | Phase 2: Airport Search and Labels | Pending |
+| ARPT-03 | Phase 2: Airport Search and Labels | Pending |
+| ARPT-04 | Phase 2: Airport Search and Labels | Pending |
+| TERR-01 | Phase 3: Terrain Elevation | Pending |
+| ASPC-01 | Phase 4: Airspace Volumes | Pending |
 
 ## Context
 
@@ -72,6 +86,7 @@ Airport data source: OurAirports dataset (open data, includes coordinates, IATA/
 | Multiple global APIs with fallback | No single free API guarantees uptime; fallback ensures reliability | — Pending |
 | Major airports only for 3D labels | Showing all airports would be visually cluttered and hurt performance | — Pending |
 | Terrain elevation for both modes | Local mode users also benefit from geographic context | — Pending |
+| 4-phase roadmap: Data -> Airports -> Terrain -> Airspace | Follows dependency chain; each phase delivers independently verifiable capability | — Active |
 
 ---
-*Last updated: 2026-02-07 after initialization*
+*Last updated: 2026-02-07 after roadmap creation*
