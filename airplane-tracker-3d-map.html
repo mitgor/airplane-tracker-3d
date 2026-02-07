@@ -1109,9 +1109,7 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineGeometry.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineMaterial.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/Line2.js"></script>
-    <!-- 3D text for airport labels -->
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FontLoader.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/geometries/TextGeometry.js"></script>
+    <!-- TextGeometry and FontLoader are in THREE.js r128 core -->
     <script>
         // Configuration
         const DATA_URL = '/dump1090/data/aircraft.json';
@@ -1251,8 +1249,8 @@
             if (!_airportFont) return null;
             const geo = new THREE.TextGeometry(code, {
                 font: _airportFont,
-                size: 2.5,
-                height: 0.4,
+                size: 5,
+                height: 0.8,
                 curveSegments: 3,
                 bevelEnabled: false
             });
@@ -1452,13 +1450,13 @@
                     // Try 3D text first, fall back to sprite
                     const geo = _getAirportTextGeo(code);
                     if (geo) {
-                        // 3D extruded text (Air Loom style)
+                        // 3D extruded text standing vertically on ground (Air Loom style)
                         const mat = new THREE.MeshBasicMaterial({ color: labelColor });
                         const mesh = new THREE.Mesh(geo, mat);
-                        mesh.rotation.x = -Math.PI / 2; // Lay flat on ground
-                        mesh.position.set(item.pos.x, 0.5, item.pos.z);
+                        // Stand upright on ground (text faces outward in XZ plane)
+                        mesh.position.set(item.pos.x, 0.3, item.pos.z);
 
-                        const baseScale = a.type === 'large_airport' ? 2.5 : 1.6;
+                        const baseScale = a.type === 'large_airport' ? 3.0 : 2.0;
                         const distScale = Math.max(0.5, 1 - item.dist / 600);
                         const s = baseScale * distScale;
                         mesh.scale.set(s, s, s);
@@ -2708,7 +2706,7 @@
         window.setTrailThickness = function(thickness) {
             trailThickness = parseInt(thickness) || 2;
 
-            // Update all Line2 trail materials (linewidth is in world units / 1000)
+            // Update all Line2 trail materials (linewidth is in pixels for r128)
             if (_airplanesArrayDirty) {
                 _airplanesArray = Array.from(airplanes.values());
                 _airplanesArrayDirty = false;
@@ -2716,7 +2714,7 @@
             for (let i = 0, len = _airplanesArray.length; i < len; i++) {
                 const plane = _airplanesArray[i];
                 if (plane.userData.trailMaterial) {
-                    plane.userData.trailMaterial.linewidth = trailThickness / 1000;
+                    plane.userData.trailMaterial.linewidth = trailThickness;
                     plane.userData.trailMaterial.needsUpdate = true;
                 }
             }
@@ -3963,7 +3961,7 @@
 
             const trailMat = new THREE.LineMaterial({
                 color: 0xffffff,
-                linewidth: trailThickness / 1000,
+                linewidth: trailThickness,
                 vertexColors: true,
                 transparent: true,
                 opacity: 0.85,
@@ -4868,6 +4866,8 @@
             if (!_isTabVisible) return;
 
             const now = Date.now();
+            const _animDelta = (now - (window._lastAnimTime || now)) / 1000; // seconds
+            window._lastAnimTime = now;
             time += 0.016;
 
             // Update map transitions
@@ -4933,15 +4933,16 @@
                     anyLightChange = true;
                 }
 
-                // Animate rotors and propellers
+                // Animate rotors and propellers (0.7 rotations/second)
                 if (plane.userData.category === 'helicopter' || plane.userData.category === 'small') {
+                    const spinAmount = _animDelta * 0.7 * 2 * Math.PI; // 0.7 rps
                     plane.children.forEach(child => {
                         if (child.userData && child.userData.isRotor) {
-                            child.rotation.y += 0.5; // Fast rotation for helicopter rotor
+                            child.rotation.y += spinAmount;
                             anyLightChange = true;
                         }
                         if (child.userData && child.userData.isProp) {
-                            child.rotation.z += 0.4; // Propeller rotation
+                            child.rotation.z += spinAmount;
                             anyLightChange = true;
                         }
                     });
