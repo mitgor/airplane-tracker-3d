@@ -1038,6 +1038,7 @@
             <button onclick="toggleLabels()" id="btn-labels">Labels</button>
             <button onclick="toggleGraphs()" id="btn-graphs">Graphs</button>
             <button onclick="toggleStats()" id="btn-stats">Stats</button>
+            <button onclick="toggleTerrain()" id="btn-terrain" class="active">Terrain</button>
         </div>
 
         <div class="control-group trail-control">
@@ -1542,6 +1543,247 @@
             });
         }
 
+        // ===========================================
+        // TERRAIN ELEVATION
+        // ===========================================
+        const TERRAIN_SEGMENTS = 32; // 32x32 grid per tile
+        const TERRAIN_SCALE_FACTOR = 0.008; // Elevation to scene units multiplier
+        const MAX_TERRAIN_TILES = 100;
+        let terrainEnabled = true;
+        let terrainTiles = [];  // Active terrain meshes in scene
+        let terrainCache = new Map(); // cacheKey -> {mesh, elevations}
+        let terrainLoading = new Set(); // Currently loading tile keys
+
+        const TerrainSystem = {
+            getSatelliteUrl(tileX, tileY, zoom) {
+                // ArcGIS World Imagery - note y/x order
+                return `https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/tile/${zoom}/${tileY}/${tileX}`;
+            },
+
+            getElevationUrl(tileX, tileY, zoom) {
+                // AWS S3 Terrarium tiles (free, no auth)
+                return `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${zoom}/${tileX}/${tileY}.png`;
+            },
+
+            async loadTerrainForTile(tileX, tileY, zoom, posX, posZ, tileSize) {
+                const cacheKey = `terrain-${zoom}-${tileX}-${tileY}`;
+                if (terrainCache.has(cacheKey)) {
+                    const cached = terrainCache.get(cacheKey);
+                    if (!cached.mesh.parent) {
+                        cached.mesh.position.set(posX, 0, posZ);
+                        scene.add(cached.mesh);
+                    }
+                    return cached;
+                }
+                if (terrainLoading.has(cacheKey)) return null;
+                terrainLoading.add(cacheKey);
+
+                try {
+                    // Load elevation tile
+                    const elevations = await this._loadElevationTile(tileX, tileY, zoom);
+                    if (!elevations) {
+                        terrainLoading.delete(cacheKey);
+                        return null;
+                    }
+
+                    // Create terrain mesh with displaced vertices
+                    const geometry = new THREE.PlaneGeometry(tileSize, tileSize, TERRAIN_SEGMENTS, TERRAIN_SEGMENTS);
+                    const positions = geometry.attributes.position.array;
+
+                    for (let iy = 0; iy <= TERRAIN_SEGMENTS; iy++) {
+                        for (let ix = 0; ix <= TERRAIN_SEGMENTS; ix++) {
+                            const vertIdx = (iy * (TERRAIN_SEGMENTS + 1) + ix) * 3;
+                            const ex = Math.floor(ix / TERRAIN_SEGMENTS * 255);
+                            const ey = Math.floor(iy / TERRAIN_SEGMENTS * 255);
+                            const elevation = elevations[ey * 256 + ex];
+                            // PlaneGeometry default is XY plane, Z is up
+                            // We'll rotate it to XZ, so set Z for displacement
+                            positions[vertIdx + 2] = Math.max(0, elevation) * TERRAIN_SCALE_FACTOR;
+                        }
+                    }
+                    geometry.computeVertexNormals();
+
+                    // Load satellite/map texture for terrain surface
+                    const texture = await this._loadTerrainTexture(tileX, tileY, zoom);
+                    const isRetro = currentTheme === 'retro';
+                    const isNight = currentTheme === 'night';
+
+                    let material;
+                    if (texture) {
+                        material = new THREE.MeshLambertMaterial({
+                            map: texture,
+                            side: THREE.DoubleSide
+                        });
+                        if (isNight) {
+                            material.color.setHex(0x8888aa); // Dim satellite for night
+                        }
+                    } else {
+                        material = new THREE.MeshLambertMaterial({
+                            color: isRetro ? 0x003300 : isNight ? 0x1a2a3a : 0x4a8a4a,
+                            wireframe: isRetro,
+                            side: THREE.DoubleSide
+                        });
+                    }
+
+                    const mesh = new THREE.Mesh(geometry, material);
+                    mesh.rotation.x = -Math.PI / 2;
+                    mesh.position.set(posX, 0, posZ);
+                    mesh.userData.terrainKey = cacheKey;
+                    mesh.renderOrder = -1;
+
+                    scene.add(mesh);
+
+                    const entry = { mesh, elevations };
+                    terrainCache.set(cacheKey, entry);
+                    terrainTiles.push(mesh);
+                    terrainLoading.delete(cacheKey);
+
+                    // Enforce cache limit
+                    if (terrainCache.size > MAX_TERRAIN_TILES) {
+                        const keysToRemove = [];
+                        let count = 0;
+                        for (const k of terrainCache.keys()) {
+                            if (count++ < 20) keysToRemove.push(k);
+                            else break;
+                        }
+                        for (const k of keysToRemove) {
+                            const old = terrainCache.get(k);
+                            if (old && old.mesh) {
+                                scene.remove(old.mesh);
+                                old.mesh.geometry.dispose();
+                                if (old.mesh.material.map) old.mesh.material.map.dispose();
+                                old.mesh.material.dispose();
+                            }
+                            terrainCache.delete(k);
+                        }
+                    }
+
+                    _needsRender = true;
+                    return entry;
+                } catch (e) {
+                    terrainLoading.delete(cacheKey);
+                    return null;
+                }
+            },
+
+            _loadElevationTile(tileX, tileY, zoom) {
+                return new Promise((resolve) => {
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    img.onload = () => {
+                        try {
+                            const canvas = document.createElement('canvas');
+                            canvas.width = canvas.height = 256;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0);
+                            const imageData = ctx.getImageData(0, 0, 256, 256);
+                            const elevations = new Float32Array(256 * 256);
+                            for (let i = 0; i < imageData.data.length; i += 4) {
+                                const r = imageData.data[i];
+                                const g = imageData.data[i + 1];
+                                const b = imageData.data[i + 2];
+                                elevations[i / 4] = (r * 256 + g + b / 256) - 32768;
+                            }
+                            resolve(elevations);
+                        } catch (e) {
+                            // CORS or canvas tainted error
+                            resolve(null);
+                        }
+                    };
+                    img.onerror = () => resolve(null);
+                    img.src = this.getElevationUrl(tileX, tileY, zoom);
+                });
+            },
+
+            _loadTerrainTexture(tileX, tileY, zoom) {
+                return new Promise((resolve) => {
+                    const isRetro = currentTheme === 'retro';
+                    if (isRetro) {
+                        // For retro theme, use the existing green-tinted map tiles
+                        const url = getTileUrl(tileX, tileY, zoom);
+                        const img = new Image();
+                        img.crossOrigin = 'anonymous';
+                        img.onload = () => {
+                            const invertedCanvas = invertToGreen(img);
+                            resolve(new THREE.CanvasTexture(invertedCanvas));
+                        };
+                        img.onerror = () => resolve(null);
+                        img.src = url;
+                    } else if (currentTheme === 'night') {
+                        // Night: use CartoDB dark tiles
+                        const url = getTileUrl(tileX, tileY, zoom);
+                        const loader = new THREE.TextureLoader();
+                        loader.crossOrigin = 'anonymous';
+                        loader.load(url, (tex) => resolve(tex), undefined, () => resolve(null));
+                    } else {
+                        // Day: use ArcGIS satellite imagery
+                        const url = this.getSatelliteUrl(tileX, tileY, zoom);
+                        const loader = new THREE.TextureLoader();
+                        loader.crossOrigin = 'anonymous';
+                        loader.load(url, (tex) => resolve(tex), undefined, () => resolve(null));
+                    }
+                });
+            },
+
+            loadTerrainTiles() {
+                if (!terrainEnabled || !centerInitialized) return;
+
+                const centerTile = latLonToTile(centerLat, centerLon, currentZoom);
+                const halfTiles = Math.floor(TILES_PER_SIDE / 2);
+                const tileSize = MAP_GROUND_SIZE / TILES_PER_SIDE;
+
+                // Remove terrain meshes not in current view
+                const newTerrain = [];
+                for (let i = 0; i < terrainTiles.length; i++) {
+                    const mesh = terrainTiles[i];
+                    // Check if tile is still in view by position
+                    const dx = Math.abs(mesh.position.x);
+                    const dz = Math.abs(mesh.position.z);
+                    if (dx > MAP_GROUND_SIZE * 0.6 || dz > MAP_GROUND_SIZE * 0.6) {
+                        scene.remove(mesh);
+                    } else {
+                        newTerrain.push(mesh);
+                    }
+                }
+                terrainTiles = newTerrain;
+
+                // Load terrain for visible tiles
+                for (let dy = 0; dy < TILES_PER_SIDE; dy++) {
+                    for (let dx = 0; dx < TILES_PER_SIDE; dx++) {
+                        const tileX = centerTile.x - halfTiles + dx;
+                        const tileY = centerTile.y - halfTiles + dy;
+                        const posX = (dx - halfTiles + 0.5) * tileSize;
+                        const posZ = (dy - halfTiles + 0.5) * tileSize;
+                        this.loadTerrainForTile(tileX, tileY, currentZoom, posX, posZ, tileSize);
+                    }
+                }
+            },
+
+            getElevationAt(lat, lon) {
+                // Get elevation at a specific lat/lon from cached terrain data
+                if (!window.mapBounds) return 0;
+                const bounds = window.mapBounds;
+                const normX = (lon - bounds.west) / (bounds.east - bounds.west);
+                const normY = (lat - bounds.north) / (bounds.south - bounds.north);
+                if (normX < 0 || normX > 1 || normY < 0 || normY > 1) return 0;
+
+                const centerTile = latLonToTile(centerLat, centerLon, currentZoom);
+                const halfTiles = Math.floor(TILES_PER_SIDE / 2);
+                const tileX = Math.floor(normX * TILES_PER_SIDE) + centerTile.x - halfTiles;
+                const tileY = Math.floor(normY * TILES_PER_SIDE) + centerTile.y - halfTiles;
+                const cacheKey = `terrain-${currentZoom}-${tileX}-${tileY}`;
+                const cached = terrainCache.get(cacheKey);
+                if (!cached || !cached.elevations) return 0;
+
+                // Sample elevation
+                const localX = (normX * TILES_PER_SIDE) % 1;
+                const localY = (normY * TILES_PER_SIDE) % 1;
+                const ex = Math.floor(localX * 255);
+                const ey = Math.floor(localY * 255);
+                return (cached.elevations[ey * 256 + ex] || 0) * TERRAIN_SCALE_FACTOR;
+            }
+        };
+
         // Cookie helper functions
         function setCookie(name, value, days = 365) {
             const expires = new Date(Date.now() + days * 864e5).toUTCString();
@@ -1573,7 +1815,8 @@
                 showGraphs: showGraphs,
                 graphsTimePeriod: graphsTimePeriod,
                 altitudeScaleValue: Math.round(altitudeScale / BASE_ALT_SCALE),
-                dataMode: DataSource.mode
+                dataMode: DataSource.mode,
+                terrainEnabled: terrainEnabled
             };
             setCookie('flightTrackerSettings', settings);
         }
@@ -1599,6 +1842,7 @@
                     altitudeScale = newScale * BASE_ALT_SCALE;
                 }
                 if (settings.dataMode) DataSource.mode = settings.dataMode;
+                if (settings.terrainEnabled !== undefined) terrainEnabled = settings.terrainEnabled;
             }
         }
 
@@ -2984,6 +3228,11 @@
             // Update airport labels when map changes
             if (AirportDB.loaded) {
                 AirportDB.updateLabels();
+            }
+
+            // Load terrain tiles alongside map tiles
+            if (terrainEnabled) {
+                TerrainSystem.loadTerrainTiles();
             }
         }
 
@@ -4768,6 +5017,21 @@
         // ===========================================
         // STATS PANEL FUNCTIONS (integrated in info-panel)
         // ===========================================
+        window.toggleTerrain = function() {
+            terrainEnabled = !terrainEnabled;
+            document.getElementById('btn-terrain').classList.toggle('active', terrainEnabled);
+            if (terrainEnabled) {
+                TerrainSystem.loadTerrainTiles();
+            } else {
+                // Remove all terrain meshes
+                for (let i = 0; i < terrainTiles.length; i++) {
+                    scene.remove(terrainTiles[i]);
+                }
+                terrainTiles = [];
+            }
+            _needsRender = true;
+        };
+
         window.toggleStats = function() {
             showStats = !showStats;
             const section = document.getElementById('stats-section');
