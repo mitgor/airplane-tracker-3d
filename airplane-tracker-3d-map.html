@@ -49,6 +49,46 @@
             color: #66bbff;
             border: 1px solid rgba(0, 120, 255, 0.5);
         }
+        /* Airport Search */
+        #airport-search-panel {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+            width: 320px;
+        }
+        #airport-search-input {
+            width: 100%;
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid rgba(100,100,100,0.4);
+            font-size: 14px;
+            outline: none;
+            backdrop-filter: blur(10px);
+        }
+        .theme-day #airport-search-input { background: rgba(255,255,255,0.9); color: #333; }
+        .theme-night #airport-search-input { background: rgba(0,20,40,0.9); color: #fff; border-color: rgba(0,150,255,0.3); }
+        .theme-retro #airport-search-input { background: rgba(0,20,0,0.9); color: #00ff00; border-color: #00ff00; font-family: monospace; }
+        #airport-results {
+            display: none;
+            max-height: 300px;
+            overflow-y: auto;
+            border-radius: 0 0 8px 8px;
+            margin-top: 2px;
+        }
+        .theme-day #airport-results { background: rgba(255,255,255,0.95); }
+        .theme-night #airport-results { background: rgba(0,20,40,0.95); border: 1px solid rgba(0,150,255,0.3); }
+        .theme-retro #airport-results { background: rgba(0,20,0,0.95); border: 1px solid #00ff00; }
+        .airport-result-item {
+            padding: 8px 14px;
+            cursor: pointer;
+            border-bottom: 1px solid rgba(100,100,100,0.2);
+            font-size: 13px;
+        }
+        .airport-result-item:hover { background: rgba(100,150,255,0.15); }
+        .airport-result-item .airport-code { font-weight: bold; margin-right: 6px; }
+        .airport-result-item .airport-dist { float: right; opacity: 0.6; font-size: 0.85em; }
         #info-panel {
             position: absolute;
             top: 20px;
@@ -1021,6 +1061,12 @@
         </div>
     </div>
 
+    <!-- Airport Search -->
+    <div id="airport-search-panel">
+        <input type="text" id="airport-search-input" placeholder="Search airports (name, IATA, ICAO)..." autocomplete="off">
+        <div id="airport-results"></div>
+    </div>
+
     <!-- Keyboard Help Overlay -->
     <div id="keyboard-help">
         <div id="keyboard-help-content">
@@ -1164,6 +1210,337 @@
                 saveSettings();
             }
         };
+
+        // ===========================================
+        // AIRPORT DATABASE & SEARCH
+        // ===========================================
+        const AIRPORTS_CSV_URL = 'https://davidmegginson.github.io/ourairports-data/airports.csv';
+        const AIRPORT_LABEL_DISTANCE_LARGE = 500;  // Show large airports within this distance
+        const AIRPORT_LABEL_DISTANCE_MEDIUM = 250; // Show medium airports within this distance
+        const MAX_VISIBLE_AIRPORT_LABELS = 40;
+
+        const AirportDB = {
+            airports: [],
+            byICAO: new Map(),
+            byIATA: new Map(),
+            loaded: false,
+            loading: false,
+            airportLabels: [],       // THREE.Sprite objects in scene
+            airportLabelPool: [],    // Recycled sprite objects
+
+            async load() {
+                if (this.loaded || this.loading) return;
+                this.loading = true;
+                try {
+                    const response = await fetch(AIRPORTS_CSV_URL);
+                    const text = await response.text();
+                    this.parseCSV(text);
+                    this.loaded = true;
+                    console.log(`Airport DB loaded: ${this.airports.length} airports`);
+                    this.updateLabels();
+                } catch (e) {
+                    console.warn('Failed to load airport data:', e);
+                } finally {
+                    this.loading = false;
+                }
+            },
+
+            parseCSV(text) {
+                const lines = text.split('\n');
+                const header = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
+                const idxType = header.indexOf('type');
+                const idxName = header.indexOf('name');
+                const idxLat = header.indexOf('latitude_deg');
+                const idxLon = header.indexOf('longitude_deg');
+                const idxElev = header.indexOf('elevation_ft');
+                const idxMuni = header.indexOf('municipality');
+                const idxICAO = header.indexOf('ident');
+                const idxIATA = header.indexOf('iata_code');
+                const idxCountry = header.indexOf('iso_country');
+
+                for (let i = 1; i < lines.length; i++) {
+                    const fields = this._parseCSVLine(lines[i]);
+                    if (fields.length < header.length) continue;
+                    const type = fields[idxType];
+                    // Only keep large and medium airports
+                    if (type !== 'large_airport' && type !== 'medium_airport') continue;
+                    const lat = parseFloat(fields[idxLat]);
+                    const lon = parseFloat(fields[idxLon]);
+                    if (isNaN(lat) || isNaN(lon)) continue;
+
+                    const airport = {
+                        type: type,
+                        name: fields[idxName],
+                        lat: lat,
+                        lon: lon,
+                        elevation: parseInt(fields[idxElev]) || 0,
+                        municipality: fields[idxMuni] || '',
+                        icao: fields[idxICAO] || '',
+                        iata: fields[idxIATA] || '',
+                        country: fields[idxCountry] || ''
+                    };
+
+                    this.airports.push(airport);
+                    if (airport.icao) this.byICAO.set(airport.icao.toUpperCase(), airport);
+                    if (airport.iata) this.byIATA.set(airport.iata.toUpperCase(), airport);
+                }
+            },
+
+            _parseCSVLine(line) {
+                const fields = [];
+                let current = '';
+                let inQuotes = false;
+                for (let i = 0; i < line.length; i++) {
+                    const ch = line[i];
+                    if (ch === '"') {
+                        inQuotes = !inQuotes;
+                    } else if (ch === ',' && !inQuotes) {
+                        fields.push(current.trim());
+                        current = '';
+                    } else {
+                        current += ch;
+                    }
+                }
+                fields.push(current.trim());
+                return fields;
+            },
+
+            search(query, limit = 20) {
+                if (!this.loaded) return [];
+                const q = query.toUpperCase().trim();
+                if (!q) return [];
+
+                const results = [];
+                // Exact IATA/ICAO match first
+                if (q.length <= 4) {
+                    const exact = this.byIATA.get(q) || this.byICAO.get(q);
+                    if (exact) results.push(exact);
+                }
+                // Fuzzy name/city search
+                for (let i = 0; i < this.airports.length && results.length < limit; i++) {
+                    const a = this.airports[i];
+                    if (results.includes(a)) continue;
+                    if (a.name.toUpperCase().includes(q) ||
+                        a.municipality.toUpperCase().includes(q) ||
+                        a.iata.toUpperCase().includes(q) ||
+                        a.icao.toUpperCase().includes(q)) {
+                        results.push(a);
+                    }
+                }
+                return results;
+            },
+
+            nearby(lat, lon, limit = 20) {
+                if (!this.loaded) return [];
+                return this.airports
+                    .map(a => {
+                        const dlat = a.lat - lat;
+                        const dlon = (a.lon - lon) * Math.cos(lat * Math.PI / 180);
+                        return { ...a, dist: Math.sqrt(dlat * dlat + dlon * dlon) * 111.32 };
+                    })
+                    .sort((a, b) => a.dist - b.dist)
+                    .slice(0, limit);
+            },
+
+            flyTo(airport) {
+                if (!airport) return;
+                // Determine zoom level based on airport type
+                const targetZoom = airport.type === 'large_airport' ? 10 : 11;
+                startMapTransition(airport.lat, airport.lon, targetZoom);
+            },
+
+            updateLabels() {
+                if (!this.loaded || !scene || !window.mapBounds) return;
+
+                const bounds = window.mapBounds;
+                const camDist = cameraDistance || 150;
+
+                // Find airports within current view bounds (with padding)
+                const padLat = (bounds.north - bounds.south) * 0.1;
+                const padLon = (bounds.east - bounds.west) * 0.1;
+
+                const visible = [];
+                for (let i = 0; i < this.airports.length; i++) {
+                    const a = this.airports[i];
+                    if (a.lat < bounds.south - padLat || a.lat > bounds.north + padLat) continue;
+                    if (a.lon < bounds.west - padLon || a.lon > bounds.east + padLon) continue;
+
+                    // Distance-based filtering
+                    const maxDist = a.type === 'large_airport' ? AIRPORT_LABEL_DISTANCE_LARGE : AIRPORT_LABEL_DISTANCE_MEDIUM;
+                    const pos = latLonToXZ(a.lat, a.lon);
+                    const dx = pos.x - (camera ? camera.position.x : 0);
+                    const dz = pos.z - (camera ? camera.position.z : 0);
+                    const dist = Math.sqrt(dx * dx + dz * dz);
+                    if (dist > maxDist) continue;
+
+                    visible.push({ airport: a, pos: pos, dist: dist });
+                }
+
+                // Sort by size then distance, limit count
+                visible.sort((a, b) => {
+                    if (a.airport.type !== b.airport.type) {
+                        return a.airport.type === 'large_airport' ? -1 : 1;
+                    }
+                    return a.dist - b.dist;
+                });
+                const toShow = visible.slice(0, MAX_VISIBLE_AIRPORT_LABELS);
+
+                // Remove old labels
+                for (let i = 0; i < this.airportLabels.length; i++) {
+                    scene.remove(this.airportLabels[i]);
+                    this.airportLabelPool.push(this.airportLabels[i]);
+                }
+                this.airportLabels = [];
+
+                // Create/reuse labels for visible airports
+                for (let i = 0; i < toShow.length; i++) {
+                    const item = toShow[i];
+                    const a = item.airport;
+                    const label = this._getOrCreateLabel(a);
+                    label.position.set(item.pos.x, 0.5, item.pos.z);
+
+                    // Scale based on airport type and distance
+                    const baseScale = a.type === 'large_airport' ? 18 : 12;
+                    const distScale = Math.max(0.4, 1 - item.dist / 500);
+                    label.scale.set(baseScale * distScale, baseScale * distScale * 0.3, 1);
+
+                    scene.add(label);
+                    this.airportLabels.push(label);
+                }
+                _needsRender = true;
+            },
+
+            _getOrCreateLabel(airport) {
+                let sprite;
+                if (this.airportLabelPool.length > 0) {
+                    sprite = this.airportLabelPool.pop();
+                } else {
+                    const spriteMat = new THREE.SpriteMaterial({ depthTest: false, transparent: true });
+                    sprite = new THREE.Sprite(spriteMat);
+                }
+
+                // Render label text to canvas
+                const canvas = document.createElement('canvas');
+                canvas.width = 512;
+                canvas.height = 128;
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, 512, 128);
+
+                const isRetro = currentTheme === 'retro';
+                const isNight = currentTheme === 'night';
+                const code = airport.iata || airport.icao;
+                const city = airport.municipality || airport.name;
+
+                // Background
+                ctx.fillStyle = isRetro ? 'rgba(0,20,0,0.7)' : isNight ? 'rgba(0,15,30,0.7)' : 'rgba(255,255,255,0.7)';
+                ctx.fillRect(0, 0, 512, 128);
+
+                // Code text
+                ctx.font = 'bold 48px monospace';
+                ctx.fillStyle = isRetro ? '#00ff00' : isNight ? '#66bbff' : '#0066cc';
+                ctx.textAlign = 'center';
+                ctx.fillText(code, 256, 50);
+
+                // City text
+                ctx.font = '28px sans-serif';
+                ctx.fillStyle = isRetro ? '#00cc00' : isNight ? '#88ccff' : '#444444';
+                ctx.fillText(city.substring(0, 25), 256, 100);
+
+                const texture = new THREE.CanvasTexture(canvas);
+                sprite.material.map = texture;
+                sprite.material.needsUpdate = true;
+                sprite.renderOrder = 1;
+                return sprite;
+            }
+        };
+
+        // Airport search UI handlers
+        function initAirportSearch() {
+            const input = document.getElementById('airport-search-input');
+            const results = document.getElementById('airport-results');
+            if (!input || !results) return;
+
+            let searchTimeout = null;
+
+            input.addEventListener('input', () => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {
+                    const query = input.value.trim();
+                    if (query.length < 2) {
+                        results.style.display = 'none';
+                        return;
+                    }
+
+                    let items;
+                    if (query === '') {
+                        items = AirportDB.nearby(centerLat, centerLon, 15);
+                    } else {
+                        items = AirportDB.search(query, 15);
+                    }
+
+                    if (items.length === 0) {
+                        results.innerHTML = '<div class="airport-result-item" style="opacity:0.5">No airports found</div>';
+                        results.style.display = 'block';
+                        return;
+                    }
+
+                    results.innerHTML = items.map(a => {
+                        const code = a.iata ? `${a.iata}/${a.icao}` : a.icao;
+                        const distStr = a.dist !== undefined ? `${Math.round(a.dist)} km` : '';
+                        return `<div class="airport-result-item" data-icao="${a.icao}" data-lat="${a.lat}" data-lon="${a.lon}" data-type="${a.type}">
+                            <span class="airport-code">${code}</span>
+                            ${a.municipality ? a.municipality + ' - ' : ''}${a.name}
+                            ${distStr ? `<span class="airport-dist">${distStr}</span>` : ''}
+                        </div>`;
+                    }).join('');
+                    results.style.display = 'block';
+                }, 150);
+            });
+
+            input.addEventListener('focus', () => {
+                if (input.value.trim().length >= 2) {
+                    results.style.display = 'block';
+                }
+            });
+
+            results.addEventListener('click', (e) => {
+                const item = e.target.closest('.airport-result-item');
+                if (!item) return;
+                const lat = parseFloat(item.dataset.lat);
+                const lon = parseFloat(item.dataset.lon);
+                const type = item.dataset.type;
+                if (isNaN(lat) || isNaN(lon)) return;
+                AirportDB.flyTo({ lat, lon, type });
+                input.value = '';
+                results.style.display = 'none';
+            });
+
+            // Close results when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('#airport-search-panel')) {
+                    results.style.display = 'none';
+                }
+            });
+
+            // Show nearby airports when input is focused and empty
+            input.addEventListener('focus', () => {
+                if (input.value.trim() === '' && AirportDB.loaded) {
+                    const nearby = AirportDB.nearby(centerLat, centerLon, 15);
+                    if (nearby.length > 0) {
+                        results.innerHTML = '<div style="padding:6px 14px;font-size:11px;opacity:0.5;font-weight:bold">NEARBY AIRPORTS</div>' +
+                            nearby.map(a => {
+                                const code = a.iata ? `${a.iata}/${a.icao}` : a.icao;
+                                return `<div class="airport-result-item" data-icao="${a.icao}" data-lat="${a.lat}" data-lon="${a.lon}" data-type="${a.type}">
+                                    <span class="airport-code">${code}</span>
+                                    ${a.municipality ? a.municipality + ' - ' : ''}${a.name}
+                                    <span class="airport-dist">${Math.round(a.dist)} km</span>
+                                </div>`;
+                            }).join('');
+                        results.style.display = 'block';
+                    }
+                }
+            });
+        }
 
         // Cookie helper functions
         function setCookie(name, value, days = 365) {
@@ -2020,6 +2397,10 @@
             // Initialize graphs system
             initGraphsSystem();
 
+            // Initialize airport search and load data asynchronously
+            initAirportSearch();
+            AirportDB.load();
+
             // Apply graphs panel state from settings
             if (showGraphs) {
                 document.getElementById('graphs-panel').classList.add('visible');
@@ -2599,6 +2980,11 @@
 
             _needsRender = true;
             updateAllAircraftPositions();
+
+            // Update airport labels when map changes
+            if (AirportDB.loaded) {
+                AirportDB.updateLabels();
+            }
         }
 
         // Load tile texture with error handling
