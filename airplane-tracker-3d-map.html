@@ -31,6 +31,24 @@
             width: 100vw;
             height: 100vh;
         }
+        .data-mode-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7em;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+        .data-mode-local {
+            background: rgba(0, 180, 0, 0.3);
+            color: #00ff88;
+            border: 1px solid rgba(0, 180, 0, 0.5);
+        }
+        .data-mode-global {
+            background: rgba(0, 120, 255, 0.3);
+            color: #66bbff;
+            border: 1px solid rgba(0, 120, 255, 0.5);
+        }
         #info-panel {
             position: absolute;
             top: 20px;
@@ -931,6 +949,15 @@
 
     <div id="controls">
         <div class="control-group">
+            <span class="control-label">Source:</span>
+            <select id="data-mode-select" onchange="changeDataMode(this.value)">
+                <option value="local">Local (dump1090)</option>
+                <option value="global">Global (API)</option>
+            </select>
+            <span id="data-mode-indicator" class="data-mode-badge data-mode-local">LOCAL</span>
+        </div>
+
+        <div class="control-group">
             <span class="control-label">Theme:</span>
             <select id="theme-select" onchange="changeTheme(this.value)">
                 <option value="day">Day</option>
@@ -1038,6 +1065,106 @@
         // Altitude scale: 1x-300x range, reduced by 30x (new 300x = old 10x effect)
         const BASE_ALT_SCALE = 0.000000333;
 
+        // ===========================================
+        // DATA SOURCE ABSTRACTION
+        // ===========================================
+        const GLOBAL_REFRESH_INTERVAL = 5000; // 5 seconds for global APIs
+        const GLOBAL_RADIUS = 250; // nautical miles
+
+        const DataSource = {
+            mode: 'local', // 'local' or 'global'
+            currentProvider: 0,
+            lastFetchTime: 0,
+            providers: [
+                {
+                    name: 'airplanes.live',
+                    url: (lat, lon, radius) => `https://api.airplanes.live/v2/point/${lat}/${lon}/${radius}`,
+                    available: null
+                },
+                {
+                    name: 'adsb.lol',
+                    url: (lat, lon, radius) => `https://api.adsb.lol/v2/point/${lat}/${lon}/${radius}`,
+                    available: null
+                }
+            ],
+
+            normalize(data) {
+                if (!data || !data.ac) return { aircraft: [] };
+                return {
+                    aircraft: data.ac.filter(ac => ac.lat && ac.lon).map(ac => ({
+                        hex: ac.hex || '',
+                        flight: (ac.flight || '').trim(),
+                        lat: ac.lat,
+                        lon: ac.lon,
+                        altitude: ac.alt_baro === 'ground' ? 0 : (ac.alt_baro || ac.alt_geom || 0),
+                        track: ac.track || 0,
+                        gs: ac.gs || 0,
+                        baro_rate: ac.baro_rate || ac.geom_rate || 0,
+                        squawk: ac.squawk || '',
+                        category: ac.category || '',
+                        r: ac.r || '',
+                        t: ac.t || ''
+                    }))
+                };
+            },
+
+            async fetchGlobal(lat, lon) {
+                for (let attempt = 0; attempt < this.providers.length; attempt++) {
+                    const idx = (this.currentProvider + attempt) % this.providers.length;
+                    const provider = this.providers[idx];
+                    try {
+                        const response = await fetch(provider.url(lat, lon, GLOBAL_RADIUS));
+                        if (response.ok) {
+                            const data = await response.json();
+                            this.currentProvider = idx;
+                            provider.available = true;
+                            return this.normalize(data);
+                        }
+                    } catch (e) {
+                        provider.available = false;
+                    }
+                }
+                return { aircraft: [] };
+            },
+
+            setMode(newMode) {
+                if (this.mode === newMode) return;
+                this.mode = newMode;
+                // Clear existing aircraft when switching modes
+                for (const [hex, plane] of airplanes.entries()) {
+                    scene.remove(plane);
+                    if (plane.userData.trail) scene.remove(plane.userData.trail);
+                    if (plane.userData.altLine) scene.remove(plane.userData.altLine);
+                }
+                airplanes.clear();
+                aircraftDataBuffer.clear();
+                _airplanesArrayDirty = true;
+                // Reset refresh interval
+                if (window._dataFetchInterval) {
+                    clearInterval(window._dataFetchInterval);
+                }
+                const interval = newMode === 'global' ? GLOBAL_REFRESH_INTERVAL : REFRESH_INTERVAL;
+                // For global mode without center, set a default
+                if (newMode === 'global' && !centerInitialized) {
+                    centerLat = 40.7128;
+                    centerLon = -74.0060;
+                    centerInitialized = true;
+                    document.getElementById('center-coords').textContent =
+                        `${centerLat.toFixed(2)}, ${centerLon.toFixed(2)}`;
+                    loadMapTiles();
+                }
+                fetchData();
+                window._dataFetchInterval = setInterval(fetchData, interval);
+                // Update UI indicator
+                const indicator = document.getElementById('data-mode-indicator');
+                if (indicator) {
+                    indicator.textContent = newMode === 'global' ? 'GLOBAL' : 'LOCAL';
+                    indicator.className = 'data-mode-badge data-mode-' + newMode;
+                }
+                saveSettings();
+            }
+        };
+
         // Cookie helper functions
         function setCookie(name, value, days = 365) {
             const expires = new Date(Date.now() + days * 864e5).toUTCString();
@@ -1068,7 +1195,8 @@
                 autoRotate: autoRotate,
                 showGraphs: showGraphs,
                 graphsTimePeriod: graphsTimePeriod,
-                altitudeScaleValue: Math.round(altitudeScale / BASE_ALT_SCALE)
+                altitudeScaleValue: Math.round(altitudeScale / BASE_ALT_SCALE),
+                dataMode: DataSource.mode
             };
             setCookie('flightTrackerSettings', settings);
         }
@@ -1093,6 +1221,7 @@
                     newScale = Math.max(100, Math.min(30000, newScale));
                     altitudeScale = newScale * BASE_ALT_SCALE;
                 }
+                if (settings.dataMode) DataSource.mode = settings.dataMode;
             }
         }
 
@@ -1862,12 +1991,31 @@
                 saveSettings();
             });
 
+            // Apply data mode to UI
+            const dataModeSelect = document.getElementById('data-mode-select');
+            if (dataModeSelect) dataModeSelect.value = DataSource.mode;
+            const indicator = document.getElementById('data-mode-indicator');
+            if (indicator) {
+                indicator.textContent = DataSource.mode === 'global' ? 'GLOBAL' : 'LOCAL';
+                indicator.className = 'data-mode-badge data-mode-' + DataSource.mode;
+            }
+
+            // For global mode, set default center if not initialized
+            if (DataSource.mode === 'global' && !centerInitialized) {
+                centerLat = 40.7128;
+                centerLon = -74.0060;
+                centerInitialized = true;
+                document.getElementById('center-coords').textContent =
+                    `${centerLat.toFixed(2)}, ${centerLon.toFixed(2)}`;
+            }
+
             // Start animation
             animate();
 
-            // Fetch data
+            // Fetch data with mode-appropriate interval
+            const fetchInterval = DataSource.mode === 'global' ? GLOBAL_REFRESH_INTERVAL : REFRESH_INTERVAL;
             fetchData();
-            setInterval(fetchData, REFRESH_INTERVAL);
+            window._dataFetchInterval = setInterval(fetchData, fetchInterval);
 
             // Initialize graphs system
             initGraphsSystem();
@@ -1900,6 +2048,10 @@
                 scene.background = new THREE.Color(0x000800);
                 scene.fog = new THREE.Fog(0x000800, 500, 1200);
             }
+        }
+
+        function changeDataMode(mode) {
+            DataSource.setMode(mode);
         }
 
         function changeTheme(theme) {
@@ -3013,14 +3165,29 @@
 
         async function fetchData() {
             try {
-                const response = await fetch(DATA_URL);
-                const data = await response.json();
-                const now = Date.now();
+                let data;
 
-                if (data.aircraft && data.aircraft.length > 0) {
+                if (DataSource.mode === 'global') {
+                    // Global mode: fetch from API providers with fallback
+                    data = await DataSource.fetchGlobal(centerLat, centerLon);
+                } else {
+                    // Local mode: fetch from dump1090
+                    const response = await fetch(DATA_URL);
+                    data = await response.json();
+                }
+
+                const now = Date.now();
+                const aircraft = data.aircraft || data.ac || [];
+
+                // Normalize: ensure we have a flat array with standard fields
+                const normalizedAircraft = DataSource.mode === 'global'
+                    ? aircraft  // Already normalized by DataSource
+                    : aircraft; // dump1090 format used as-is
+
+                if (normalizedAircraft.length > 0) {
                     if (!centerInitialized) {
                         let sumLat = 0, sumLon = 0, count = 0;
-                        data.aircraft.forEach(ac => {
+                        normalizedAircraft.forEach(ac => {
                             if (ac.lat && ac.lon) {
                                 sumLat += ac.lat;
                                 sumLon += ac.lon;
@@ -3038,34 +3205,41 @@
                     }
 
                     // Store data in buffer with timestamp
-                    data.aircraft.forEach(ac => {
+                    normalizedAircraft.forEach(ac => {
                         if (!ac.lat || !ac.lon) return;
 
-                        if (!aircraftDataBuffer.has(ac.hex)) {
-                            aircraftDataBuffer.set(ac.hex, []);
+                        const hex = ac.hex || ac.icao24 || '';
+                        if (!hex) return;
+
+                        if (!aircraftDataBuffer.has(hex)) {
+                            aircraftDataBuffer.set(hex, []);
                         }
 
-                        const buffer = aircraftDataBuffer.get(ac.hex);
-                        buffer.push({ timestamp: now, data: {...ac} });
+                        const buffer = aircraftDataBuffer.get(hex);
+                        buffer.push({ timestamp: now, data: {...ac, hex: hex} });
 
-                        // Keep only last 5 seconds of data
-                        while (buffer.length > 0 && buffer[0].timestamp < now - 5000) {
+                        // Keep only last 5 seconds of data (longer for global since polling is slower)
+                        const bufferWindow = DataSource.mode === 'global' ? 15000 : 5000;
+                        while (buffer.length > 0 && buffer[0].timestamp < now - bufferWindow) {
                             buffer.shift();
                         }
                     });
 
                     // Clean up old aircraft
-                    const currentHexes = new Set(data.aircraft.map(ac => ac.hex));
+                    const currentHexes = new Set(normalizedAircraft.map(ac => ac.hex || ac.icao24 || ''));
+                    const staleThreshold = DataSource.mode === 'global'
+                        ? INTERPOLATION_DELAY + GLOBAL_REFRESH_INTERVAL + 2000
+                        : INTERPOLATION_DELAY + 2000;
                     for (const [hex, buffer] of aircraftDataBuffer.entries()) {
                         if (!currentHexes.has(hex) && buffer.length > 0) {
                             const lastEntry = buffer[buffer.length - 1];
-                            if (now - lastEntry.timestamp > INTERPOLATION_DELAY + 2000) {
+                            if (now - lastEntry.timestamp > staleThreshold) {
                                 aircraftDataBuffer.delete(hex);
                             }
                         }
                     }
 
-                    document.getElementById('plane-count').textContent = data.aircraft.length;
+                    document.getElementById('plane-count').textContent = normalizedAircraft.length;
                     document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
                 }
             } catch (error) {
