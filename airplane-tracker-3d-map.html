@@ -4235,6 +4235,17 @@
                         plane.userData.initTime = now;
                     }
 
+                    // Update userData FIRST so trail collection has current values
+                    plane.userData.hex = _interpolatedData.hex;
+                    plane.userData.lat = _interpolatedData.lat;
+                    plane.userData.lon = _interpolatedData.lon;
+                    plane.userData.altitude = _interpolatedData.altitude;
+                    plane.userData.track = _interpolatedData.track;
+                    plane.userData.gs = _interpolatedData.gs;
+                    plane.userData.baro_rate = _interpolatedData.baro_rate;
+                    plane.userData.flight = _interpolatedData.flight;
+                    plane.userData.squawk = _interpolatedData.squawk;
+
                     // Add trail point using lat/lon coordinates (not world coords)
                     // This ensures trails remain valid when map bounds change
                     const timeSinceInit = now - (plane.userData.initTime || now);
@@ -4242,11 +4253,10 @@
                         if (now - (plane.userData.lastTrailTime || 0) > 100) {
                             plane.userData.lastTrailTime = now;
 
-                            // Store as lat/lon/alt - these are stable coordinates
                             const lastPoint = plane.userData.trailPoints[plane.userData.trailPoints.length - 1];
-                            const currentLat = plane.userData.lat;
-                            const currentLon = plane.userData.lon;
-                            const currentAlt = plane.userData.altitude;
+                            const currentLat = _interpolatedData.lat;
+                            const currentLon = _interpolatedData.lon;
+                            const currentAlt = _interpolatedData.altitude;
 
                             // Only add if we have valid coordinates and position changed
                             if (currentLat && currentLon) {
@@ -4261,11 +4271,9 @@
                                         alt: currentAlt || 0,
                                         time: now
                                     });
-                                    // Keep only the max trail length (airloom-style)
                                     while (plane.userData.trailPoints.length > trailMaxLength) {
                                         plane.userData.trailPoints.shift();
                                     }
-                                    // Queue trail update for batching instead of immediate update
                                     if (_trailUpdateQueue.indexOf(plane) === -1) {
                                         _trailUpdateQueue.push(plane);
                                     }
@@ -4283,22 +4291,10 @@
                         plane.userData.noseMaterial.color.setHex(newColor);
                         plane.userData.noseMaterial.emissive.setHex(newColor);
                     }
-                    // Trail colors are now per-vertex (set in updateTrail), no single-color update needed
                     // Update glow color for day/night themes (retro stays green)
                     if (plane.userData.glowSprite && currentTheme !== 'retro') {
                         plane.userData.glowSprite.material.color.setHex(newColor);
                     }
-
-                    // Update userData without creating new object
-                    plane.userData.hex = _interpolatedData.hex;
-                    plane.userData.lat = _interpolatedData.lat;
-                    plane.userData.lon = _interpolatedData.lon;
-                    plane.userData.altitude = _interpolatedData.altitude;
-                    plane.userData.track = _interpolatedData.track;
-                    plane.userData.gs = _interpolatedData.gs;
-                    plane.userData.baro_rate = _interpolatedData.baro_rate;
-                    plane.userData.flight = _interpolatedData.flight;
-                    plane.userData.squawk = _interpolatedData.squawk;
                 } else {
                     // Create new plane - need to copy data since we're reusing _interpolatedData
                     const newPlaneData = {
