@@ -1039,6 +1039,7 @@
             <button onclick="toggleGraphs()" id="btn-graphs">Graphs</button>
             <button onclick="toggleStats()" id="btn-stats">Stats</button>
             <button onclick="toggleTerrain()" id="btn-terrain" class="active">Terrain</button>
+            <button onclick="toggleAirspace()" id="btn-airspace">Airspace</button>
         </div>
 
         <div class="control-group trail-control">
@@ -1784,6 +1785,145 @@
             }
         };
 
+        // ===========================================
+        // AIRSPACE VOLUMES
+        // ===========================================
+        const FAA_AIRSPACE_BASE = 'https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/Class_Airspace/FeatureServer/0';
+        let airspaceEnabled = false;
+        let airspaceVolumes = [];
+        let airspaceData = null;
+        let airspaceLoading = false;
+        let airspaceClassFilter = { B: true, C: true, D: true };
+
+        const AIRSPACE_COLORS = { B: 0x4466ff, C: 0x9944ff, D: 0x44aaff };
+
+        const AirspaceSystem = {
+            async loadAirspace() {
+                if (airspaceLoading || !centerInitialized) return;
+                airspaceLoading = true;
+                try {
+                    const bounds = window.mapBounds;
+                    if (!bounds) { airspaceLoading = false; return; }
+                    const url = `${FAA_AIRSPACE_BASE}/query?` +
+                        `where=CLASS+IN+('B','C','D')` +
+                        `&geometry=${bounds.west},${bounds.south},${bounds.east},${bounds.north}` +
+                        `&geometryType=esriGeometryEnvelope&inSR=4326` +
+                        `&spatialRel=esriSpatialRelIntersects` +
+                        `&outFields=NAME,CLASS,LOCAL_TYPE,UPPER_VAL,LOWER_VAL,UPPER_UOM,LOWER_UOM,ICAO_ID` +
+                        `&f=geojson&resultRecordCount=500`;
+                    const response = await fetch(url);
+                    if (!response.ok) { airspaceLoading = false; return; }
+                    const geojson = await response.json();
+                    airspaceData = geojson.features || [];
+                    this.renderAirspace();
+                } catch (e) {
+                    console.warn('Failed to load airspace data:', e);
+                } finally {
+                    airspaceLoading = false;
+                }
+            },
+
+            renderAirspace() {
+                this.clearAirspace();
+                if (!airspaceData || !airspaceEnabled) return;
+
+                for (let i = 0; i < airspaceData.length; i++) {
+                    const feature = airspaceData[i];
+                    const props = feature.properties;
+                    const airClass = props.CLASS;
+                    if (!airspaceClassFilter[airClass]) continue;
+
+                    const coords = this._getCoordinates(feature.geometry);
+                    if (!coords || coords.length < 3) continue;
+
+                    const floor = this._altToScene(props.LOWER_VAL, props.LOWER_UOM);
+                    const ceiling = this._altToScene(props.UPPER_VAL, props.UPPER_UOM);
+                    const height = Math.max(0.5, ceiling - floor);
+
+                    try {
+                        const shape = new THREE.Shape();
+                        for (let j = 0; j < coords.length; j++) {
+                            const pos = latLonToXZ(coords[j][1], coords[j][0]);
+                            if (j === 0) shape.moveTo(pos.x, pos.z);
+                            else shape.lineTo(pos.x, pos.z);
+                        }
+                        shape.closePath();
+
+                        const extrudeGeom = new THREE.ExtrudeGeometry(shape, { depth: height, bevelEnabled: false });
+                        const color = AIRSPACE_COLORS[airClass] || 0x4488ff;
+                        const isRetro = currentTheme === 'retro';
+                        const group = new THREE.Group();
+
+                        // Semi-transparent fill
+                        const fillMat = new THREE.MeshBasicMaterial({
+                            color: isRetro ? 0x00ff00 : color,
+                            transparent: true,
+                            opacity: isRetro ? 0.03 : 0.06,
+                            side: THREE.DoubleSide,
+                            depthWrite: false
+                        });
+                        const fillMesh = new THREE.Mesh(extrudeGeom, fillMat);
+                        fillMesh.rotation.x = -Math.PI / 2;
+                        fillMesh.position.y = floor;
+                        group.add(fillMesh);
+
+                        // Wireframe outline
+                        const edgesGeom = new THREE.EdgesGeometry(extrudeGeom);
+                        const edgesMat = new THREE.LineBasicMaterial({
+                            color: isRetro ? 0x00ff00 : color,
+                            transparent: true,
+                            opacity: isRetro ? 0.4 : 0.3
+                        });
+                        const wireframe = new THREE.LineSegments(edgesGeom, edgesMat);
+                        wireframe.rotation.x = -Math.PI / 2;
+                        wireframe.position.y = floor;
+                        group.add(wireframe);
+
+                        const order = airClass === 'B' ? 3 : airClass === 'C' ? 2 : 1;
+                        fillMesh.renderOrder = order;
+                        wireframe.renderOrder = order;
+                        group.userData.airspaceClass = airClass;
+                        group.userData.name = props.NAME;
+
+                        scene.add(group);
+                        airspaceVolumes.push(group);
+                    } catch (e) { /* skip invalid geometry */ }
+                }
+                _needsRender = true;
+            },
+
+            clearAirspace() {
+                for (let i = 0; i < airspaceVolumes.length; i++) {
+                    const group = airspaceVolumes[i];
+                    group.children.forEach(child => {
+                        if (child.geometry) child.geometry.dispose();
+                        if (child.material) child.material.dispose();
+                    });
+                    scene.remove(group);
+                }
+                airspaceVolumes = [];
+            },
+
+            _getCoordinates(geometry) {
+                if (!geometry) return null;
+                if (geometry.type === 'Polygon') return geometry.coordinates[0];
+                if (geometry.type === 'MultiPolygon') return geometry.coordinates[0][0];
+                return null;
+            },
+
+            _altToScene(value, unit) {
+                if (!value && value !== 0) return 0;
+                let feet = value;
+                if (unit === 'FL') feet = value * 100;
+                return feet * altitudeScale;
+            },
+
+            toggleClass(airClass) {
+                airspaceClassFilter[airClass] = !airspaceClassFilter[airClass];
+                if (airspaceData) this.renderAirspace();
+            }
+        };
+
         // Cookie helper functions
         function setCookie(name, value, days = 365) {
             const expires = new Date(Date.now() + days * 864e5).toUTCString();
@@ -1816,7 +1956,8 @@
                 graphsTimePeriod: graphsTimePeriod,
                 altitudeScaleValue: Math.round(altitudeScale / BASE_ALT_SCALE),
                 dataMode: DataSource.mode,
-                terrainEnabled: terrainEnabled
+                terrainEnabled: terrainEnabled,
+                airspaceEnabled: airspaceEnabled
             };
             setCookie('flightTrackerSettings', settings);
         }
@@ -1843,6 +1984,7 @@
                 }
                 if (settings.dataMode) DataSource.mode = settings.dataMode;
                 if (settings.terrainEnabled !== undefined) terrainEnabled = settings.terrainEnabled;
+                if (settings.airspaceEnabled !== undefined) airspaceEnabled = settings.airspaceEnabled;
             }
         }
 
@@ -3233,6 +3375,11 @@
             // Load terrain tiles alongside map tiles
             if (terrainEnabled) {
                 TerrainSystem.loadTerrainTiles();
+            }
+
+            // Reload airspace volumes for new view area
+            if (airspaceEnabled) {
+                AirspaceSystem.loadAirspace();
             }
         }
 
@@ -5032,6 +5179,18 @@
             _needsRender = true;
         };
 
+        window.toggleAirspace = function() {
+            airspaceEnabled = !airspaceEnabled;
+            document.getElementById('btn-airspace').classList.toggle('active', airspaceEnabled);
+            if (airspaceEnabled) {
+                AirspaceSystem.loadAirspace();
+            } else {
+                AirspaceSystem.clearAirspace();
+            }
+            _needsRender = true;
+            saveSettings();
+        };
+
         window.toggleStats = function() {
             showStats = !showStats;
             const section = document.getElementById('stats-section');
@@ -5445,6 +5604,8 @@
         document.getElementById('btn-trails').classList.toggle('active', trailEnabled);
         document.getElementById('btn-graphs').classList.toggle('active', showGraphs);
         document.getElementById('btn-stats').classList.toggle('active', showStats);
+        document.getElementById('btn-terrain').classList.toggle('active', terrainEnabled);
+        document.getElementById('btn-airspace').classList.toggle('active', airspaceEnabled);
 
         // Initialize stats panel update interval
         setInterval(() => {
