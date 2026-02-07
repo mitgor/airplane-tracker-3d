@@ -1054,8 +1054,8 @@
 
         <div class="control-group altitude-control">
             <span class="control-label">Alt:</span>
-            <input type="range" id="altitude-slider" min="100" max="30000" value="100" step="100">
-            <span id="altitude-value">1x</span>
+            <input type="range" id="altitude-slider" min="1" max="100" value="10" step="1">
+            <span id="altitude-value">10x</span>
         </div>
 
         <div class="control-group">
@@ -1116,8 +1116,8 @@
         const REFRESH_INTERVAL = 1000;
         const MAP_GROUND_SIZE = 800;
         const TILES_PER_SIDE = 10;
-        // Altitude scale: 1x-300x range, reduced by 30x (new 300x = old 10x effect)
-        const BASE_ALT_SCALE = 0.000000333;
+        // Altitude scale: 1x-100x range
+        const BASE_ALT_SCALE = 0.0001;
 
         // ===========================================
         // DATA SOURCE ABSTRACTION
@@ -1447,20 +1447,23 @@
                     const a = item.airport;
                     const code = a.iata || a.icao;
 
+                    // Get terrain elevation at airport position
+                    const terrainY = terrainEnabled ? TerrainSystem.getElevationAt(a.lat, a.lon) : 0;
+
                     // Try 3D text first, fall back to sprite
                     const geo = _getAirportTextGeo(code);
                     if (geo) {
                         // 3D extruded text standing vertically on ground (Air Loom style)
-                        const mat = new THREE.MeshBasicMaterial({ color: labelColor });
+                        const mat = new THREE.MeshBasicMaterial({ color: labelColor, depthTest: false });
                         const mesh = new THREE.Mesh(geo, mat);
-                        // Stand upright on ground (text faces outward in XZ plane)
-                        mesh.position.set(item.pos.x, 0.3, item.pos.z);
+                        // Stand upright on ground, above terrain surface
+                        mesh.position.set(item.pos.x, terrainY + 1.5, item.pos.z);
 
                         const baseScale = a.type === 'large_airport' ? 3.0 : 2.0;
                         const distScale = Math.max(0.5, 1 - item.dist / 600);
                         const s = baseScale * distScale;
                         mesh.scale.set(s, s, s);
-                        mesh.renderOrder = 1;
+                        mesh.renderOrder = 10;
                         mesh.userData._disposeMat = true;
 
                         scene.add(mesh);
@@ -1468,7 +1471,7 @@
                     } else {
                         // Sprite fallback (font not loaded yet)
                         const label = this._getOrCreateSpriteLabel(a);
-                        label.position.set(item.pos.x, 0.5, item.pos.z);
+                        label.position.set(item.pos.x, terrainY + 1.5, item.pos.z);
                         const baseScale = a.type === 'large_airport' ? 18 : 12;
                         const distScale = Math.max(0.4, 1 - item.dist / 500);
                         label.scale.set(baseScale * distScale, baseScale * distScale * 0.3, 1);
@@ -1631,6 +1634,7 @@
                 const cacheKey = `terrain-${zoom}-${tileX}-${tileY}`;
                 if (terrainCache.has(cacheKey)) {
                     const cached = terrainCache.get(cacheKey);
+                    cached.mesh.scale.z = getTerrainScaleZ();
                     if (!cached.mesh.parent) {
                         cached.mesh.position.set(posX, 0, posZ);
                         scene.add(cached.mesh);
@@ -1690,6 +1694,7 @@
                     const mesh = new THREE.Mesh(geometry, material);
                     mesh.rotation.x = -Math.PI / 2;
                     mesh.position.set(posX, 0, posZ);
+                    mesh.scale.z = getTerrainScaleZ();
                     mesh.userData.terrainKey = cacheKey;
                     mesh.renderOrder = -1;
 
@@ -1794,14 +1799,21 @@
                 const halfTiles = Math.floor(TILES_PER_SIDE / 2);
                 const tileSize = MAP_GROUND_SIZE / TILES_PER_SIDE;
 
-                // Remove terrain meshes not in current view
+                // Build set of needed tile keys for the new view
+                const neededKeys = new Set();
+                for (let dy = 0; dy < TILES_PER_SIDE; dy++) {
+                    for (let dx = 0; dx < TILES_PER_SIDE; dx++) {
+                        const tileX = centerTile.x - halfTiles + dx;
+                        const tileY = centerTile.y - halfTiles + dy;
+                        neededKeys.add(`terrain-${currentZoom}-${tileX}-${tileY}`);
+                    }
+                }
+
+                // Remove terrain meshes that don't match the new tile grid
                 const newTerrain = [];
                 for (let i = 0; i < terrainTiles.length; i++) {
                     const mesh = terrainTiles[i];
-                    // Check if tile is still in view by position
-                    const dx = Math.abs(mesh.position.x);
-                    const dz = Math.abs(mesh.position.z);
-                    if (dx > MAP_GROUND_SIZE * 0.6 || dz > MAP_GROUND_SIZE * 0.6) {
+                    if (!neededKeys.has(mesh.userData.terrainKey)) {
                         scene.remove(mesh);
                     } else {
                         newTerrain.push(mesh);
@@ -1842,9 +1854,27 @@
                 const localY = (normY * TILES_PER_SIDE) % 1;
                 const ex = Math.floor(localX * 255);
                 const ey = Math.floor(localY * 255);
-                return (cached.elevations[ey * 256 + ex] || 0) * TERRAIN_SCALE_FACTOR;
+                return (cached.elevations[ey * 256 + ex] || 0) * TERRAIN_SCALE_FACTOR * getTerrainScaleZ();
             }
         };
+
+        // Get terrain Z scale factor based on altitude ratio
+        function getTerrainScaleZ() {
+            // Scale terrain proportionally to altitude ratio
+            // At default 10x: scale = 1.0 (terrain looks normal)
+            // At 1x: scale = 0.1, at 100x: scale = 10.0
+            return altitudeScale / (10 * BASE_ALT_SCALE);
+        }
+
+        // Update terrain mesh scale when altitude ratio changes
+        function updateTerrainScale() {
+            const scaleZ = getTerrainScaleZ();
+            for (let i = 0; i < terrainTiles.length; i++) {
+                // PlaneGeometry rotated -PI/2 around X: local Z maps to world Y
+                terrainTiles[i].scale.z = scaleZ;
+            }
+            _needsRender = true;
+        }
 
         // ===========================================
         // AIRSPACE VOLUMES
@@ -2037,10 +2067,13 @@
                 if (settings.showGraphs !== undefined) showGraphs = settings.showGraphs;
                 if (settings.graphsTimePeriod !== undefined) graphsTimePeriod = settings.graphsTimePeriod;
                 if (settings.altitudeScaleValue !== undefined) {
-                    // Internal scale: 100-30000 (displayed as 1x-300x)
                     let newScale = settings.altitudeScaleValue;
-                    // Clamp to valid range
-                    newScale = Math.max(100, Math.min(30000, newScale));
+                    // Migrate old values (100-30000 range with old BASE_ALT_SCALE 0.000000333)
+                    if (newScale > 100) {
+                        // Convert: old_internal * old_base / new_base
+                        newScale = Math.round(newScale * 0.000000333 / BASE_ALT_SCALE);
+                    }
+                    newScale = Math.max(1, Math.min(100, newScale));
                     altitudeScale = newScale * BASE_ALT_SCALE;
                 }
                 if (settings.dataMode) DataSource.mode = settings.dataMode;
@@ -2154,7 +2187,7 @@
         const MAX_CONCURRENT_PRELOADS = 4;
 
         // Altitude scale
-        let altitudeScale = 30 * BASE_ALT_SCALE;
+        let altitudeScale = 10 * BASE_ALT_SCALE;
 
         // Units: 'imperial' or 'metric'
         let currentUnits = 'imperial';
@@ -2746,10 +2779,10 @@
             document.getElementById('theme-select').value = currentTheme;
             document.getElementById('units-select').value = currentUnits;
 
-            // Apply altitude scale to slider (1x-300x, internal 100-30000)
-            const scaleValue = Math.round(altitudeScale / BASE_ALT_SCALE);
+            // Apply altitude scale to slider (1x-100x)
+            const scaleValue = Math.max(1, Math.min(100, Math.round(altitudeScale / BASE_ALT_SCALE)));
             document.getElementById('altitude-slider').value = scaleValue;
-            document.getElementById('altitude-value').textContent = Math.round(scaleValue / 100) + 'x';
+            document.getElementById('altitude-value').textContent = scaleValue + 'x';
 
             // Apply trail settings to UI
             document.getElementById('btn-trails').classList.toggle('active', trailEnabled);
@@ -2805,13 +2838,14 @@
             // Keyboard shortcuts
             setupKeyboardShortcuts();
 
-            // Altitude slider (internal 100-30000, displayed as 1x-300x)
+            // Altitude slider (1x-100x)
             const slider = document.getElementById('altitude-slider');
             slider.addEventListener('input', (e) => {
                 const value = parseInt(e.target.value);
                 altitudeScale = value * BASE_ALT_SCALE;
-                document.getElementById('altitude-value').textContent = Math.round(value / 100) + 'x';
+                document.getElementById('altitude-value').textContent = value + 'x';
                 updateAllAircraftPositions();
+                updateTerrainScale();
                 saveSettings();
             });
 
@@ -3507,6 +3541,11 @@
             mapTransition.targetLon = targetLon;
             mapTransition.targetZoom = targetZoom;
             mapTransition.startTime = Date.now();
+            // Use longer duration for large distance transitions
+            const dLat = Math.abs(targetLat - centerLat);
+            const dLon = Math.abs(targetLon - centerLon);
+            const dist = Math.sqrt(dLat * dLat + dLon * dLon);
+            mapTransition.duration = dist > 1 ? 600 : 300;
             mapTransition.active = true;
             _needsRender = true;
         }
@@ -3537,13 +3576,14 @@
             if (progress < 1) {
                 updateMapBoundsSmooth();
                 updateAllAircraftPositions();
-            }
-
-            if (progress >= 1) {
+            } else {
+                // Transition complete
                 mapTransition.active = false;
                 centerLat = mapTransition.targetLat;
                 centerLon = mapTransition.targetLon;
                 currentZoom = mapTransition.targetZoom;
+                // Ensure bounds are set before loading tiles
+                updateMapBoundsSmooth();
                 loadMapTiles();
             }
 
@@ -3965,7 +4005,7 @@
                 vertexColors: true,
                 transparent: true,
                 opacity: 0.85,
-                depthTest: true,
+                depthTest: false,
                 depthWrite: false,
                 resolution: new THREE.Vector2(window.innerWidth, window.innerHeight)
             });
@@ -4461,10 +4501,15 @@
                 return;
             }
 
-            // Update Line2 geometry with positions and colors
-            trail.geometry.setPositions(posArray);
-            trail.geometry.setColors(colorArray);
+            // Replace Line2 geometry entirely (r128 InstancedBufferGeometry doesn't
+            // reliably update when setPositions is called on existing geometry)
+            const oldGeom = trail.geometry;
+            const newGeom = new THREE.LineGeometry();
+            newGeom.setPositions(posArray);
+            newGeom.setColors(colorArray);
+            trail.geometry = newGeom;
             trail.computeLineDistances();
+            oldGeom.dispose();
             trail.visible = trailEnabled;
             _needsRender = true;
 
