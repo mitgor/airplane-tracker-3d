@@ -10,10 +10,10 @@ This roadmap evolves a working single-file 3D flight tracker (4,631 lines, THREE
 - Integer phases (1, 2, 3, 4): Planned milestone work
 - Decimal phases (e.g., 2.1): Urgent insertions (marked with INSERTED)
 
-- [ ] **Phase 1: Data Source Abstraction** - Dual-mode data layer enabling local dump1090 and global API flight tracking with automatic fallback
-- [ ] **Phase 2: Airport Search and Labels** - Airport discovery via search, nearby browsing, 3D ground labels, and camera fly-to
-- [ ] **Phase 3: Terrain Elevation** - 3D terrain meshes with elevation data and satellite/map imagery draped on the ground
-- [ ] **Phase 4: Airspace Volumes** - Class B/C/D airspace boundary rendering as 3D extruded volumes
+- [x] **Phase 1: Data Source Abstraction** - Dual-mode data layer enabling local dump1090 and global API flight tracking with automatic fallback
+- [x] **Phase 2: Airport Search and Labels** - Airport discovery via search, nearby browsing, 3D ground labels, and camera fly-to
+- [x] **Phase 3: Terrain Elevation** - 3D terrain meshes with elevation data and satellite/map imagery draped on the ground
+- [x] **Phase 4: Airspace Volumes** - Class B/C/D airspace boundary rendering as 3D extruded volumes
 
 ## Phase Details
 
@@ -100,9 +100,9 @@ Plans:
 **Execution Order:**
 Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. Data Source Abstraction | 0/2 | Not started | - |
-| 2. Airport Search and Labels | 0/2 | Not started | - |
-| 3. Terrain Elevation | 0/2 | Not started | - |
-| 4. Airspace Volumes | 0/1 | Not started | - |
+| Phase | Status | Completed |
+|-------|--------|-----------|
+| 1. Data Source Abstraction | Complete | 2026-02-07 |
+| 2. Airport Search and Labels | Complete | 2026-02-07 |
+| 3. Terrain Elevation | Complete | 2026-02-07 |
+| 4. Airspace Volumes | Complete | 2026-02-07 |
