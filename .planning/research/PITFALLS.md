@@ -1,270 +1,568 @@
-# Pitfalls Research
+# Domain Pitfalls
 
-**Domain:** 3D flight tracker expansion -- global flight data, terrain elevation, airspace rendering, airport search
-**Researched:** 2026-02-07
-**Confidence:** MEDIUM-HIGH (verified against existing codebase, official API docs, and THREE.js community patterns)
+**Domain:** Native macOS Metal flight tracker (THREE.js/WebGL to Swift/Metal/SwiftUI rewrite)
+**Researched:** 2026-02-08
+**Confidence:** HIGH (verified against Apple Developer Documentation, Metal Best Practices Guide, Swift Forums, and multiple authoritative sources)
 
 ---
 
 ## Critical Pitfalls
 
-Mistakes that cause rewrites, memory crashes, or broken functionality.
-
-### Pitfall 1: Terrain Tile Memory Explosion
-
-**What goes wrong:**
-Loading Mapzen Terrarium PNG tiles and converting them to THREE.js PlaneGeometry meshes with displaced vertices consumes enormous GPU and CPU memory. Each 256x256 terrain tile decoded into a PlaneGeometry with 256x256 segments creates 65,536 vertices (786 KB of position data alone). Loading a 10x10 grid of terrain tiles means 6.5 million vertices just for terrain -- on top of the existing map tiles, aircraft meshes, trails, labels, and glow sprites already in the scene. The browser will crash or drop to single-digit FPS.
-
-**Why it happens:**
-Developers treat terrain tiles the same as flat map texture tiles. The current codebase loads 10x10 map tiles as flat PlaneGeometry with shared geometry (zero vertex overhead per tile -- just texture swaps). Terrain tiles require actual vertex displacement, which is fundamentally different and orders of magnitude more expensive.
-
-**How to avoid:**
-- Use LOW vertex density for terrain meshes: 32x32 or 64x64 segments per tile maximum, not 256x256. The visual difference at flight-tracker zoom levels is negligible.
-- Use vertex shader displacement instead of CPU-side vertex modification. Load the Terrarium PNG as a texture and sample it in the vertex shader via `displacementMap` on MeshStandardMaterial. This keeps geometry lightweight and moves work to the GPU.
-- Implement aggressive LOD: near tiles get 64x64 segments, medium tiles get 32x32, far tiles get 16x16 or stay flat.
-- Share geometry across tiles at the same LOD level (the current app already shares `_sharedGeometries.tile` for map tiles -- extend this pattern).
-- Set a hard cap: maximum 25 terrain tiles loaded simultaneously, dispose the rest.
-
-**Warning signs:**
-- `renderer.info.memory.geometries` climbing above 200 during terrain loading
-- Frame time exceeding 33ms (below 30fps) after terrain tiles appear
-- Browser tab memory exceeding 500MB
-- Terrain tiles loading but never unloading (check with `renderer.info.memory.textures`)
-
-**Phase to address:**
-Terrain elevation phase. This must be solved in the initial terrain architecture, not retrofitted.
+Mistakes that cause rewrites, render corruption, or major architectural issues.
 
 ---
 
-### Pitfall 2: Global Flight API Rate Limiting Causes Data Gaps and Bans
+### Pitfall 1: WebGL-to-Metal Coordinate System Mismatch
 
-**What goes wrong:**
-Airplanes.live API is rate-limited to 1 request per second with a 250 nautical mile radius per geographic query. To show "global" coverage, developers make multiple overlapping geographic queries to tile the world, quickly exhausting the rate limit and getting their IP banned. The existing app polls dump1090 every 1 second -- naively switching to airplanes.live at the same interval with multiple geographic queries will exceed limits within seconds.
+**What goes wrong:** Geometry renders upside-down, inside-out, or with inverted depth. Objects near the camera disappear. Orthographic views show nothing at all. The developer spends hours debugging what looks like a shader bug, but it is a math convention mismatch at the projection matrix level.
 
-**Why it happens:**
-The dump1090 local endpoint has no rate limiting (it is your own server). Developers carry over the 1-second polling habit to external APIs without accounting for the fundamental difference. Additionally, attempting "global" coverage requires many geographic queries since each is limited to 250nm radius.
+**Why it happens:** THREE.js (WebGL/OpenGL) and Metal differ in three fundamental ways:
 
-**How to avoid:**
-- For global view: use the airplanes.live `/v2/all` or similar bulk endpoints (if available) instead of tiling geographic queries. Alternatively, use adsb.lol bulk endpoints which provide full datasets.
-- Implement a request queue with minimum 1-second spacing between ANY requests to airplanes.live.
-- Cache aggressively: aircraft positions change every ~1-5 seconds, so polling faster than every 5 seconds for global data is wasteful anyway.
-- Use exponential backoff when receiving 429 (Too Many Requests) responses.
-- When user zooms into a region, switch from bulk to geographic query for that specific area only.
-- Provide a clear data source toggle: "Local (dump1090)" vs "Global (airplanes.live)" -- never try to merge both simultaneously without careful deduplication.
+| Convention | THREE.js / WebGL | Metal |
+|------------|-----------------|-------|
+| **NDC depth range** | [-1, +1] (2-unit cube centered at origin) | [0, +1] (1-unit half-cube, center at z=0.5) |
+| **NDC Y-axis** | +Y is up | +Y is up (same, but texture coords differ) |
+| **Texture coord origin** | Bottom-left (0,0), +V is up | Top-left (0,0), +V is down |
+| **Default front face winding** | Counter-clockwise (CCW) | Clockwise (CW) |
+| **Coordinate system handedness** | Right-handed | Left-handed (NDC/clip space) |
+| **NDC center** | (0, 0, 0) | (0, 0, 0.5) |
 
-**Warning signs:**
-- HTTP 429 responses from the API
-- Aircraft data arriving with increasing staleness (timestamps growing old)
-- Console errors about failed fetch requests in rapid succession
-- The API returning empty results for queries that should have data (silent ban)
+**Consequences:**
+- Reusing THREE.js projection matrices verbatim causes depth buffer corruption or all geometry culled
+- Orthographic projections break completely (perspective hides the z-range problem due to foreshortening)
+- All faces render as back-faces and get culled, producing invisible geometry
+- Textures (map tiles, UI elements) render upside-down
 
-**Phase to address:**
-Global flight data integration phase. Must be the FIRST architectural decision when switching data sources.
+**Prevention:**
+1. Build the projection matrix from scratch for Metal's conventions. Do NOT port the THREE.js `PerspectiveCamera` matrix directly. Metal's `simd` library provides `matrix_perspective_right_hand` / `matrix_perspective_left_hand` functions that output to Metal's [0,1] depth range.
+2. If reusing math from the web version, apply the OpenGL-to-Metal depth correction matrix (scale Z by 0.5, translate Z by 0.5) AFTER the OpenGL-style projection.
+3. Set `frontFacingWinding` to `.counterClockwise` on the render command encoder if reusing vertex data from the web version (THREE.js uses CCW, Metal defaults to CW).
+4. Flip texture V coordinates: `v_metal = 1.0 - v_webgl` in the vertex shader or during texture upload.
+5. Write a unit test that verifies a known vertex (e.g., an aircraft at lat/lon/alt) projects to the expected screen coordinates through your full MVP pipeline.
 
----
+**Detection:** First triangle renders invisible or inside-out. Depth fighting on overlapping geometry. Textures upside-down.
 
-### Pitfall 3: CORS Failures with Terrain Tile S3 Bucket
+**Confidence:** HIGH -- based on Apple Developer Documentation, multiple verified sources on Metal NDC conventions.
 
-**What goes wrong:**
-Mapzen Terrarium tiles on AWS S3 (`s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png`) may not return CORS headers for browser-based requests. Unlike the OSM/CartoDB/StadiaMaps tile servers the app already uses (which all serve proper CORS headers), AWS S3 public datasets do not always have CORS configured. The browser blocks the tile data, and since terrain tiles MUST be read as pixel data (not just displayed as textures), this is a hard blocker -- you cannot decode elevation values from a CORS-blocked image.
-
-**Why it happens:**
-For regular map tiles, the current codebase loads them as textures via `THREE.TextureLoader` with `crossOrigin = 'anonymous'`. This works because the tile servers send CORS headers. But terrain tiles require reading individual pixel RGB values (Terrarium encoding: `elevation = (R * 256 + G + B / 256) - 32768`), which requires drawing the image to a Canvas and calling `getImageData()`. This triggers a tainted canvas error if CORS headers are missing, even if the image loaded successfully as a texture.
-
-**How to avoid:**
-- Test the S3 endpoint CORS behavior FIRST before writing any terrain code. Use a simple fetch test: `fetch('https://s3.amazonaws.com/elevation-tiles-prod/terrarium/10/163/395.png', {mode: 'cors'})`.
-- If S3 lacks CORS: use an alternative terrain tile provider with CORS support (Nextzen with API key, or self-hosted/CDN-proxied tiles).
-- Alternatively, use the vertex shader displacement approach: load terrain tiles as regular textures (no pixel reading needed) and let the GPU shader sample them for displacement. This avoids the tainted canvas problem entirely since you never call `getImageData()`.
-- The vertex shader approach is doubly beneficial: it solves CORS AND is more performant.
-
-**Warning signs:**
-- "Tainted canvases may not be exported" or "SecurityError" in console
-- Terrain textures loading visually but elevation values all returning 0
-- Works in development (same-origin or disabled security) but fails in production
-
-**Phase to address:**
-Terrain elevation phase. This is a day-one validation -- test CORS before writing terrain rendering code.
+**Sources:**
+- [From OpenGL to Metal - The Projection Matrix Problem](https://metashapes.com/blog/opengl-metal-projection-matrix-problem/)
+- [Metal & OpenGL Coordinate Systems](https://jamescube.me/2020/03/metal-opengl-coordinate-systems/)
+- [MTLWinding - Apple Developer Documentation](https://developer.apple.com/documentation/metal/mtlwinding)
+- [Coordinate Systems - gpuweb Issue #416](https://github.com/gpuweb/gpuweb/issues/416)
+- [API-specific rendering differences - Veldrid](https://veldrid.dev/articles/backend-differences.html)
 
 ---
 
-### Pitfall 4: Single-File HTML Grows Beyond Maintainability
+### Pitfall 2: Creating MTLRenderPipelineState Objects Per Frame
 
-**What goes wrong:**
-The current file is 4,631 lines. Adding terrain tile management (~400 lines), global API integration (~300 lines), airspace volume rendering (~500 lines), airport search UI and data (~400 lines), and 3D text labels (~200 lines) will push it past 6,500 lines. At this size, every change risks breaking unrelated functionality. Finding specific functions becomes needle-in-haystack. The single-file constraint becomes the dominant source of bugs.
+**What goes wrong:** Frame rate drops below 30fps despite simple geometry. GPU profiler shows most time spent in pipeline state compilation, not rendering.
 
-**Why it happens:**
-The "no build tooling" constraint means no module splitting, no imports, no bundling. Everything goes in one `<script>` tag. This was fine at 2,000 lines but the existing 4,631 lines is already at the upper limit of single-file maintainability.
+**Why it happens:** In THREE.js, material/shader setup is largely automatic and cached internally. Developers porting to Metal may recreate `MTLRenderPipelineDescriptor` and call `device.makeRenderPipelineState()` every frame (or on every draw call), not realizing that pipeline state creation involves GPU shader compilation and is extremely expensive.
 
-**How to avoid:**
-- Use `<script src="...">` tags to split into multiple files WITHOUT build tooling. Each feature gets its own .js file loaded in order. This is NOT build tooling -- it is basic HTML.
-- Alternative: use a single self-contained IIFE pattern within the HTML, but organize code into clearly delimited sections with consistent comment banners (the existing code already does this well with `// ===` banners).
-- If staying single-file: establish a strict section ordering convention and document it at the top of the file. Group related functions together. Never add new code "wherever it fits."
-- Consider a simple concatenation script (cat file1.js file2.js > combined.js) as a zero-dependency "build" step.
+**Consequences:**
+- 10-100ms stalls per pipeline state creation (60fps needs <16ms total frame time)
+- GPU shader compilation hitches visible as periodic freezes
+- Memory pressure from redundant compiled shader variants
 
-**Warning signs:**
-- Taking more than 30 seconds to find a specific function
-- Making a change in one section that breaks another section
-- Duplicate variable names causing silent conflicts
-- New features requiring changes in 5+ distant locations in the file
+**Prevention:**
+1. Create ALL `MTLRenderPipelineState` objects at app startup or scene load, not during the render loop.
+2. Cache pipeline states in a dictionary keyed by their configuration (blend mode, vertex descriptor, shader variant).
+3. For the flight tracker, you likely need only 3-5 pipeline states: aircraft geometry, flight trails (line rendering), ground plane/map tiles, text/labels, and a skybox/background. Create all of them once.
+4. If you need dynamic shader variants, use Metal function constants (specialization constants) to avoid full recompilation.
 
-**Phase to address:**
-Should be addressed BEFORE adding major new features. A file reorganization phase or multi-file split should precede terrain/airspace/airport work.
+**Detection:** Instruments Metal System Trace shows `makeRenderPipelineState` calls during frame rendering. Frame time spikes correlate with first use of each visual element.
 
----
+**Confidence:** HIGH -- Apple Developer Documentation explicitly warns about this.
 
-### Pitfall 5: Airspace Transparent Volume Rendering Artifacts
-
-**What goes wrong:**
-Airspace volumes (Class B/C/D) are rendered as semi-transparent extruded polygons. THREE.js has a well-documented problem with overlapping transparent objects: it sorts by object center distance from camera, not per-pixel. When Class B (large, tall) overlaps with Class C (smaller, lower), the rendering order flickers depending on camera angle. Nested airspace volumes (Class B containing Class C containing Class D) create persistent visual artifacts where inner volumes disappear or render on top of outer volumes incorrectly.
-
-**Why it happens:**
-WebGL does not support order-independent transparency. THREE.js sorts transparent objects by their center point distance to camera, which fails for large overlapping volumes. The depth buffer cannot correctly handle partially transparent overlapping surfaces.
-
-**How to avoid:**
-- Use `depthWrite: false` on all airspace materials to prevent depth buffer conflicts between airspace volumes.
-- Set explicit `renderOrder` values: Class D = 1, Class C = 2, Class B = 3 (inner volumes render first).
-- Use very low opacity (0.05-0.15) for volume fills -- just enough to see the boundary without creating obvious sorting artifacts.
-- Render airspace boundaries as wireframe outlines (lines) with solid color rather than filled volumes. This completely avoids transparency sorting issues.
-- Consider using `THREE.EdgesGeometry` on the extruded shapes for outline-only rendering, consistent with the existing app's wireframe/retro aesthetic.
-
-**Warning signs:**
-- Airspace volumes flickering when rotating the camera
-- Inner airspace volumes disappearing when viewed from certain angles
-- Airspace volumes appearing to "clip" through terrain or each other
-- Significant FPS drop when multiple overlapping transparent volumes are visible
-
-**Phase to address:**
-Airspace rendering phase. Must decide on wireframe vs. filled approach before implementing.
+**Sources:**
+- [MTLRenderPipelineState - Apple Documentation](https://developer.apple.com/documentation/metal/mtlrenderpipelinestate)
+- [Metal Best Practices Guide](https://developer.apple.com/library/archive/documentation/3DDrawing/Conceptual/MTLBestPracticesGuide/)
 
 ---
 
-## Technical Debt Patterns
+### Pitfall 3: Missing Triple Buffering for Dynamic Data
 
-Shortcuts that seem reasonable but create long-term problems.
+**What goes wrong:** CPU and GPU fight over the same buffer. Aircraft positions stutter, trails flicker, or the app hangs waiting for GPU to release the buffer. In the worst case, data races corrupt vertex data mid-frame, producing visual glitches (vertices at 0,0,0, stretched triangles).
 
-| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
-|----------|-------------------|----------------|-----------------|
-| Loading full OurAirports CSV (12.5 MB, ~70K rows) at startup | Simple implementation, all data available | 3-5 second load time, 50+ MB parsed in memory, blocks main thread | Never in production. Pre-filter to medium/large airports (~5K rows) or use chunked loading |
-| Polling global API every 1 second (matching dump1090 interval) | Real-time feel | API rate limit exceeded, IP banned, wasted bandwidth | Never for global APIs. Use 5-10 second intervals minimum |
-| Creating new THREE.Geometry per terrain tile | Each tile gets exact vertex count | Geometry objects never shared, GC pressure, hundreds of geometries | Only if using vertex shader displacement (then geometry is shared and lightweight) |
-| Storing all terrain tile elevation data in JS arrays | Easy to query elevation at any point | Memory grows linearly with loaded tiles; 100 tiles * 256*256 * 4 bytes = 26 MB of Float32Arrays | Only for the ~9 visible tiles. Dispose arrays for unloaded tiles |
-| Inline airspace GeoJSON data in the HTML file | No external file loading, no CORS | HTML file grows by 1-5 MB depending on coverage area; parse time at startup | Never. Load as separate JSON file via fetch from same origin |
-| Using CSS2DRenderer for airport/airspace labels | Quick to implement, always readable | Separate render pass, DOM manipulation every frame, poor performance beyond 50 labels | Only for small label counts (<20). Use canvas sprite labels for bulk. The existing app already uses sprite labels. |
+**Why it happens:** In the web version, JavaScript's single-threaded model and WebGL's implicit synchronization hide the CPU/GPU synchronization problem. In Metal, the CPU and GPU run asynchronously. If you write new aircraft positions into the same buffer the GPU is currently reading, you get torn frames or hangs.
 
-## Integration Gotchas
+**Consequences:**
+- CPU stalls waiting for GPU (destroys frame rate)
+- Torn/corrupted vertex data (visual artifacts)
+- Deadlocks if semaphore logic is wrong
 
-Common mistakes when connecting to external services.
+**Prevention:**
+1. Implement triple buffering with a ring of 3 buffers for ALL per-frame dynamic data (aircraft positions, trail vertices, uniform buffers with camera matrices).
+2. Use a `DispatchSemaphore` initialized to 3. Wait on it before encoding a frame, signal it in the command buffer's completion handler.
+3. Advance the buffer index AFTER all CPU writes for that frame are complete, not before.
+4. For the flight tracker's data flow: network data arrives -> update staging buffer on CPU -> copy to the next available ring buffer slot -> GPU reads from a previous slot.
 
-| Integration | Common Mistake | Correct Approach |
-|-------------|----------------|------------------|
-| Airplanes.live API | Polling from browser with `fetch()` at page load without checking if user wants global data | Only fetch when user explicitly switches to global mode. Show loading indicator. Handle 429 gracefully |
-| adsb.lol API | Assuming same response format as airplanes.live | While adsb.lol is "ADSBExchange Rapid API compatible," field names and availability differ. Test with real responses before assuming field mapping |
-| Mapzen Terrarium tiles | Using the `tile.mapzen.com` URL pattern (requires API key from defunct Mapzen service) | Use direct S3 URL: `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png` (no auth required) or Nextzen equivalent |
-| OpenAIP airspace data | Fetching airspace data for all of the US at once | OpenAIP data downloads require registration and are organized by country. Pre-process to GeoJSON and host statically, or use their API with appropriate caching |
-| OurAirports CSV | Using `fetch()` to download airports.csv from GitHub Pages (davidmegginson.github.io) | GitHub Pages may rate-limit or change URLs. Host a pre-filtered copy of the data within the project. A filtered 500 KB file of medium/large airports is far more practical than the full 12.5 MB |
-| hexdb.io (existing) | Making a new request for every aircraft that enters the scene | The existing code already caches results in `aircraftInfoCache`. Extend this pattern to ALL new integrations. Every external data source must have a cache layer |
-| OSM tile servers (existing) | Aggressive tile preloading beyond the visible area | The existing code already has smart preloading. OSM usage policy explicitly forbids background downloading of tiles the user is not viewing. Same applies to terrain tile servers |
+```swift
+let maxInflightFrames = 3
+let frameSemaphore = DispatchSemaphore(value: maxInflightFrames)
+var currentBufferIndex = 0
 
-## Performance Traps
+func draw(in view: MTKView) {
+    frameSemaphore.wait()
+    currentBufferIndex = (currentBufferIndex + 1) % maxInflightFrames
 
-Patterns that work at small scale but fail as usage grows.
+    // Update dynamicBuffers[currentBufferIndex] with new aircraft data
+    // Encode render commands referencing dynamicBuffers[currentBufferIndex]
 
-| Trap | Symptoms | Prevention | When It Breaks |
-|------|----------|------------|----------------|
-| One THREE.Mesh per terrain tile with full vertex displacement | Works for 4 tiles | FPS drops below 20, geometry count explodes | At 16+ terrain tiles with 256x256 segments each |
-| Canvas-based label per airport marker | Works for 10 airports | Each label creates a texture, sprite, and material | At 50+ visible airport markers. Use instanced rendering or a single texture atlas |
-| Fetching airspace polygons and extruding in real-time | Works for 1 airspace | Extrusion is expensive, GC spikes | At 10+ airspace volumes loading simultaneously. Pre-compute extrusion geometry and cache |
-| Individual `scene.add()` for each airport marker | Works for 20 markers | Draw calls proportional to marker count | At 100+ markers. Use THREE.InstancedMesh or merge geometries |
-| Re-parsing OurAirports CSV on every page load | Works in development | 12.5 MB download, parse, and filter on every visit | Always in production. Cache parsed data in localStorage or IndexedDB |
-| Terrain tile textures never disposed | Works for short sessions | GPU memory grows without bound | After 5+ minutes of panning across terrain. Implement LRU cache with texture.dispose() |
-| Airspace geometry created with ShapeGeometry + ExtrudeGeometry | Works for simple shapes | Complex airspace polygons (Class B shelves with holes) fail or produce degenerate geometry | With real-world Class B airspace boundaries that have concave shapes, holes, and shelf structures |
+    commandBuffer.addCompletedHandler { [weak self] _ in
+        self?.frameSemaphore.signal()
+    }
+    commandBuffer.commit()
+}
+```
 
-## Security Mistakes
+**Detection:** Instruments shows GPU idle time followed by CPU idle time in alternation. Frame time exceeds 16ms despite low GPU load.
 
-Domain-specific security issues beyond general web security.
+**Confidence:** HIGH -- Apple's Metal Best Practices Guide explicitly recommends this pattern.
 
-| Mistake | Risk | Prevention |
-|---------|------|------------|
-| Exposing API keys in single-file HTML source | Anyone viewing page source gets your API keys | Use only keyless APIs (airplanes.live, adsb.lol, S3 terrain tiles) or proxy through a simple backend. The current app correctly uses only free, keyless APIs |
-| Fetching aircraft data over HTTP instead of HTTPS | Position data intercepted, mixed content warnings | Always use HTTPS endpoints. The current app already uses HTTPS for all external fetches |
-| Loading CSV data from untrusted third-party CDN | Malicious data injection via tampered CSV | Host all static data files within the project repository or on trusted infrastructure |
-| Not sanitizing callsign/registration data before display | XSS via crafted ADS-B data (unlikely but possible for self-reported ADS-B fields) | Always use textContent (not innerHTML) when displaying aircraft data. The existing code already does this correctly |
+**Sources:**
+- [Metal Best Practices Guide: Triple Buffering](https://developer.apple.com/library/archive/documentation/3DDrawing/Conceptual/MTLBestPracticesGuide/TripleBuffering.html)
+- [Metal Triple Buffering - Apple Developer Forums](https://developer.apple.com/forums/thread/651581)
 
-## UX Pitfalls
+---
 
-Common user experience mistakes in this domain.
+### Pitfall 4: SwiftUI State Changes Triggering Metal View Recreation
 
-| Pitfall | User Impact | Better Approach |
-|---------|-------------|-----------------|
-| Loading terrain, airspace, AND airport data simultaneously at startup | 10+ second load time, blank screen, no interactivity | Load in priority order: (1) map tiles + aircraft data first (already works), (2) terrain on-demand when user zooms in, (3) airspace when user enables it, (4) airports when user searches |
-| Showing all 70,000 airports from OurAirports | Map covered in markers, impossible to identify anything, FPS destroyed | Filter by zoom level: z<6 = only large_airport, z6-8 = add medium_airport, z>8 = add small_airport. Never show heliports/closed/seaplane at any zoom |
-| Terrain elevation blocking aircraft visibility | Aircraft at low altitude clip inside terrain mesh or are hidden behind mountains | Always render aircraft ABOVE terrain (add a minimum altitude offset). Use renderOrder to ensure aircraft always draw on top of terrain |
-| Airspace volumes obscuring the map and aircraft | Cluttered, overwhelming visual noise | Default to airspace OFF. Provide toggle. When enabled, show outlines only with minimal fill. Fade airspace as user zooms out |
-| Airport search returning hundreds of results with no ranking | User types "San" and gets 200 results across the globe | Rank by: (1) airport size (large first), (2) proximity to current view center, (3) name match quality. Limit display to 10 results |
-| No loading states for async data sources | User thinks app is broken during 2-3 second API response | Show per-feature loading indicators: "Loading terrain...", "Fetching global aircraft...", "Loading airspace data..." |
+**What goes wrong:** Updating the aircraft detail panel (SwiftUI) causes the entire Metal view to flicker, re-initialize, or drop frames. Selecting a different aircraft causes a 200ms hitch. UI controls feel sluggish despite the 3D view rendering at 60fps.
 
-## "Looks Done But Isn't" Checklist
+**Why it happens:** SwiftUI re-evaluates view bodies when `@State`, `@Binding`, or `@Observable` properties change. If the MTKView wrapper (`NSViewRepresentable`) is inside the same view hierarchy as the data panel, SwiftUI may recreate the NSView, reset the Metal pipeline, or trigger unnecessary redraws. SwiftUI's diffing cannot understand Metal's internal state.
 
-Things that appear complete but are missing critical pieces.
+**Consequences:**
+- Metal view destroyed and recreated on state changes (pipeline states lost, buffers recreated)
+- Frame drops every time the user interacts with UI controls
+- Flicker during window resize as MTKView's drawable is recreated
 
-- [ ] **Terrain rendering:** Often missing proper tile disposal when panning -- verify `texture.dispose()` and `geometry.dispose()` are called on every unloaded terrain tile
-- [ ] **Global flight data:** Often missing deduplication when switching between local dump1090 and global API -- verify aircraft with same hex code do not appear twice
-- [ ] **Airspace volumes:** Often missing altitude floors -- Class B shelves have different floor altitudes at different distances from the airport; a simple extrusion with uniform floor is wrong
-- [ ] **Airport search:** Often missing debounce on search input -- verify typing "KJFK" does not trigger 4 separate searches ("K", "KJ", "KJF", "KJFK")
-- [ ] **3D text labels:** Often missing camera-distance scaling -- verify labels remain readable at zoom level 6 without becoming enormous at zoom level 14
-- [ ] **Terrain + aircraft interaction:** Often missing altitude reference consistency -- verify terrain elevation and aircraft altitude use the same vertical scale factor (the existing `altitudeScale` variable)
-- [ ] **API error handling:** Often missing graceful degradation -- verify the app continues working when airplanes.live returns 429 or is unreachable
-- [ ] **Memory management:** Often missing long-session stability -- verify memory does not grow after 30 minutes of continuous use with terrain + global data enabled
-- [ ] **Tile loading order:** Often missing prioritization -- verify tiles near camera load before tiles at the edge of view
-- [ ] **Data source switching:** Often missing state cleanup -- verify switching from global back to local properly removes global-only aircraft from the scene
+**Prevention:**
+1. Isolate the MTKView wrapper into its own SwiftUI view with NO state dependencies. It should have zero `@State`, `@Binding`, or `@Observable` properties that change during runtime.
+2. Communicate between SwiftUI and Metal through a shared `Renderer` class (not through SwiftUI state). The Renderer should be a reference type (`class`) that the MTKView's Coordinator holds directly.
+3. Use `EquatableView` or implement `Equatable` on your NSViewRepresentable to prevent unnecessary updates.
+4. For the aircraft detail panel: SwiftUI reads from the Renderer's published selected-aircraft data, but changes to the panel do NOT flow back through the MTKView's view hierarchy.
+5. Handle window resize explicitly: set `autoResizeDrawable = false` on the MTKView if resize causes flicker, then manually update `drawableSize` in `updateNSView`.
 
-## Recovery Strategies
+```swift
+// WRONG: State in the same view as Metal
+struct ContentView: View {
+    @State var selectedAircraft: Aircraft?  // Changes trigger full body re-eval
+    var body: some View {
+        HSplitView {
+            MetalView()  // Gets recreated when selectedAircraft changes!
+            DetailPanel(aircraft: selectedAircraft)
+        }
+    }
+}
 
-When pitfalls occur despite prevention, how to recover.
+// RIGHT: Isolate Metal view from changing state
+struct ContentView: View {
+    @State var renderer = FlightRenderer()
+    var body: some View {
+        HSplitView {
+            MetalView(renderer: renderer)  // Never changes identity
+                .equatable()
+            DetailPanel(renderer: renderer)  // Reads from renderer directly
+        }
+    }
+}
+```
 
-| Pitfall | Recovery Cost | Recovery Steps |
-|---------|---------------|----------------|
-| Terrain memory explosion | MEDIUM | Add vertex density cap (max 32x32 per tile), add tile count cap, add `renderer.info` monitoring with auto-disable at threshold |
-| API rate limit ban | LOW | Implement exponential backoff, add "data source unavailable" UI message, fall back to cached data, wait 5-10 minutes for ban to lift |
-| CORS failure with terrain tiles | MEDIUM | Switch to vertex shader displacement approach (no pixel reading needed), or switch to Nextzen tile provider with API key, or proxy through same-origin server |
-| Transparent volume artifacts | LOW | Switch from filled volumes to wireframe/outline rendering. Remove all `transparent: true` in favor of `THREE.LineSegments` with `EdgesGeometry` |
-| OurAirports CSV blocking main thread | LOW | Move parsing to a Web Worker, or pre-filter data server-side to reduce file size from 12.5 MB to ~500 KB |
-| Single-file becoming unmaintainable | HIGH | Refactor to multi-file structure with `<script src>` tags. This requires touching every global variable and function reference. Do this BEFORE it becomes critical |
-| Aircraft clipping through terrain | LOW | Add minimum altitude offset (e.g., terrain height + 50 units). Query terrain height at aircraft position and adjust Y |
+**Detection:** Add `Self._printChanges()` in the Metal wrapper's `body` to see if it is being re-evaluated. Instruments SwiftUI template shows view identity changes.
 
-## Pitfall-to-Phase Mapping
+**Confidence:** HIGH -- documented in Apple Developer Forums and multiple verified SwiftUI + Metal integration discussions.
 
-How roadmap phases should address these pitfalls.
+**Sources:**
+- [MetalKit in SwiftUI - Apple Developer Forums](https://developer.apple.com/forums/thread/119112)
+- [Metal Integration with SwiftUI - Apple Developer Forums](https://origin-devforums.apple.com/forums/thread/774100)
+- [Demystify SwiftUI Performance - WWDC23](https://developer.apple.com/videos/play/wwdc2023/10160/)
 
-| Pitfall | Prevention Phase | Verification |
-|---------|------------------|--------------|
-| Terrain memory explosion | Terrain Elevation | Monitor `renderer.info.memory` during testing. Must stay below 300 geometries and 200 textures |
-| API rate limiting / bans | Global Flight Data | Test with artificial rate limiting. Verify no more than 1 request/sec to any single API |
-| CORS with terrain tiles | Terrain Elevation (day-one validation) | Run a simple fetch test from the browser before writing any terrain code |
-| Single-file growth | Pre-work / File Organization (before feature phases) | File can be navigated and a function found in under 15 seconds |
-| Airspace transparency artifacts | Airspace Rendering | Rotate camera 360 degrees around overlapping airspace. No flickering or disappearing volumes |
-| Airport data memory / performance | Airport Search | Load airports, verify memory delta is under 20 MB, FPS stays above 30 |
-| Label performance with many markers | Airport Search / 3D Text Labels | Add 200 airport markers and labels. FPS must stay above 25 |
-| Terrain + aircraft altitude mismatch | Terrain Elevation | Place an aircraft at 0 altitude and verify it sits on top of terrain, not inside it |
-| Data source deduplication | Global Flight Data | Enable both dump1090 and global API. Count aircraft with same hex. Must be 0 duplicates |
-| Long-session memory growth | All phases (ongoing concern) | Run app for 30 minutes with devtools Memory tab. Heap size must not grow continuously |
+---
+
+### Pitfall 5: Network Data Updates on the Render Thread
+
+**What goes wrong:** Aircraft positions freeze for 100-500ms every time a network poll completes. Frame rate drops from 60fps to <20fps during data updates. The app feels like it "hitches" every 1-3 seconds.
+
+**Why it happens:** The web version uses `setInterval` + `fetch` which is naturally async in JavaScript. In the native app, developers may process network responses (JSON parsing, aircraft array updates, trail point appending) on the same thread or lock that the render loop uses. JSON parsing of 200+ aircraft responses takes 5-20ms. Combined with buffer updates, this exceeds the 16ms frame budget.
+
+**Consequences:**
+- Visible stutters at each data poll interval
+- Lock contention between network processing and rendering threads
+- In the worst case, network timeouts stall the render thread entirely
+
+**Prevention:**
+1. Process ALL network data on a background thread/queue. Never parse JSON or update data models on the render thread.
+2. Use a double-buffer pattern for the data model: network thread writes to a "staging" model, render thread reads from a "current" model. Swap atomically at frame boundaries.
+3. Implement interpolation on the render thread using the last two known positions per aircraft. The render thread should never wait for network data -- it extrapolates from cached state.
+4. Use `URLSession` with a dedicated `OperationQueue` for network requests. Process responses with `Decodable` on that queue, not `MainActor`.
+5. Set a network timeout of 5 seconds (not the default 60s). If an API is slow, skip that poll cycle rather than blocking.
+
+```
+Network Thread:        poll -> JSON parse -> update staging model
+                                                     |
+Frame Boundary:                              atomic swap -----+
+                                                              v
+Render Thread:         read current model -> interpolate -> encode -> GPU
+```
+
+**Detection:** Frame time spikes correlating with network poll interval. Instruments Time Profiler shows JSON parsing on the main thread or render thread.
+
+**Confidence:** HIGH -- well-established real-time rendering pattern; multiple sources confirm lock contention as the primary cause of frame drops in Metal apps with concurrent data updates.
+
+**Sources:**
+- [Metal by Tutorials: Performance Optimization - Kodeco](https://www.kodeco.com/books/metal-by-tutorials/v2.0/chapters/24-performance-optimization)
+- [Metal retrospective - zeux.io](https://zeux.io/2016/12/01/metal-retrospective/)
+
+---
+
+## Moderate Pitfalls
+
+Mistakes that cost days of debugging or performance issues, but are recoverable.
+
+---
+
+### Pitfall 6: Autorelease Pool Drain Missing in Render Loop
+
+**What goes wrong:** Memory usage climbs steadily (10-50MB per minute), eventually causing the app to be killed by the OS or swap thrashing. The leak is not visible in Instruments' standard leak detector because the objects are autoreleased, just never drained.
+
+**Why it happens:** Metal objects (command buffers, drawables, textures) are Objective-C objects under the hood, managed by autorelease pools. In a tight render loop, temporary objects accumulate. In JavaScript/THREE.js, garbage collection handles this automatically. In Swift, if the render loop callback (e.g., `draw(in:)`) runs on a thread without a properly scoped autorelease pool, temporaries pile up until the thread's top-level pool drains (which may be never for a custom rendering thread).
+
+**Prevention:**
+1. Wrap the body of your `draw(in:)` method in an `autoreleasepool { }` block.
+2. If using a custom display link thread (not MTKView's built-in delegate), ensure each frame iteration has its own autorelease pool.
+3. Use Instruments Allocations to verify that Metal object counts remain stable over time (not monotonically increasing).
+
+```swift
+func draw(in view: MTKView) {
+    autoreleasepool {
+        guard let drawable = view.currentDrawable,
+              let descriptor = view.currentRenderPassDescriptor else { return }
+        // ... encode and commit
+    }
+}
+```
+
+**Detection:** Activity Monitor shows memory growth over time. Run with `OBJC_DEBUG_MISSING_POOLS=YES` environment variable to get runtime warnings.
+
+**Confidence:** HIGH -- multiple verified bug reports and Apple documentation confirm this.
+
+**Sources:**
+- [Metal renderer memory leaks on render loop - cocos2d-x Issue](https://github.com/cocos2d/cocos2d-x/issues/19997)
+- [Metal Best Practices Guide: Drawables](https://developer.apple.com/library/archive/documentation/3DDrawing/Conceptual/MTLBestPracticesGuide/Drawables.html)
+- [Autorelease pool memory leak - MoltenVK Issue](https://github.com/KhronosGroup/MoltenVK/issues/1732)
+
+---
+
+### Pitfall 7: Wrong GPU Buffer Storage Mode on macOS
+
+**What goes wrong:** Performance is 2-5x worse than expected for vertex buffer updates, or CPU cannot read back data that the GPU wrote.
+
+**Why it happens:** macOS (unlike iOS with Apple Silicon unified memory) supports three buffer storage modes: `.shared`, `.managed`, and `.private`. Choosing the wrong one wastes memory bandwidth or requires unnecessary synchronization. Developers coming from WebGL (where this distinction does not exist) may default to `.shared` for everything.
+
+| Storage Mode | CPU Access | GPU Access | Best For |
+|-------------|-----------|-----------|----------|
+| `.shared` | Direct | Direct (but slower on discrete GPU) | Small, frequently updated data (uniforms, small vertex buffers) |
+| `.managed` | Buffered copy | Fast VRAM copy | Medium-sized data updated occasionally (map tile vertices, airport geometry) |
+| `.private` | None | Fastest | Static data (sphere geometry, textures), GPU-generated data |
+
+**Prevention:**
+1. Use `.shared` for per-frame dynamic data under 4KB (camera uniforms, light parameters).
+2. Use `.managed` for aircraft vertex buffers and trail data that update every poll cycle but not every frame. Call `didModifyRange()` after CPU writes.
+3. Use `.private` for static geometry (ground plane, airport models) and textures. Upload via a blit command encoder from a staging `.shared` buffer.
+4. On Apple Silicon Macs, `.shared` and `.managed` have similar performance due to unified memory, but `.private` is still fastest for GPU-only data.
+
+**Detection:** Metal System Trace in Instruments shows excessive buffer synchronization time. GPU timeline shows idle periods waiting for buffer transfers.
+
+**Confidence:** HIGH -- Apple Developer Documentation provides explicit guidance on storage modes.
+
+**Sources:**
+- [Choosing a Resource Storage Mode in macOS - Apple Documentation](https://developer.apple.com/documentation/metal/setting_resource_storage_modes/choosing_a_resource_storage_mode_in_macos)
+- [Metal Best Practices Guide: Resource Options](https://developer.apple.com/library/archive/documentation/3DDrawing/Conceptual/MTLBestPracticesGuide/ResourceOptions.html)
+
+---
+
+### Pitfall 8: MSL Shader Porting Gotchas from GLSL
+
+**What goes wrong:** Shaders compile but produce wrong output. Colors are off, lighting is inverted, or procedural effects (like trail glow) behave differently.
+
+**Why it happens:** Metal Shading Language (MSL) is based on C++14 and differs from GLSL in subtle but breaking ways:
+
+| GLSL | MSL | Gotcha |
+|------|-----|--------|
+| `vec3`, `mat4` | `float3`, `float4x4` | Direct rename needed |
+| `mod(x, y)` | `fmod(x, y)` | `fmod` has different sign behavior for negative numbers. GLSL `mod` always returns positive; MSL `fmod` preserves the sign of the dividend |
+| `pow(x, y)` | `powr(x, y)` | Use `powr` when first arg is known non-negative (MSL `pow` has undefined behavior for negative base) |
+| `texture2D(sampler, uv)` | `texture.sample(sampler, uv)` | Object method, not function |
+| `gl_Position` | Return struct with `[[position]]` | No magic globals; use attribute qualifiers |
+| `varying` / `in` / `out` | Struct with `[[stage_in]]` | Explicit structs for inter-stage data |
+| Buffer index implicit | `[[buffer(N)]]` explicit | Mismatch between Swift-side `setVertexBuffer(at: N)` and shader `[[buffer(N)]]` is a silent bug |
+
+**Prevention:**
+1. Port shaders manually, not with automated tools. The flight tracker has relatively simple shaders (position transforms, color interpolation, trail effects) that are faster to rewrite than to debug after automated conversion.
+2. Test each shader in isolation with known inputs before integrating into the full pipeline.
+3. Pay special attention to `mod` vs `fmod` -- if your trail color-coding uses modular arithmetic, the sign difference will produce wrong colors for negative values.
+4. Match buffer indices explicitly. Create constants shared between Swift and MSL (via a shared header or bridging header) to avoid index mismatches.
+
+**Detection:** Visual output differs from web version. Colors wrong but geometry correct usually indicates a math function difference.
+
+**Confidence:** HIGH -- documented differences in Apple's MSL specification.
+
+**Sources:**
+- [Metal Shading Language Specification - Apple](https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf)
+- [GLSL Common Mistakes - Khronos Wiki](https://www.khronos.org/opengl/wiki/GLSL_:_common_mistakes)
+
+---
+
+### Pitfall 9: Swift 6 Concurrency vs Metal's Threading Model
+
+**What goes wrong:** Swift 6's strict concurrency checker produces dozens of warnings/errors about `Sendable` conformance, `@MainActor` isolation, and data race safety. The developer either disables concurrency checking entirely (losing safety) or wraps everything in actors (destroying performance).
+
+**Why it happens:** Metal's callback-based API (`addCompletedHandler`, `MTKViewDelegate.draw(in:)`) predates Swift concurrency. `MTKViewDelegate` is not annotated with `@MainActor` or `@Sendable`. GPU completion handlers run on arbitrary threads. Passing Metal objects (which are not `Sendable`) across isolation boundaries triggers compiler warnings.
+
+**Consequences:**
+- False-positive data race warnings everywhere
+- Temptation to mark everything `@unchecked Sendable` (hides real bugs)
+- `@MainActor` isolation on the renderer forces all Metal work onto the main thread, defeating the purpose of async GPU execution
+- Deadlocks if `await` is used inside the render loop (it suspends the draw callback)
+
+**Prevention:**
+1. Use `MainActor.assumeIsolated { }` inside `draw(in:)` since MTKView's delegate is called on the main thread. This satisfies the compiler without adding overhead.
+2. Collect per-frame input (mouse position, selected aircraft) into a `Sendable` struct at the start of each frame. Do not access `@MainActor`-isolated UI state during rendering.
+3. Keep the Renderer class as a regular class (not an actor). Use explicit locks (`os_unfair_lock` or `NSLock`) for the small amount of shared state between the network thread and render thread -- actors add scheduling overhead inappropriate for 60fps rendering.
+4. For GPU completion handlers, use `nonisolated` and avoid capturing `self` strongly. Signal semaphores, do not do complex work.
+5. Target Swift 6.2+ which has improved default actor isolation and `nonisolated(nonsending)` to reduce friction.
+
+```swift
+// Pattern for MTKViewDelegate with Swift 6 strict concurrency
+extension Renderer: MTKViewDelegate {
+    nonisolated func draw(in view: MTKView) {
+        MainActor.assumeIsolated {
+            self.performDraw(in: view)
+        }
+    }
+
+    nonisolated func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
+        MainActor.assumeIsolated {
+            self.handleResize(size)
+        }
+    }
+}
+```
+
+**Detection:** Build with strict concurrency checking enabled (`-strict-concurrency=complete`). Dozens of warnings about `Sendable` and actor isolation.
+
+**Confidence:** HIGH -- verified via Swift Forums discussion on Metal + Swift concurrency.
+
+**Sources:**
+- [Swift Concurrency and Metal - Swift Forums](https://forums.swift.org/t/swift-concurrency-and-metal/71908)
+- [Sending risks causing data races and Metal completion handlers - Swift Forums](https://forums.swift.org/t/sending-risks-causing-data-races-and-metal-completion-handlers/72518)
+- [Default Actor Isolation in Swift 6.2 - SwiftLee](https://www.avanderlee.com/concurrency/default-actor-isolation-in-swift-6-2/)
+
+---
+
+### Pitfall 10: macOS Code Signing, Notarization, and Distribution
+
+**What goes wrong:** The app builds and runs in Xcode but crashes on another Mac with "app is damaged" or "cannot be opened because the developer cannot be verified." Users cannot open the DMG. The notarization submission is rejected or hangs indefinitely.
+
+**Why it happens:** macOS Gatekeeper requires code signing + notarization for apps distributed outside the App Store. The process has multiple failure points that do not exist in web development.
+
+**Consequences:**
+- Users cannot run the app (Gatekeeper blocks it)
+- App runs in development but fails in production
+- Hours lost to cryptic codesign/notarization errors
+
+**Prevention:**
+1. **Apple Developer Program membership ($99/year) is required.** You cannot notarize without it. Budget for this early.
+2. **Sign bottom-up, not with `--deep`.** The `--deep` flag is unreliable. Sign embedded frameworks first, then the app bundle.
+3. **Enable Hardened Runtime.** Required for notarization. Add it early in development, not at the end, because it restricts JIT, dynamic library loading, and other capabilities that might affect your app.
+4. **Required entitlements for the flight tracker:**
+   - `com.apple.security.network.client` -- outgoing network connections (fetching flight data from APIs)
+   - Hardened Runtime enabled (required for notarization)
+   - No App Sandbox needed for direct distribution (Project explicitly targets DMG distribution, not App Store)
+5. **DMG notarization workflow:**
+   - Notarize the .app bundle first
+   - Create DMG containing the notarized .app
+   - Notarize the DMG
+   - Staple the ticket to the DMG with `xcrun stapler staple`
+   - The inner .app is also independently notarized, so it works if extracted from the DMG
+6. **Use `notarytool` (not deprecated `altool`).** `altool` was retired November 2023.
+7. **Test on a clean Mac** (or a fresh user account) before distributing. Development Macs have Gatekeeper exceptions.
+
+**Detection:** Run `codesign --verify --deep --strict --verbose=2 YourApp.app` and `spctl --assess -vv YourApp.app` to check before distributing.
+
+**Confidence:** HIGH -- Apple Developer Documentation provides explicit requirements.
+
+**Sources:**
+- [Resolving Common Notarization Issues - Apple Documentation](https://developer.apple.com/documentation/security/resolving-common-notarization-issues)
+- [Notarizing macOS Software Before Distribution - Apple Documentation](https://developer.apple.com/documentation/security/notarizing-macOS-software-before-distribution)
+- [Hardened Runtime - Apple Documentation](https://developer.apple.com/documentation/security/hardened-runtime)
+- [macOS distribution gist - rsms](https://gist.github.com/rsms/929c9c2fec231f0cf843a1a746a416f5)
+
+---
+
+## Minor Pitfalls
+
+Issues that cost hours, not days. Easy to fix once identified.
+
+---
+
+### Pitfall 11: nextDrawable() Blocking and App Hang on Background/Foreground
+
+**What goes wrong:** The app hangs for 1 second when backgrounded and foregrounded. Occasional frame drops when the GPU is busy.
+
+**Why it happens:** `CAMetalLayer.nextDrawable()` blocks if all drawables are in use. When the app is backgrounded, the system reclaims drawables. On resume, the first call blocks until one is available. If `allowsNextDrawableTimeout` is false (default), it blocks indefinitely.
+
+**Prevention:**
+1. Set `(view.layer as? CAMetalLayer)?.allowsNextDrawableTimeout = true` to return `nil` instead of blocking.
+2. Guard `view.currentDrawable` at the top of `draw(in:)`. If nil, skip the frame.
+3. Do not hold references to drawables beyond the current frame's command buffer.
+4. Request the drawable as LATE as possible in the frame -- do all CPU work (buffer updates, command encoding) first, then acquire the drawable only when you need to set it as the render target.
+
+**Detection:** Instruments shows `nextDrawable` taking >1ms. App freezes briefly on Cmd+Tab.
+
+**Confidence:** HIGH -- Apple Developer Documentation.
+
+**Sources:**
+- [Metal Best Practices Guide: Drawables](https://developer.apple.com/library/archive/documentation/3DDrawing/Conceptual/MTLBestPracticesGuide/Drawables.html)
+- [nextDrawable() - Apple Documentation](https://developer.apple.com/documentation/quartzcore/cametallayer/1478172-nextdrawable)
+
+---
+
+### Pitfall 12: MTKView Continuous Drawing Not Enabled in SwiftUI Wrapper
+
+**What goes wrong:** The Metal view renders once and then stops. It only redraws when the window is resized. The app appears frozen even though data is updating.
+
+**Why it happens:** MTKView has two draw modes: timer-driven (continuous) and explicit (on-demand via `setNeedsDisplay`). The default `isPaused = false` and `enableSetNeedsDisplay = false` should give continuous drawing, but when wrapping in `NSViewRepresentable`, the configuration can be reset or overridden during `makeNSView` / `updateNSView`.
+
+**Prevention:**
+1. In `makeNSView`, explicitly set:
+   ```swift
+   mtkView.isPaused = false
+   mtkView.enableSetNeedsDisplay = false
+   mtkView.preferredFramesPerSecond = 60
+   ```
+2. Set the delegate in `makeNSView`, not `updateNSView` (SwiftUI may call `updateNSView` multiple times, resetting the delegate).
+3. Verify drawing is continuous by logging frame count in `draw(in:)`.
+
+**Detection:** View renders static content. Resizing the window causes redraws but nothing else does.
+
+**Confidence:** HIGH -- frequently reported issue in Apple Developer Forums.
+
+**Sources:**
+- [MetalKit in SwiftUI - Apple Developer Forums](https://developer.apple.com/forums/thread/119112)
+
+---
+
+### Pitfall 13: simd_float4x4 Alignment and Layout Mismatches in Uniform Buffers
+
+**What goes wrong:** Uniform buffers appear to contain garbage data. Camera position is wrong. Transformations apply incorrectly (rotation instead of translation, or vice versa).
+
+**Why it happens:** Both THREE.js and Metal's `simd_float4x4` use column-major storage. However, when writing matrix math in Swift, developers may think in row-major terms and construct matrices incorrectly. The `simd_float4x4(columns:)` initializer takes columns, not rows. Additionally, the memory layout of `simd_float4x4` has 16-byte alignment requirements that must be respected in uniform buffer structs.
+
+**Prevention:**
+1. Use `simd_float4x4(columns: (col0, col1, col2, col3))` -- each column is a `simd_float4`.
+2. For uniform buffer structs, ensure 16-byte alignment. Add padding fields if necessary. Verify with `MemoryLayout<YourStruct>.stride`.
+3. Verify matrix layout matches between Swift struct and MSL struct. Print `MemoryLayout<Uniforms>.stride` and compare with the MSL struct size.
+4. Use Apple's `simd` convenience functions (`matrix_perspective_right_hand`, `matrix_look_at_right_hand`) rather than porting matrix math from THREE.js.
+
+**Detection:** Objects render at wrong positions. Camera orbit produces unexpected behavior. `MemoryLayout<Uniforms>.stride` does not match expected value.
+
+**Confidence:** MEDIUM -- column-major compatibility verified, but alignment issues are project-specific.
+
+---
+
+### Pitfall 14: Excessive SwiftUI View Updates from @Observable Flight Data
+
+**What goes wrong:** The aircraft list panel updates 200+ rows every second, causing the entire SwiftUI view hierarchy to re-evaluate and the UI thread to stall.
+
+**Why it happens:** If the aircraft array is an `@Observable` property, any change to any aircraft (position update every 1-3 seconds for each of 200+ aircraft) triggers SwiftUI to diff the entire list. This is amplified if each aircraft is itself observable and updates its coordinates.
+
+**Prevention:**
+1. Do NOT make the live aircraft data model `@Observable`. Use `@Observable` for UI-level state only (selected aircraft, settings, theme).
+2. For the aircraft list, use a snapshot approach: capture a read-only copy of the aircraft array at a fixed interval (e.g., every 500ms) and update a `@State` property, rather than streaming every position update.
+3. Use `LazyVStack` or `List` with stable `id` values (ICAO hex code) to minimize diffing cost.
+4. Break the detail panel into small sub-views so that only the changed property's sub-view re-evaluates.
+
+**Detection:** Instruments SwiftUI template shows >100 view body evaluations per second. Main thread time profiler shows time in SwiftUI diffing.
+
+**Confidence:** MEDIUM -- based on general SwiftUI performance guidance; specific to high-frequency data updates.
+
+**Sources:**
+- [Optimizing SwiftUI: Reducing Body Recalculation](https://medium.com/@wesleymatlock/optimizing-swiftui-reducing-body-recalculation-and-minimizing-state-updates-8f7944253725)
+- [Understanding and Improving SwiftUI Performance - Apple Documentation](https://developer.apple.com/documentation/Xcode/understanding-and-improving-swiftui-performance)
+
+---
+
+### Pitfall 15: MTKView Resize Flicker and Jank
+
+**What goes wrong:** Resizing the window causes the Metal content to stretch, blur, or flash white for a frame before redrawing at the new size.
+
+**Why it happens:** By default, `MTKView.autoResizeDrawable` is `true`, which resizes the Metal drawable every frame during a window resize. Between the resize event and the next draw call, the MTKView scales the old drawable to fill the new size, producing blur. If the draw call is slow, there is a visible stretch-snap effect.
+
+**Prevention:**
+1. For smooth resize: keep `autoResizeDrawable = true` (default) but ensure the draw loop is fast enough to keep up. Use Metal's `presentsWithTransaction = true` on the CAMetalLayer to synchronize presentation with the resize animation.
+2. For preventing blur: set `autoResizeDrawable = false` and manually update `drawableSize` in the `viewDidEndLiveResize` callback, accepting that content will be scaled during the resize gesture itself.
+3. Set a background clear color that matches your scene background so flashes are less noticeable.
+
+**Detection:** Resize the window slowly. Look for white flashes, stretching, or blur.
+
+**Confidence:** MEDIUM -- Apple Developer Forums reports, specific behavior may vary by macOS version.
+
+**Sources:**
+- [Redraw MTKView when its size changes - Apple Developer Forums](https://developer.apple.com/forums/thread/77901)
+
+---
+
+## Phase-Specific Warnings
+
+| Phase Topic | Likely Pitfall | Mitigation |
+|-------------|---------------|------------|
+| **Metal rendering setup** | Coordinate system mismatch (#1), pipeline state per frame (#2), continuous drawing (#12) | Build a minimal test scene (single triangle, known coordinates) first. Verify winding, depth, and projection before adding complexity. |
+| **Aircraft rendering** | Triple buffering missing (#3), storage mode wrong (#7) | Implement triple buffering from day 1. Profile with Metal System Trace early. |
+| **Shader porting** | GLSL-to-MSL function differences (#8), matrix alignment (#13) | Port shaders manually. Test each in isolation. Share buffer layout constants between Swift and MSL. |
+| **Data pipeline** | Network on render thread (#5), excessive SwiftUI updates (#14) | Architect network/render separation from the start. Use staging model pattern. |
+| **SwiftUI integration** | State changes destroying Metal view (#4), view body recomputation (#14), resize flicker (#15) | Isolate MTKView wrapper. Use reference-type Renderer shared between SwiftUI and Metal. |
+| **Swift concurrency** | Sendable/actor friction (#9) | Use `MainActor.assumeIsolated` in draw callbacks. Keep Renderer as plain class with explicit locking. |
+| **Memory management** | Autorelease pool missing (#6), drawable retention (#11) | Wrap draw loop in autoreleasepool. Monitor memory in Instruments during development. |
+| **Distribution** | Code signing/notarization (#10) | Set up signing and Hardened Runtime in Phase 1. Do not defer to the end. Test on a clean Mac before any beta distribution. |
+
+---
+
+## Summary: Top 5 Mistakes in Order of Impact
+
+1. **Coordinate system mismatch** (#1) -- will make nothing render correctly. Address in the first hour of Metal development.
+2. **No triple buffering** (#3) -- will cause stutters that are architecturally expensive to fix later. Build it from the start.
+3. **Network data on render thread** (#5) -- will cause periodic hitches that users notice immediately. Architect the separation from day 1.
+4. **SwiftUI state destroying Metal view** (#4) -- will cause mysterious flickering that is hard to diagnose. Isolate the Metal view wrapper.
+5. **Code signing deferred to end** (#10) -- will block distribution. Set up in Phase 1.
+
+---
 
 ## Sources
 
-- [Airplanes.live API guide](https://airplanes.live/api-guide/) -- rate limit: 1 req/sec, 250nm radius limit (HIGH confidence)
-- [ADSB.lol API docs](https://www.adsb.lol/docs/open-data/api/) -- open data, ODbL license (MEDIUM confidence -- CORS behavior unverified)
-- [OurAirports data](https://ourairports.com/data/) -- 12.5 MB airports.csv, ~70K rows (HIGH confidence)
-- [Mapzen Terrain Tiles on AWS](https://registry.opendata.aws/terrain-tiles/) -- S3 public dataset, no auth required for S3 access (HIGH confidence)
-- [Mapzen Terrarium format docs](https://github.com/tilezen/joerd/blob/master/docs/formats.md) -- RGB encoding: elevation = (R*256 + G + B/256) - 32768 (HIGH confidence)
-- [THREE.js transparent rendering issues](https://discourse.threejs.org/t/threejs-and-the-transparent-problem/11553) -- object-center sorting limitation (HIGH confidence)
-- [THREE.js memory disposal](https://discourse.threejs.org/t/dispose-things-correctly-in-three-js/6534) -- texture/geometry disposal requirements (HIGH confidence)
-- [THREE.js CORS with TextureLoader](https://discourse.threejs.org/t/textureloader-cors-problem-when-texture-has-external-link/57163) -- crossOrigin='anonymous' pattern (HIGH confidence)
-- [OSM tile usage policy](https://operations.osmfoundation.org/policies/tiles/) -- no bulk downloading, best-effort availability (HIGH confidence)
-- [OpenAIP airspace data](https://www.openaip.net/data/airspaces) -- airspace boundaries organized by country (MEDIUM confidence)
-- [THREE.js PlaneGeometry performance](https://discourse.threejs.org/t/planegeometry-renders-slowly-when-the-widht-height-is-large-and-there-are-many-segments-how-can-we-optimize-it/55108) -- large segment counts cause major slowdowns (HIGH confidence)
-- [THREE.js text label performance](https://discourse.threejs.org/t/how-to-create-lots-of-optimized-2d-text-labels/66927) -- sprite labels degrade beyond 200-300 instances (MEDIUM confidence)
-- Existing codebase analysis at `/Users/mit/Documents/GitHub/airplane-tracker-3d/airplane-tracker-3d-map.html` (4,631 lines, THREE.js r128, vanilla JS) -- direct inspection (HIGH confidence)
+- [Metal Best Practices Guide - Apple](https://developer.apple.com/library/archive/documentation/3DDrawing/Conceptual/MTLBestPracticesGuide/)
+- [From OpenGL to Metal - The Projection Matrix Problem](https://metashapes.com/blog/opengl-metal-projection-matrix-problem/)
+- [Metal & OpenGL Coordinate Systems - JAMESCUBE](https://jamescube.me/2020/03/metal-opengl-coordinate-systems/)
+- [MTLWinding - Apple Documentation](https://developer.apple.com/documentation/metal/mtlwinding)
+- [Coordinate Systems - gpuweb Issue #416](https://github.com/gpuweb/gpuweb/issues/416)
+- [API-specific Rendering Differences - Veldrid](https://veldrid.dev/articles/backend-differences.html)
+- [Metal by Tutorials: Coordinate Spaces - Kodeco](https://www.kodeco.com/books/metal-by-tutorials/v3.0/chapters/6-coordinate-spaces)
+- [Metal Triple Buffering - Apple Developer Forums](https://developer.apple.com/forums/thread/651581)
+- [Choosing a Resource Storage Mode in macOS - Apple Documentation](https://developer.apple.com/documentation/metal/setting_resource_storage_modes/choosing_a_resource_storage_mode_in_macos)
+- [Swift Concurrency and Metal - Swift Forums](https://forums.swift.org/t/swift-concurrency-and-metal/71908)
+- [Sending risks causing data races - Swift Forums](https://forums.swift.org/t/sending-risks-causing-data-races-and-metal-completion-handlers/72518)
+- [Resolving Common Notarization Issues - Apple Documentation](https://developer.apple.com/documentation/security/resolving-common-notarization-issues)
+- [Notarizing macOS Software Before Distribution - Apple Documentation](https://developer.apple.com/documentation/security/notarizing-macOS-software-before-distribution)
+- [Hardened Runtime - Apple Documentation](https://developer.apple.com/documentation/security/hardened-runtime)
+- [MetalKit in SwiftUI - Apple Developer Forums](https://developer.apple.com/forums/thread/119112)
+- [Demystify SwiftUI Performance - WWDC23](https://developer.apple.com/videos/play/wwdc2023/10160/)
+- [macOS Distribution Guide - rsms](https://gist.github.com/rsms/929c9c2fec231f0cf843a1a746a416f5)
+- [Metal Shading Language Specification - Apple](https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf)
+- [Metal Best Practices Guide: Drawables](https://developer.apple.com/library/archive/documentation/3DDrawing/Conceptual/MTLBestPracticesGuide/Drawables.html)
+- [nextDrawable() - Apple Documentation](https://developer.apple.com/documentation/quartzcore/cametallayer/1478172-nextdrawable)
+- [Understanding and Improving SwiftUI Performance - Apple Documentation](https://developer.apple.com/documentation/Xcode/understanding-and-improving-swiftui-performance)
 
 ---
-*Pitfalls research for: 3D flight tracker expansion (global data, terrain, airspace, airports)*
-*Researched: 2026-02-07*
+*Pitfalls research for: Native macOS Metal flight tracker (THREE.js/WebGL to Swift/Metal/SwiftUI rewrite)*
+*Researched: 2026-02-08*

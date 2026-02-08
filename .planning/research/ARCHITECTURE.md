@@ -1,628 +1,972 @@
-# Architecture Research
+# Architecture Patterns
 
-**Domain:** Multi-source 3D flight tracker with terrain, airspace, and airport features
-**Researched:** 2026-02-07
-**Confidence:** HIGH (based on existing codebase analysis + verified external documentation)
+**Domain:** Native macOS Metal flight tracker (rewrite from THREE.js web app)
+**Researched:** 2026-02-08
+**Confidence:** HIGH (Metal rendering patterns from Apple docs + Metal by Example; SwiftUI integration from Apple WWDC sessions; Swift concurrency from official documentation)
 
-## Existing Architecture Baseline
+## Recommended Architecture
 
-The current system is a 4,631-line single-file HTML application with procedural JavaScript and THREE.js r128. It already has six implicit layers: UI/DOM, 3D Rendering, Data Fetch/Interpolation, Aircraft Management, Map Tiles, and Statistics. The architecture must evolve within these constraints: single-file HTML, no build tooling, vanilla JS, 30fps+ with 200+ aircraft.
+The native macOS app uses a three-layer architecture with strict separation: **Data Layer** (Swift concurrency actors + async/await), **Rendering Layer** (Metal pipeline with MTKView), and **UI Layer** (SwiftUI with NSViewRepresentable bridge). The Data Layer and Rendering Layer communicate through a shared observable model. The UI Layer reads from the same model and sends user actions back through it.
 
-The critical insight: this is NOT a greenfield design. Every new component must integrate with existing global state, the existing `animate()` loop, the existing `latLonToXZ()` coordinate system, and the existing `interpolateAircraft()` pipeline. The architecture below describes how new components plug into what already exists.
-
-## System Overview
+This is NOT a port of the web app's procedural architecture. The web version uses global mutable state, a single `animate()` loop, and DOM manipulation. The native version uses value types, actors for thread safety, protocol-oriented rendering, and SwiftUI's declarative UI. The only things preserved are the domain logic (coordinate transforms, interpolation math, data normalization) and the visual design.
 
 ```
-+-------------------------------------------------------------------+
-|                        UI / DOM Layer                               |
-|  [Info Panel] [Controls] [Airport Search] [Data Source Selector]   |
-+-------------------------------------------------------------------+
-        |              |              |               |
-+-------------------------------------------------------------------+
-|                    Application Controller                          |
-|  init() -> animate() -> interpolateAircraft() -> render()          |
-+-------------------------------------------------------------------+
-        |              |              |               |
-+-------+------+-------+------+------+-------+-------+------+
-|              |              |              |              |
-| Data Source  | Aircraft     | Terrain      | Airspace     | Airport
-| Abstraction  | Management   | Elevation    | Volume       | Database
-| Layer        | Layer        | Layer        | Layer        | Layer
-|              |              |              |              |
-| [dump1090]   | [Create]     | [Tile Fetch] | [GeoJSON]    | [CSV Load]
-| [adsb.lol]   | [Interpolate]| [Heightmap]  | [Extrude]    | [Search]
-| [adsb.fi]    | [Trail]      | [Mesh Gen]   | [Render]     | [Labels]
-| [Fallback]   | [LOD]        | [Cache]      | [Cache]      | [Fly-to]
-+--------------+--------------+--------------+--------------+----------+
-        |              |              |               |
-+-------------------------------------------------------------------+
-|                    THREE.js Scene Graph                             |
-|  [Camera] [Lights] [Map Tiles] [Terrain Meshes] [Aircraft Groups] |
-|  [Airspace Volumes] [Airport Labels] [Trails] [Altitude Lines]    |
-+-------------------------------------------------------------------+
-        |
-+-------------------------------------------------------------------+
-|                    WebGL Renderer (r128)                            |
-+-------------------------------------------------------------------+
++------------------------------------------------------------------+
+|                        SwiftUI Layer                              |
+|  [InfoPanel] [ControlsView] [AirportSearch] [SettingsView]       |
+|  [SelectedPlaneView] [GraphsView] [StatusBar]                    |
++------------------------------------------------------------------+
+        |  reads @Observable       |  user actions
+        v                          v
++------------------------------------------------------------------+
+|                    AppState (@Observable)                         |
+|  - aircraftList: [AircraftModel]                                 |
+|  - selectedAircraft: AircraftModel?                              |
+|  - settings: AppSettings                                         |
+|  - dataSourceMode: DataSourceMode                                |
+|  - connectionStatus: ConnectionStatus                            |
++------------------------------------------------------------------+
+        |  supplies data to         ^  receives updates from
+        v                          |
++------------------------------------------------------------------+
+|                    Metal Renderer                                 |
+|  [MetalView: NSViewRepresentable wrapping MTKView]                |
+|  [Renderer: MTKViewDelegate]                                     |
+|  [AircraftRenderPass] [MapTileRenderPass] [TrailRenderPass]       |
+|  [LabelRenderPass] [AltitudeLineRenderPass]                      |
++------------------------------------------------------------------+
+        |  GPU commands             ^  per-frame data
+        v                          |
++------------------------------------------------------------------+
+|                    Metal GPU Pipeline                             |
+|  [Command Queue] [Pipeline States] [Vertex/Fragment Shaders]     |
+|  [Texture Cache] [Instance Buffers] [Uniform Buffers]            |
++------------------------------------------------------------------+
+
+        -------- Separate async domain --------
+
++------------------------------------------------------------------+
+|                    Data Layer (Actors)                            |
+|  [FlightDataActor] - polls dump1090/airplanes.live/adsb.lol      |
+|  [AircraftInterpolator] - smooth position interpolation           |
+|  [EnrichmentActor] - hexdb.io/adsbdb lookups                     |
+|  [AirportDataActor] - OurAirports CSV loading + search           |
+|  [SettingsStore] - UserDefaults persistence                       |
++------------------------------------------------------------------+
+        |  URLSession async/await
+        v
++------------------------------------------------------------------+
+|                    Network / External APIs                        |
+|  [dump1090] [airplanes.live] [adsb.lol] [OpenSky]                |
+|  [hexdb.io] [adsbdb.com]                                         |
++------------------------------------------------------------------+
 ```
 
-### Component Responsibilities
+### Component Boundaries
 
-| Component | Responsibility | Communicates With | Typical Implementation |
-|-----------|----------------|-------------------|------------------------|
-| Data Source Abstraction | Normalize aircraft data from multiple sources into common format | Aircraft Management, UI (source selector) | Object with `fetch()` method returning normalized `{aircraft: [...]}` |
-| Aircraft Management | Create/update/remove aircraft 3D objects, interpolation | Data Source, Scene Graph, Trails, Labels | Existing `interpolateAircraft()` + `createAirplane()` extended |
-| Terrain Elevation | Fetch elevation tiles, decode heightmaps, create terrain meshes | Scene Graph, Map Tile coordinates | PlaneGeometry with vertex displacement from decoded PNG |
-| Airspace Volumes | Parse airspace GeoJSON, create extruded 3D volumes | Scene Graph, coordinate system (`latLonToXZ`) | THREE.ExtrudeGeometry from THREE.Shape, transparent materials |
-| Airport Database | Load airport CSV, search/filter, render 3D labels | Scene Graph, coordinate system, UI (search panel) | In-memory array with index for search, CanvasTexture labels |
-| Map Tiles (existing) | Load/cache/render slippy map tiles on ground plane | Scene Graph, coordinate system | Already implemented, no changes needed |
-| UI/DOM | Settings panels, search inputs, data source toggle | All components via global state | HTML elements + event handlers |
+| Component | Responsibility | Communicates With |
+|-----------|---------------|-------------------|
+| **AppState** | Central observable model. Holds aircraft list, selection, settings, connection status. Published to both SwiftUI and Renderer. | SwiftUI views (read), Data Layer actors (write), Renderer (read) |
+| **MetalView** | NSViewRepresentable wrapping MTKView. Bridges SwiftUI layout to Metal rendering surface. Forwards mouse/keyboard input. | SwiftUI (hosting), Renderer (delegate) |
+| **Renderer** | MTKViewDelegate. Owns Metal device, command queue, pipeline states. Reads AppState each frame, encodes draw commands. | MTKView (delegate callbacks), AppState (read), GPU (command buffers) |
+| **FlightDataActor** | Actor managing data polling. Runs async polling loop with fallback chain. Normalizes responses to common AircraftModel. | Network (URLSession), AppState (publishes updates) |
+| **AircraftInterpolator** | Smoothly interpolates aircraft positions between data updates (5-10s intervals to 60fps). Runs on render thread or dedicated actor. | AppState aircraft array (read/write per frame) |
+| **EnrichmentActor** | Lazily fetches aircraft metadata (registration, type, route) from enrichment APIs. Caches results. | Network (URLSession), AppState (enriches aircraft models) |
+| **AirportDataActor** | Loads OurAirports CSV once, builds search index. Provides search and nearby queries. | Network (one-time CSV fetch), AppState (search results) |
+| **SettingsStore** | Persists user preferences to UserDefaults. Restores on launch. | AppState settings (read/write) |
 
-## Recommended Project Structure (Single-File Sections)
+### Data Flow
 
-Since this must remain a single HTML file, the "structure" is organized as clearly delimited code sections with comment banners. This is the recommended ordering within the `<script>` tag:
+**Aircraft data flow (network to pixels):**
 
 ```
-<script>
-// =============================================
-// SECTION 1: CONFIGURATION & CONSTANTS
-// =============================================
-// DATA_URL, REFRESH_INTERVAL, terrain tile URLs, etc.
+FlightDataActor (polling every 1-10s)
+  |
+  | async/await URLSession
+  v
+Raw JSON from API (ADSBx v2 format: {ac: [{hex, lat, lon, alt_baro, ...}]})
+  |
+  | DataNormalizer.normalize() -> [AircraftModel]
+  v
+AppState.aircraftList updated on @MainActor
+  |
+  | @Observable notifies SwiftUI (info panels update)
+  | Renderer reads in draw(in:) callback
+  v
+AircraftInterpolator.interpolate(aircraft, deltaTime)
+  |
+  | Produces interpolated position/rotation per frame
+  v
+Renderer encodes to per-instance buffer
+  |
+  | setVertexBuffer + drawIndexedPrimitives(instanceCount:)
+  v
+GPU renders instanced aircraft geometry
+```
 
-// =============================================
-// SECTION 2: DATA SOURCE ABSTRACTION
-// =============================================
-// DataSource object: { mode, fetch, normalize, setMode }
-// dump1090 adapter, adsb.lol adapter, fallback chain
+**User interaction flow (click to selection):**
 
-// =============================================
-// SECTION 3: STATE & GLOBALS
-// =============================================
-// All global state variables (existing + new)
+```
+Mouse click on MTKView
+  |
+  | MTKView subclass overrides mouseDown(with:)
+  | Converts window coordinates to Metal NDC
+  v
+Renderer.hitTest(point) -> AircraftModel?
+  |
+  | Ray-cast from camera through click point
+  | Test against aircraft bounding spheres
+  v
+AppState.selectedAircraft = hitAircraft
+  |
+  | @Observable notifies both SwiftUI and Renderer
+  v
+SwiftUI: SelectedPlaneView appears with detail info
+Renderer: Highlights selected aircraft, starts follow camera if enabled
+```
 
-// =============================================
-// SECTION 4: SETTINGS PERSISTENCE
-// =============================================
-// Cookie helpers, load/save settings
+## Xcode Project Structure
 
-// =============================================
-// SECTION 5: STATISTICS & INDEXEDDB
-// =============================================
-// Stats database, graphs, history
+Use a standard Xcode project with Swift Package Manager for external dependencies (none expected for core app). Internal code is organized as Xcode groups (folders), not separate SPM packages, because Metal shader files (.metal) must be in the main app target for Xcode to compile them into default.metallib automatically. Putting .metal files in an SPM package requires manual metallib compilation and is not worth the complexity.
 
-// =============================================
-// SECTION 6: THREE.js INITIALIZATION
-// =============================================
-// init(), scene, camera, renderer, lights, geometries
-
-// =============================================
-// SECTION 7: MAP TILES (existing)
-// =============================================
-// Tile loading, caching, preloading, zoom/pan
-
-// =============================================
-// SECTION 8: TERRAIN ELEVATION (new)
-// =============================================
-// Terrain tile fetching, heightmap decoding, mesh generation
-
-// =============================================
-// SECTION 9: AIRSPACE VOLUMES (new)
-// =============================================
-// GeoJSON parsing, Shape creation, ExtrudeGeometry
-
-// =============================================
-// SECTION 10: AIRPORT DATABASE (new)
-// =============================================
-// CSV loading, search index, 3D labels, fly-to
-
-// =============================================
-// SECTION 11: AIRCRAFT MANAGEMENT
-// =============================================
-// createAirplane(), interpolation, trails, labels
-
-// =============================================
-// SECTION 12: CAMERA & CONTROLS
-// =============================================
-// Camera positioning, keyboard, mouse, touch
-
-// =============================================
-// SECTION 13: ANIMATION LOOP
-// =============================================
-// animate(), render scheduling, LOD updates
-
-// =============================================
-// SECTION 14: UI INTERACTIONS
-// =============================================
-// Panel updates, selection, enrichment, follow mode
-</script>
+```
+AirplaneTracker3D/
+|-- AirplaneTracker3D.xcodeproj
+|-- AirplaneTracker3D/
+|   |-- App/
+|   |   |-- AirplaneTracker3DApp.swift          # @main, WindowGroup
+|   |   |-- AppState.swift                       # Central @Observable model
+|   |   |-- ContentView.swift                    # Root view: ZStack of MetalView + SwiftUI overlays
+|   |
+|   |-- Models/
+|   |   |-- AircraftModel.swift                  # Aircraft data model (position, track, altitude, etc.)
+|   |   |-- AirportModel.swift                   # Airport data model (ICAO, IATA, coords, type)
+|   |   |-- AppSettings.swift                    # Persisted settings (theme, units, trail config)
+|   |   |-- DataSourceMode.swift                 # Enum: .local, .global
+|   |   |-- AircraftCategory.swift               # Enum: helicopter, small, regional, narrowbody, widebody, military
+|   |
+|   |-- DataLayer/
+|   |   |-- FlightDataActor.swift                # Actor: polling loop with fallback chain
+|   |   |-- DataNormalizer.swift                  # Normalizes dump1090/adsb.lol/OpenSky to AircraftModel
+|   |   |-- AircraftInterpolator.swift            # Position interpolation between data updates
+|   |   |-- EnrichmentActor.swift                 # Actor: hexdb.io/adsbdb enrichment with cache
+|   |   |-- AirportDataActor.swift                # Actor: CSV loading, search index, nearby queries
+|   |   |-- SettingsStore.swift                   # UserDefaults persistence
+|   |   |-- NetworkClient.swift                   # Thin URLSession wrapper with timeout/retry
+|   |
+|   |-- Rendering/
+|   |   |-- MetalView.swift                       # NSViewRepresentable wrapping MTKView
+|   |   |-- Renderer.swift                        # MTKViewDelegate, owns all Metal state
+|   |   |-- RenderPipelines.swift                 # Pipeline state creation (aircraft, map, trails, labels)
+|   |   |-- Camera.swift                          # Orbit camera: projection + view matrices
+|   |   |-- CoordinateSystem.swift                # latLonToXZ, altitudeScale, mapBounds
+|   |   |-- AircraftMeshes.swift                  # Geometry data for aircraft categories (vertex buffers)
+|   |   |-- MapTileManager.swift                  # Tile loading, texture creation, tile grid math
+|   |   |-- TrailRenderer.swift                   # Trail line rendering with altitude color gradient
+|   |   |-- LabelRenderer.swift                   # Text-to-texture label rendering (Core Text + Metal)
+|   |   |-- TextureCache.swift                    # LRU texture cache for map tiles and labels
+|   |
+|   |-- Shaders/
+|   |   |-- ShaderTypes.h                         # Shared structs between Swift and MSL (bridging header)
+|   |   |-- AircraftShaders.metal                 # Vertex/fragment for instanced aircraft rendering
+|   |   |-- MapTileShaders.metal                  # Vertex/fragment for textured ground plane tiles
+|   |   |-- TrailShaders.metal                    # Vertex/fragment for colored trail lines
+|   |   |-- LabelShaders.metal                    # Vertex/fragment for billboard text sprites
+|   |   |-- CommonShaders.metal                   # Shared functions (lighting, color utilities)
+|   |
+|   |-- Views/
+|   |   |-- InfoPanelView.swift                   # Aircraft count, message rate, data source indicator
+|   |   |-- SelectedPlaneView.swift               # Selected aircraft detail panel
+|   |   |-- ControlsView.swift                    # Theme, units, altitude slider, trail toggles
+|   |   |-- AirportSearchView.swift               # Search bar with autocomplete dropdown
+|   |   |-- GraphsView.swift                      # Statistics charts (message rate, aircraft count)
+|   |   |-- SettingsView.swift                    # Preferences window
+|   |   |-- StatusBarView.swift                   # Bottom bar: FPS, data source, connection status
+|   |
+|   |-- Utilities/
+|   |   |-- MathUtilities.swift                   # Haversine, lerp, clamp, matrix helpers
+|   |   |-- ColorUtilities.swift                  # Altitude-to-color mapping, theme colors
+|   |   |-- CSVParser.swift                       # Lightweight CSV parser for OurAirports data
+|   |
+|   |-- Resources/
+|   |   |-- Assets.xcassets                       # App icon, color sets
+|   |   |-- AirplaneTracker3D-Bridging-Header.h   # Imports ShaderTypes.h for Swift access
+|   |
+|   |-- Info.plist
 ```
 
 ### Structure Rationale
 
-- **Data Source Abstraction early:** Must be available before `fetchData()` is called in `init()`
-- **Terrain/Airspace/Airports after Map Tiles:** They depend on the same coordinate system and map bounds
-- **Aircraft Management after geographic layers:** Aircraft altitude lines and trails interact with terrain
-- **Animation loop near the end:** It calls into everything above
+- **Shaders/ as a top-level group:** Metal .metal files must be in the main target for Xcode's automatic metallib compilation. Separating them into their own group keeps shader code distinct from Swift code while maintaining build system compatibility.
 
-## Architectural Patterns
+- **ShaderTypes.h bridging header:** This is the standard Apple-recommended pattern for sharing struct definitions between Swift (CPU) and MSL (GPU). The bridging header imports this file, making types like `Uniforms`, `PerInstanceData`, `VertexIn` available to both sides without duplication.
 
-### Pattern 1: Data Source Adapter with Fallback Chain
+- **DataLayer/ uses actors, not classes:** Swift actors provide compile-time data race safety. The `FlightDataActor` can safely be called from any thread/task. The `@MainActor` annotation on AppState ensures UI updates happen on the main thread.
 
-**What:** A single `DataSource` object that abstracts the difference between local dump1090 and global APIs. Each source is an adapter that normalizes output to the existing `{aircraft: [{hex, lat, lon, altitude, track, gs, flight, squawk, ...}]}` format that `interpolateAircraft()` already expects.
+- **Rendering/ owns all Metal state:** The Renderer is the single owner of MTLDevice, MTLCommandQueue, and all pipeline states. No Metal objects leak into the SwiftUI layer. This prevents accidental cross-thread GPU access.
 
-**When to use:** This is the core pattern that enables the mode switch. Use it for ALL aircraft data fetching.
+- **Models/ are value types (structs):** `AircraftModel`, `AirportModel`, `AppSettings` are all structs. This ensures they are Sendable (can cross actor boundaries safely) and enables value-semantic diffing for efficient SwiftUI updates.
 
-**Trade-offs:** Adds a normalization step to every fetch cycle (negligible overhead for 200 aircraft). The benefit is that the entire downstream pipeline (interpolation, rendering, trails) works identically regardless of data source.
+## Patterns to Follow
+
+### Pattern 1: NSViewRepresentable Bridge for MTKView
+
+**What:** SwiftUI cannot host an MTKView directly. Wrap it in an NSViewRepresentable with a Coordinator that acts as the MTKViewDelegate.
+
+**When:** Always. This is the only way to get Metal rendering into a SwiftUI window on macOS.
 
 **Example:**
-```javascript
-const DataSource = {
-    mode: 'local',  // 'local' or 'global'
-    globalProviders: [
-        {
-            name: 'adsb.lol',
-            url: (lat, lon, radius) =>
-                `https://api.adsb.lol/v2/lat/${lat}/lon/${lon}/dist/${radius}`,
-            normalize: (data) => ({
-                aircraft: (data.ac || []).map(ac => ({
-                    hex: ac.hex,
-                    flight: ac.flight || '',
-                    lat: ac.lat,
-                    lon: ac.lon,
-                    altitude: ac.alt_baro === 'ground' ? 0 : (ac.alt_baro || ac.alt_geom || 0),
-                    track: ac.track || 0,
-                    gs: ac.gs || 0,
-                    baro_rate: ac.baro_rate || ac.geom_rate || 0,
-                    squawk: ac.squawk || ''
-                }))
-            }),
-            available: null  // null = untested, true/false after probe
-        },
-        // Additional providers follow same interface
-    ],
-    currentProviderIndex: 0,
 
-    async fetch(centerLat, centerLon) {
-        if (this.mode === 'local') {
-            return this.fetchLocal();
+```swift
+// MetalView.swift
+import SwiftUI
+import MetalKit
+
+struct MetalView: NSViewRepresentable {
+    let appState: AppState
+
+    func makeCoordinator() -> Renderer {
+        Renderer(appState: appState)
+    }
+
+    func makeNSView(context: Context) -> MTKView {
+        let mtkView = InteractiveMTKView()  // subclass that handles mouse/keyboard
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            fatalError("Metal is not supported on this device")
         }
-        return this.fetchGlobalWithFallback(centerLat, centerLon);
-    },
+        mtkView.device = device
+        mtkView.colorPixelFormat = .bgra8Unorm_srgb
+        mtkView.depthStencilPixelFormat = .depth32Float
+        mtkView.clearColor = MTLClearColor(red: 0.04, green: 0.04, blue: 0.1, alpha: 1.0)
+        mtkView.preferredFramesPerSecond = 60
+        mtkView.delegate = context.coordinator
+        context.coordinator.mtkView(mtkView, drawableSizeWillChange: mtkView.drawableSize)
+        return mtkView
+    }
 
-    async fetchLocal() {
-        const response = await fetch(DATA_URL);
-        return response.json();  // dump1090 format is already the native format
-    },
+    func updateNSView(_ nsView: MTKView, context: Context) {
+        // SwiftUI state changes flow to renderer through AppState (observed directly)
+    }
+}
 
-    async fetchGlobalWithFallback(lat, lon) {
-        for (let i = 0; i < this.globalProviders.length; i++) {
-            const idx = (this.currentProviderIndex + i) % this.globalProviders.length;
-            const provider = this.globalProviders[idx];
-            try {
-                const response = await fetch(provider.url(lat, lon, 250));
-                if (response.ok) {
-                    const data = await response.json();
-                    this.currentProviderIndex = idx;
-                    return provider.normalize(data);
+// InteractiveMTKView.swift - subclass for input handling
+class InteractiveMTKView: MTKView {
+    var inputHandler: ((InputEvent) -> Void)?
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        let location = convert(event.locationInWindow, from: nil)
+        inputHandler?(.mouseDown(location))
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        inputHandler?(.mouseDragged(CGPoint(x: event.deltaX, y: event.deltaY)))
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        inputHandler?(.scrollWheel(event.deltaY))
+    }
+
+    override func keyDown(with event: NSEvent) {
+        inputHandler?(.keyDown(event.keyCode, event.modifierFlags))
+    }
+}
+```
+
+**Confidence:** HIGH -- This is the standard Apple-recommended pattern. MTKView is NSView on macOS, requiring NSViewRepresentable. The Coordinator pattern is documented in Apple's SwiftUI tutorials. Metal by Example and Kodeco's Metal by Tutorials both use this exact approach.
+
+### Pattern 2: Renderer as MTKViewDelegate with Triple Buffering
+
+**What:** The Renderer class conforms to MTKViewDelegate and manages all Metal state. It uses triple buffering (3 in-flight frames) with a DispatchSemaphore to synchronize CPU/GPU access to uniform buffers.
+
+**When:** Always. This is the core rendering architecture.
+
+**Example:**
+
+```swift
+// Renderer.swift
+import MetalKit
+
+class Renderer: NSObject, MTKViewDelegate {
+    static let maxFramesInFlight = 3
+
+    private let device: MTLDevice
+    private let commandQueue: MTLCommandQueue
+    private let appState: AppState
+
+    // Pipeline states (created once at init)
+    private var aircraftPipeline: MTLRenderPipelineState!
+    private var mapTilePipeline: MTLRenderPipelineState!
+    private var trailPipeline: MTLRenderPipelineState!
+    private var labelPipeline: MTLRenderPipelineState!
+
+    private var depthStencilState: MTLDepthStencilState!
+
+    // Triple-buffered uniform buffers
+    private var uniformBuffers: [MTLBuffer] = []
+    private var currentBufferIndex = 0
+    private let frameSemaphore = DispatchSemaphore(value: maxFramesInFlight)
+
+    // Per-instance aircraft data buffer (resized as needed)
+    private var aircraftInstanceBuffer: MTLBuffer?
+    private var aircraftInstanceCount: Int = 0
+
+    // Camera
+    private var camera = OrbitCamera()
+    private var projectionMatrix = matrix_identity_float4x4
+
+    init(appState: AppState) {
+        self.appState = appState
+        self.device = MTLCreateSystemDefaultDevice()!
+        self.commandQueue = device.makeCommandQueue()!
+        super.init()
+
+        buildPipelines()
+        buildDepthStencilState()
+        allocateUniformBuffers()
+    }
+
+    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
+        let aspect = Float(size.width / size.height)
+        projectionMatrix = matrix_perspective_projection(
+            fovY: Float.pi / 3, aspect: aspect, near: 0.1, far: 2000
+        )
+    }
+
+    func draw(in view: MTKView) {
+        // Wait for a free buffer slot
+        frameSemaphore.wait()
+
+        guard let commandBuffer = commandQueue.makeCommandBuffer(),
+              let renderPassDescriptor = view.currentRenderPassDescriptor,
+              let drawable = view.currentDrawable else {
+            frameSemaphore.signal()
+            return
+        }
+
+        // Advance buffer index
+        currentBufferIndex = (currentBufferIndex + 1) % Self.maxFramesInFlight
+
+        // Update uniforms for this frame
+        updateUniforms()
+
+        // Update per-instance aircraft data
+        updateAircraftInstances()
+
+        // Encode render commands
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(
+            descriptor: renderPassDescriptor
+        ) else {
+            frameSemaphore.signal()
+            return
+        }
+
+        encoder.setDepthStencilState(depthStencilState)
+
+        // Draw map tiles (ground plane)
+        encodeMapTiles(encoder: encoder)
+
+        // Draw aircraft (instanced)
+        encodeAircraft(encoder: encoder)
+
+        // Draw trails
+        encodeTrails(encoder: encoder)
+
+        // Draw labels (billboards)
+        encodeLabels(encoder: encoder)
+
+        encoder.endEncoding()
+
+        commandBuffer.present(drawable)
+
+        // Signal semaphore when GPU finishes this frame
+        commandBuffer.addCompletedHandler { [weak self] _ in
+            self?.frameSemaphore.signal()
+        }
+
+        commandBuffer.commit()
+    }
+}
+```
+
+**Confidence:** HIGH -- Triple buffering is Apple's recommended pattern from the Metal Best Practices Guide. The semaphore pattern is documented at developer.apple.com/library/archive/documentation/3DDrawing/Conceptual/MTLBestPracticesGuide/TripleBuffering.html. Metal by Example uses this exact structure.
+
+### Pattern 3: Instanced Aircraft Rendering
+
+**What:** All aircraft of the same category share a single vertex buffer (geometry). Per-aircraft data (position, rotation, color, scale) is stored in a per-instance buffer. A single `drawIndexedPrimitives(instanceCount:)` call renders all aircraft of one category. This replaces the web version's approach of individual THREE.Group objects per aircraft.
+
+**When:** Always for aircraft rendering. This is the core performance advantage over the web version.
+
+**Example (ShaderTypes.h):**
+
+```c
+// ShaderTypes.h - shared between Swift and Metal
+#ifndef ShaderTypes_h
+#define ShaderTypes_h
+
+#include <simd/simd.h>
+
+// Buffer indices matching setVertexBuffer atIndex:
+typedef enum {
+    BufferIndexVertices       = 0,
+    BufferIndexUniforms       = 1,
+    BufferIndexInstances      = 2,
+} BufferIndex;
+
+// Shared camera/projection uniforms (per-frame)
+typedef struct {
+    matrix_float4x4 viewMatrix;
+    matrix_float4x4 projectionMatrix;
+    matrix_float4x4 viewProjectionMatrix;
+    simd_float3     cameraPosition;
+    float           time;
+} Uniforms;
+
+// Per-instance aircraft data
+typedef struct {
+    matrix_float4x4 modelMatrix;
+    simd_float4     color;          // altitude-based color + alpha
+    float           scale;          // LOD-based scale factor
+    float           lightPhase;     // position light animation phase
+    uint32_t        flags;          // bit flags: selected, highlighted, etc.
+} AircraftInstanceData;
+
+// Vertex input
+typedef struct {
+    simd_float3 position;
+    simd_float3 normal;
+} VertexIn;
+
+#endif
+```
+
+**Example (AircraftShaders.metal):**
+
+```metal
+// AircraftShaders.metal
+#include <metal_stdlib>
+#include "ShaderTypes.h"
+using namespace metal;
+
+struct VertexOut {
+    float4 position [[position]];
+    float3 worldNormal;
+    float3 worldPosition;
+    float4 color;
+    float  lightPhase;
+    uint   flags;
+};
+
+vertex VertexOut aircraft_vertex(
+    const device VertexIn* vertices [[buffer(BufferIndexVertices)]],
+    constant Uniforms& uniforms [[buffer(BufferIndexUniforms)]],
+    const device AircraftInstanceData* instances [[buffer(BufferIndexInstances)]],
+    uint vertexID [[vertex_id]],
+    uint instanceID [[instance_id]])
+{
+    VertexIn vert = vertices[vertexID];
+    AircraftInstanceData inst = instances[instanceID];
+
+    float4 worldPos = inst.modelMatrix * float4(vert.position * inst.scale, 1.0);
+    float3 worldNormal = (inst.modelMatrix * float4(vert.normal, 0.0)).xyz;
+
+    VertexOut out;
+    out.position = uniforms.viewProjectionMatrix * worldPos;
+    out.worldNormal = normalize(worldNormal);
+    out.worldPosition = worldPos.xyz;
+    out.color = inst.color;
+    out.lightPhase = inst.lightPhase;
+    out.flags = inst.flags;
+    return out;
+}
+
+fragment float4 aircraft_fragment(VertexOut in [[stage_in]],
+                                   constant Uniforms& uniforms [[buffer(BufferIndexUniforms)]])
+{
+    // Simple directional lighting
+    float3 lightDir = normalize(float3(0.5, 1.0, 0.5));
+    float diffuse = max(dot(in.worldNormal, lightDir), 0.0);
+    float ambient = 0.3;
+    float lighting = ambient + diffuse * 0.7;
+
+    float3 litColor = in.color.rgb * lighting;
+
+    // Position light blinking
+    float blink = step(0.7, sin(in.lightPhase));
+    litColor += float3(1.0, 0.0, 0.0) * blink * 0.3;
+
+    // Selection highlight
+    if (in.flags & 1u) {
+        litColor = mix(litColor, float3(1.0, 0.8, 0.0), 0.3);
+    }
+
+    return float4(litColor, in.color.a);
+}
+```
+
+**Confidence:** HIGH -- Metal instanced rendering with `instance_id` is documented by Apple and demonstrated extensively in Metal by Example's "Instanced Rendering" article. The per-instance buffer pattern with `drawIndexedPrimitives(instanceCount:)` is the standard approach.
+
+### Pattern 4: Actor-Based Data Polling with AsyncStream
+
+**What:** The `FlightDataActor` uses Swift's actor isolation to safely manage polling state. It produces an `AsyncStream<[AircraftModel]>` that the AppState consumes. The polling loop handles fallback between API providers, respects rate limits, and supports cancellation.
+
+**When:** Always for data fetching. Replaces the web version's `setInterval(fetchData, 1000)`.
+
+**Example:**
+
+```swift
+// FlightDataActor.swift
+actor FlightDataActor {
+    enum Provider: CaseIterable {
+        case local
+        case airplanesLive
+        case adsbLol
+        case openSky
+    }
+
+    private let networkClient: NetworkClient
+    private var currentProvider: Provider = .local
+    private var providerFailCounts: [Provider: Int] = [:]
+
+    init(networkClient: NetworkClient = NetworkClient()) {
+        self.networkClient = networkClient
+    }
+
+    func pollingStream(
+        mode: DataSourceMode,
+        center: (lat: Double, lon: Double),
+        interval: TimeInterval
+    ) -> AsyncStream<[AircraftModel]> {
+        AsyncStream { continuation in
+            let task = Task {
+                while !Task.isCancelled {
+                    do {
+                        let aircraft = try await fetchWithFallback(mode: mode, center: center)
+                        continuation.yield(aircraft)
+                    } catch {
+                        // Yield empty on total failure, don't stop the stream
+                        continuation.yield([])
+                    }
+                    try await Task.sleep(for: .seconds(interval))
                 }
-            } catch (e) {
-                provider.available = false;
+                continuation.finish()
+            }
+
+            continuation.onTermination = { _ in
+                task.cancel()
             }
         }
-        return { aircraft: [] };  // All providers failed
     }
-};
-```
 
-**Confidence:** HIGH -- The adsb.lol API v2 endpoint `/v2/lat/{lat}/lon/{lon}/dist/{radius}` is verified from their OpenAPI spec. The response format uses `ac` array with fields matching readsb documentation (hex, flight, lat, lon, alt_baro, gs, track, baro_rate, squawk). The normalization step maps these to the existing field names that `interpolateAircraft()` already consumes.
+    private func fetchWithFallback(
+        mode: DataSourceMode,
+        center: (lat: Double, lon: Double)
+    ) async throws -> [AircraftModel] {
+        let providers: [Provider] = mode == .local
+            ? [.local]
+            : [.airplanesLive, .adsbLol, .openSky]
 
-### Pattern 2: Terrain Tile Grid Aligned with Map Tiles
-
-**What:** Terrain elevation meshes use the exact same tile grid as the existing map tiles. For each visible map tile, a corresponding terrain mesh is generated from an elevation tile PNG. The terrain mesh is a PlaneGeometry with vertex Y positions displaced according to decoded elevation values.
-
-**When to use:** Terrain rendering is toggled globally. When enabled, terrain meshes replace the flat tile planes.
-
-**Trade-offs:**
-- PRO: Reuses existing tile coordinate math (`latLonToTile`, `tileToLatLon`, `mapBounds`)
-- PRO: Terrain and map tiles are perfectly aligned since they use the same grid
-- CON: At TILES_PER_SIDE=10, thats 100 terrain meshes each with segments -- need to keep segment count low (32x32 per tile = 102,400 vertices total, acceptable for GPU)
-- CON: Elevation data requires additional HTTP requests (one per tile)
-
-**Elevation Data Source:** AWS Terrain Tiles (Terrarium format), freely available on S3 without authentication.
-
-- URL pattern: `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png`
-- Decoding: `elevation = (R * 256 + G + B / 256) - 32768` (meters)
-- Zoom levels 0-15 available; use same zoom as map tiles (typically 6-12)
-- Tile size: 256x256 pixels
-
-**Confidence:** HIGH for Terrarium format and decoding formula (verified from tilezen/joerd documentation). MEDIUM for the exact S3 URL pattern (from multiple web sources, but not directly fetched from AWS docs).
-
-**Example:**
-```javascript
-async function loadTerrainTile(tileX, tileY, zoom) {
-    const url = `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${zoom}/${tileX}/${tileY}.png`;
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-
-    return new Promise((resolve) => {
-        img.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = canvas.height = 256;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0);
-            const imageData = ctx.getImageData(0, 0, 256, 256);
-            const elevations = new Float32Array(256 * 256);
-
-            for (let i = 0; i < imageData.data.length; i += 4) {
-                const r = imageData.data[i];
-                const g = imageData.data[i + 1];
-                const b = imageData.data[i + 2];
-                elevations[i / 4] = (r * 256 + g + b / 256) - 32768;
+        for provider in providers {
+            do {
+                let raw = try await fetchFromProvider(provider, center: center)
+                providerFailCounts[provider] = 0
+                return DataNormalizer.normalize(raw, from: provider)
+            } catch {
+                providerFailCounts[provider, default: 0] += 1
+                continue
             }
-            resolve(elevations);
-        };
-        img.onerror = () => resolve(null);  // Graceful fallback
-        img.src = url;
-    });
-}
-
-function createTerrainMesh(elevations, tileSize, terrainScale) {
-    const segments = 32;  // 32x32 grid per tile
-    const geometry = new THREE.PlaneGeometry(tileSize, tileSize, segments, segments);
-    const positions = geometry.attributes.position.array;
-
-    // Sample elevation data at grid points
-    for (let iy = 0; iy <= segments; iy++) {
-        for (let ix = 0; ix <= segments; ix++) {
-            const vertexIndex = (iy * (segments + 1) + ix) * 3;
-            // Sample from 256x256 elevation data at corresponding position
-            const ex = Math.floor(ix / segments * 255);
-            const ey = Math.floor(iy / segments * 255);
-            const elevation = elevations[ey * 256 + ex];
-            positions[vertexIndex + 2] = elevation * terrainScale;
         }
+        throw FlightDataError.allProvidersFailed
     }
-    geometry.computeVertexNormals();
-    return geometry;
 }
 ```
 
-### Pattern 3: Airspace Volumes via ExtrudeGeometry
+**Confidence:** HIGH -- Swift actors and AsyncStream are stable APIs since Swift 5.5/5.9. The polling-with-AsyncStream pattern is documented in Apple's WWDC sessions and widely used in production apps. Actor isolation eliminates the data races that the web version's global mutable state is susceptible to.
 
-**What:** Airspace boundaries (Class B, C, D) are 2D polygons with floor and ceiling altitudes. These are rendered as semi-transparent extruded volumes using THREE.ExtrudeGeometry. The 2D shape comes from GeoJSON polygon coordinates, extruded vertically between floor and ceiling altitudes.
+### Pattern 5: @Observable AppState as Single Source of Truth
 
-**When to use:** Toggled as a layer. Rendered once when map bounds change, not every frame.
+**What:** A single `AppState` class annotated with `@Observable` (Swift 5.9+ Observation framework) serves as the bridge between all layers. SwiftUI views read from it reactively. The Renderer reads from it each frame. Data layer actors write to it via `@MainActor` methods.
 
-**Trade-offs:**
-- PRO: THREE.ExtrudeGeometry handles complex polygon shapes with holes
-- PRO: Transparent materials with depth write disabled look good for overlapping volumes
-- CON: Complex polygon shapes can produce many triangles; keep to major airspace only
-- CON: GeoJSON source must be pre-loaded or fetched per region
-
-**Data Source:** OpenAIP provides airspace data in GeoJSON format, downloadable by country. For a single-file app, the recommended approach is to load from OpenAIP's GeoJSON API or embed a curated subset.
-
-**Confidence:** HIGH for THREE.ExtrudeGeometry approach (verified from THREE.js docs). MEDIUM for OpenAIP data format specifics (from their website and GitHub; exact API endpoint structure needs validation during implementation).
+**When:** Always. This replaces the web version's global variables (`airplanes`, `selectedPlane`, `currentTheme`, etc.).
 
 **Example:**
-```javascript
-function createAirspaceVolume(polygonCoords, floorFt, ceilingFt) {
-    const shape = new THREE.Shape();
-    polygonCoords.forEach((coord, i) => {
-        const pos = latLonToXZ(coord[1], coord[0]);
-        if (i === 0) shape.moveTo(pos.x, pos.z);
-        else shape.lineTo(pos.x, pos.z);
-    });
-    shape.closePath();
 
-    const height = (ceilingFt - floorFt) * altitudeScale;
-    const geometry = new THREE.ExtrudeGeometry(shape, {
-        depth: height,
-        bevelEnabled: false
-    });
+```swift
+// AppState.swift
+import Observation
+import simd
 
-    const material = new THREE.MeshBasicMaterial({
-        color: 0x4488ff,
-        transparent: true,
-        opacity: 0.15,
-        side: THREE.DoubleSide,
-        depthWrite: false
-    });
+@Observable
+@MainActor
+final class AppState {
+    // Aircraft state
+    var aircraftList: [AircraftModel] = []
+    var selectedAircraft: AircraftModel?
+    var aircraftTrails: [String: [TrailPoint]] = [:]  // hex -> trail points
 
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.y = floorFt * altitudeScale;
-    return mesh;
+    // Data source
+    var dataSourceMode: DataSourceMode = .local
+    var connectionStatus: ConnectionStatus = .disconnected
+    var activeProvider: String = ""
+
+    // Camera
+    var cameraAngle: Float = 0
+    var cameraPitch: Float = 0.5
+    var cameraDistance: Float = 200
+    var centerLatLon: (lat: Double, lon: Double) = (40.7128, -74.0060)
+
+    // Display settings
+    var settings: AppSettings = AppSettings()
+
+    // Map state
+    var mapZoom: Int = 10
+    var mapBounds: MapBounds?
+
+    // Search
+    var airportSearchResults: [AirportModel] = []
+
+    // Stats
+    var messageRate: Double = 0
+    var aircraftCount: Int = 0
+    var signalLevel: Double = 0
+
+    // Derived properties that Metal renderer needs
+    var viewMatrix: matrix_float4x4 {
+        camera.viewMatrix(
+            angle: cameraAngle, pitch: cameraPitch,
+            distance: cameraDistance, target: centerWorldPosition
+        )
+    }
+
+    var centerWorldPosition: simd_float3 {
+        guard let bounds = mapBounds else { return .zero }
+        let pos = CoordinateSystem.latLonToXZ(
+            lat: centerLatLon.lat, lon: centerLatLon.lon, bounds: bounds
+        )
+        return simd_float3(pos.x, 0, pos.z)
+    }
+
+    // Methods called by data layer actors
+    func updateAircraft(_ aircraft: [AircraftModel]) {
+        self.aircraftList = aircraft
+        self.aircraftCount = aircraft.count
+    }
+
+    func selectAircraft(hex: String) {
+        self.selectedAircraft = aircraftList.first { $0.hex == hex }
+    }
 }
 ```
 
-### Pattern 4: Airport Database with In-Memory Search Index
+**Confidence:** HIGH -- The @Observable macro is the current recommended approach over ObservableObject (Apple WWDC23 "Discover Observation in SwiftUI"). Using @MainActor on the class ensures all property mutations happen on the main thread, which is required for SwiftUI updates and safe for Metal renderer reads in the draw callback (which also runs on the main thread via MTKView's default configuration).
 
-**What:** OurAirports CSV data (78K+ airports) is loaded once, parsed into a typed array, and indexed for fast search by name, IATA code, ICAO code, and geographic proximity. Only airports above a type threshold (medium_airport and above) get 3D labels rendered as CanvasTexture sprites.
+## Metal Rendering Pipeline Detail
 
-**When to use:** Airport search is always available once data loads. 3D labels are rendered based on current map bounds and zoom level.
+### Pipeline State Architecture
 
-**Trade-offs:**
-- PRO: OurAirports CSV is ~12.5MB but compresses well with gzip (likely ~2MB); loads once
-- PRO: In-memory search is instant for 78K records
-- CON: 12.5MB is significant for initial page load; must load asynchronously
-- CON: Must carefully limit rendered labels (max ~50 visible at once) to avoid draw call explosion
-
-**Data Source:** `https://davidmegginson.github.io/ourairports-data/airports.csv` (public domain, updated nightly)
-
-**Confidence:** HIGH -- OurAirports data format and download URL verified from official GitHub repository and website.
-
-**Example:**
-```javascript
-const AirportDB = {
-    airports: [],      // Full parsed dataset
-    byICAO: new Map(), // ICAO code index
-    byIATA: new Map(), // IATA code index
-
-    async load() {
-        const response = await fetch(
-            'https://davidmegginson.github.io/ourairports-data/airports.csv'
-        );
-        const text = await response.text();
-        this.airports = this.parseCSV(text);
-        this.airports.forEach(a => {
-            if (a.icao) this.byICAO.set(a.icao, a);
-            if (a.iata) this.byIATA.set(a.iata, a);
-        });
-    },
-
-    search(query, limit = 20) {
-        const q = query.toUpperCase();
-        // Exact IATA/ICAO match first
-        if (q.length <= 4) {
-            const exact = this.byIATA.get(q) || this.byICAO.get(q);
-            if (exact) return [exact];
-        }
-        // Fuzzy name search
-        return this.airports
-            .filter(a => a.name.toUpperCase().includes(q) ||
-                         a.municipality.toUpperCase().includes(q))
-            .slice(0, limit);
-    },
-
-    nearby(lat, lon, radiusKm = 100, limit = 20) {
-        return this.airports
-            .filter(a => a.type !== 'small_airport' && a.type !== 'closed')
-            .map(a => ({ ...a, dist: haversine(lat, lon, a.lat, a.lon) }))
-            .filter(a => a.dist <= radiusKm)
-            .sort((a, b) => a.dist - b.dist)
-            .slice(0, limit);
-    }
-};
-```
-
-## Data Flow
-
-### Aircraft Data Flow (Updated with Data Source Abstraction)
+Create all pipeline states once at initialization. Never create pipeline states during rendering.
 
 ```
-[User selects mode: local/global]
-    |
-    v
-[DataSource.fetch(centerLat, centerLon)]
-    |
-    +--[local]--> fetch('/dump1090/data/aircraft.json')
-    |                 |
-    +--[global]-> fetch('https://api.adsb.lol/v2/lat/.../lon/.../dist/250')
-    |                 |
-    |            [normalize to common format]
-    |                 |
-    v                 v
-[Common format: {aircraft: [{hex, lat, lon, altitude, track, gs, ...}]}]
-    |
-    v
-[aircraftDataBuffer: Map<hex, [{timestamp, data}]>]
-    |
-    v  (30fps)
-[interpolateAircraft()]
-    |
-    +-> [Create new aircraft] -> createAirplane() -> scene.add()
-    +-> [Update existing]     -> position, rotation, color, trail
-    +-> [Remove stale]        -> scene.remove()
-    |
-    v
-[animate() loop]
-    |
-    +-> [Update lights, rotors, labels]
-    +-> [Update terrain visibility]
-    +-> [Update airspace visibility]
-    +-> [renderer.render(scene, camera)]
+Renderer.init()
+  |
+  +-- buildAircraftPipeline()
+  |     Vertex: aircraft_vertex (instanced, per-instance modelMatrix + color)
+  |     Fragment: aircraft_fragment (diffuse lighting, position light blink, selection highlight)
+  |     Vertex descriptor: position (float3) + normal (float3)
+  |     Instance step: perInstance for buffer index 2
+  |
+  +-- buildMapTilePipeline()
+  |     Vertex: map_tile_vertex (textured quad, position from tile grid)
+  |     Fragment: map_tile_fragment (texture sampling with theme tinting)
+  |     Vertex descriptor: position (float3) + texcoord (float2)
+  |
+  +-- buildTrailPipeline()
+  |     Vertex: trail_vertex (line strip with per-vertex color)
+  |     Fragment: trail_fragment (vertex color passthrough with alpha fade)
+  |     Vertex descriptor: position (float3) + color (float4)
+  |     Blend: src alpha + (1 - src alpha)
+  |
+  +-- buildLabelPipeline()
+  |     Vertex: label_vertex (billboard quad, always faces camera)
+  |     Fragment: label_fragment (texture sampling with alpha test)
+  |     Vertex descriptor: position (float3) + texcoord (float2)
+  |     Blend: src alpha + (1 - src alpha)
+  |
+  +-- buildDepthStencilState()
+        Compare: less, write enabled (aircraft, tiles)
+        Compare: less, write disabled (trails, labels -- transparent)
 ```
 
-### Terrain Data Flow
+### Single Render Pass Encoding Order
+
+Use a single render pass with careful draw ordering. Do NOT use multiple render passes (unnecessary for this app, wastes bandwidth on tile-based GPU).
 
 ```
-[Map bounds change (pan/zoom)]
-    |
-    v
-[loadMapTiles() called]  (existing)
-    |
-    v  (in parallel)
-[loadTerrainTiles()]  (new)
-    |
-    v
-[For each visible tile (tileX, tileY, zoom):]
-    |
-    +-> [Check terrainTileCache]
-    |       |
-    |       +--[hit]--> Use cached terrain mesh
-    |       |
-    |       +--[miss]--> Fetch elevation PNG from AWS S3
-    |                       |
-    |                       v
-    |                   [Decode Terrarium: (R*256 + G + B/256) - 32768]
-    |                       |
-    |                       v
-    |                   [Create PlaneGeometry with displaced vertices]
-    |                       |
-    |                       v
-    |                   [Apply map tile texture to terrain mesh]
-    |                       |
-    |                       v
-    |                   [Cache terrain mesh and add to scene]
-    |
-    v
-[Terrain meshes aligned with map tile grid]
-    |
-    v
-[Aircraft Y position = max(terrainElevation, barometric altitude) * altitudeScale]
+draw(in view:)
+  |
+  +-- encoder.setDepthStencilState(opaqueDepthState)
+  |
+  +-- 1. Map tiles (opaque, ground plane)
+  |     encoder.setRenderPipelineState(mapTilePipeline)
+  |     For each visible tile:
+  |       encoder.setVertexBuffer(tileQuadVertices)
+  |       encoder.setFragmentTexture(tileTexture)
+  |       encoder.drawPrimitives(.triangle, vertexCount: 6)
+  |
+  +-- 2. Aircraft (opaque, instanced)
+  |     encoder.setRenderPipelineState(aircraftPipeline)
+  |     For each aircraft category (jet, widebody, helicopter, small, military):
+  |       encoder.setVertexBuffer(categoryMeshVertices, index: 0)
+  |       encoder.setVertexBuffer(uniformBuffer, index: 1)
+  |       encoder.setVertexBuffer(instanceBuffer, offset: categoryOffset, index: 2)
+  |       encoder.drawIndexedPrimitives(.triangle, indexCount, instanceCount: categoryCount)
+  |
+  +-- encoder.setDepthStencilState(transparentDepthState)  // write disabled
+  |
+  +-- 3. Altitude lines (transparent, thin lines)
+  |     encoder.setRenderPipelineState(trailPipeline)  // reuse trail pipeline
+  |     For each aircraft with altitude line:
+  |       encoder.drawPrimitives(.line, vertexCount: 2)
+  |
+  +-- 4. Trails (transparent, per-aircraft line strips)
+  |     encoder.setRenderPipelineState(trailPipeline)
+  |     For each aircraft with trail:
+  |       encoder.setVertexBuffer(trailVertexBuffer)
+  |       encoder.drawPrimitives(.lineStrip, vertexCount: trailPointCount)
+  |
+  +-- 5. Labels (transparent, billboard quads)
+  |     encoder.setRenderPipelineState(labelPipeline)
+  |     For each visible label:
+  |       encoder.setFragmentTexture(labelTexture)
+  |       encoder.drawPrimitives(.triangle, vertexCount: 6)
+  |
+  +-- encoder.endEncoding()
 ```
 
-### Airport Search Flow
+**Draw order rationale:** Opaque geometry first (tiles, aircraft) with depth writes. Then transparent geometry (altitude lines, trails, labels) with depth writes disabled, sorted back-to-front. This matches the web version's renderOrder approach but uses Metal's depth stencil state switching instead.
+
+### Shader File Organization
+
+Split shaders by rendering domain, not by shader stage. Each .metal file contains both the vertex and fragment functions for one render pass, plus any helper functions specific to that pass. Shared utilities go in CommonShaders.metal.
 
 ```
-[App init]
-    |
-    v
-[AirportDB.load()] --> fetch airports.csv --> parse CSV --> build indices
-    |
-    v  (on user typing in search box)
-[AirportDB.search(query)]
-    |
-    v
-[Display results in autocomplete dropdown]
-    |
-    v  (on selection)
-[Camera fly-to animation]
-    |
-    +-> [startMapTransition(airport.lat, airport.lon, targetZoom)]
-    +-> [Show airport detail panel]
-    +-> [Highlight airport label in scene]
+Shaders/
+  ShaderTypes.h              # Struct definitions shared between Swift and MSL
+  CommonShaders.metal         # Shared: lighting functions, color utilities, coordinate transforms
+  AircraftShaders.metal       # aircraft_vertex + aircraft_fragment (instanced rendering)
+  MapTileShaders.metal        # map_tile_vertex + map_tile_fragment (textured quads)
+  TrailShaders.metal          # trail_vertex + trail_fragment (colored line strips)
+  LabelShaders.metal          # label_vertex + label_fragment (billboard text sprites)
 ```
 
-### Key Data Flows Summary
+**Why not one big Shaders.metal?** The web version puts everything in one file because it must. The native version should not. Separate files enable:
+- Faster iteration (change one shader, only that file recompiles)
+- Clear ownership (each rendering subsystem owns its shaders)
+- Easier debugging (Metal shader debugger shows file names)
 
-1. **Aircraft rendering cycle:** DataSource.fetch -> buffer -> interpolate -> render (30fps)
-2. **Terrain loading:** Map bounds change -> parallel fetch elevation PNGs -> decode -> displace vertices -> cache
-3. **Airspace loading:** Region change -> fetch GeoJSON -> parse polygons -> ExtrudeGeometry -> scene
-4. **Airport search:** User types -> in-memory search -> display results -> fly-to on select
+**Why not vertex.metal and fragment.metal?** Splitting by shader stage is an anti-pattern. A vertex function and its corresponding fragment function are tightly coupled (they share VertexOut struct). Putting them in the same file keeps the interface visible.
 
-## Scaling Considerations
+All .metal files in the main target are automatically compiled by Xcode into `default.metallib`, which is accessible via `device.makeDefaultLibrary()`. No manual compilation needed.
 
-| Scale | Architecture Adjustments |
-|-------|--------------------------|
-| 0-100 aircraft | Current architecture works fine. Terrain at 32x32 segments per tile. All airports loaded in memory. |
-| 100-300 aircraft | Trail batching critical (already implemented). Limit terrain to 64 visible tiles. Airport labels capped at 30 visible. |
-| 300+ aircraft | Must implement aircraft instancing (InstancedMesh). Reduce terrain segments to 16x16. Consider frustum culling for airspace volumes. |
+## Anti-Patterns to Avoid
 
-### Scaling Priorities
+### Anti-Pattern 1: Wrapping the Web App in WKWebView
 
-1. **First bottleneck: Draw calls.** Each aircraft is currently a THREE.Group with multiple children (fuselage, wings, tail, engine, lights, glow). At 200 aircraft, that can exceed 1000 draw calls. Adding terrain meshes (100 tiles) and airspace volumes (10-20) pushes this further. Mitigation: keep terrain segment count low, merge airspace volumes where possible, consider InstancedMesh for aircraft in a future phase.
+**What:** Embedding the existing HTML/JS in a WKWebView for quick porting.
+**Why bad:** Defeats the purpose of native performance. WKWebView is sandboxed, has WebGL (not Metal) overhead, cannot access Metal APIs, and the app would not be ARM-optimized. Performance would be identical to or worse than Safari.
+**Instead:** Full native rewrite with Metal rendering. Port the domain logic (coordinate math, interpolation, data normalization), not the rendering code.
 
-2. **Second bottleneck: Texture memory.** 100 map tiles + 100 terrain elevation textures + airport label textures can consume significant GPU memory. Mitigation: share map tile texture between flat tile and terrain mesh (same texture, just different geometry). Terrain elevation data can be discarded after vertex displacement (only the mesh is kept, not the texture). Use canvas pooling for airport labels.
+### Anti-Pattern 2: Using SceneKit Instead of Metal
 
-3. **Third bottleneck: Network.** Global mode fetches aircraft data every second from adsb.lol. If response contains 500+ aircraft at 250nm radius, each response could be 200KB+. Terrain tiles are ~50KB each. Mitigation: reduce global fetch radius for dense areas, cache terrain tiles aggressively (elevation data rarely changes), lazy-load airport CSV.
+**What:** Using SceneKit's scene graph (SCNScene, SCNNode, SCNGeometry) for easier porting from THREE.js.
+**Why bad:** SceneKit adds abstraction overhead that prevents the instanced rendering optimization critical for 200+ aircraft at 60fps. SceneKit's node-per-object model has the same draw call problem as THREE.js Groups. SceneKit's material system is less flexible than custom Metal shaders for the altitude color coding, wireframe retro theme, and position light animations this app needs.
+**Instead:** Direct Metal rendering with instanced draw calls. One draw call per aircraft category (6 categories) replaces 200+ individual draw calls. The performance difference on Apple Silicon is dramatic.
 
-## Anti-Patterns
+### Anti-Pattern 3: Creating MTLRenderPipelineState per Frame
 
-### Anti-Pattern 1: Separate Scene Graphs for Each Layer
+**What:** Building pipeline states inside `draw(in:)` instead of at initialization.
+**Why bad:** Pipeline state creation involves shader compilation and is expensive (milliseconds). Doing it per frame at 60fps would cause catastrophic stuttering.
+**Instead:** Create all pipeline states in `Renderer.init()`. If you need variant pipelines (e.g., wireframe for retro theme), create all variants upfront and switch between pre-built states.
 
-**What people do:** Create separate THREE.Scene instances for terrain, airspace, and aircraft, then composite them.
-**Why it's wrong:** Multiple render passes kill performance. Depth testing between scenes is impossible (aircraft would not properly occlude behind terrain). The existing single-scene architecture is correct.
-**Do this instead:** Add all objects to the existing single `scene` variable. Use `renderOrder` and `depthWrite` properties to control draw order for transparent airspace volumes.
+### Anti-Pattern 4: Putting Metal State in SwiftUI Views
 
-### Anti-Pattern 2: Loading Full Airport Database Before App Starts
+**What:** Holding MTLBuffer, MTLTexture, or MTLRenderPipelineState references in SwiftUI View structs or their view models.
+**Why bad:** SwiftUI views are value types that get recreated frequently. Metal resources are reference-counted GPU objects that should have stable lifetimes. Mixing them causes unnecessary resource churn and potential use-after-free.
+**Instead:** All Metal state lives in the Renderer class. SwiftUI communicates with the renderer exclusively through AppState (an @Observable class).
 
-**What people do:** Block application startup until all 78K airports are loaded and parsed.
-**Why it's wrong:** 12.5MB CSV download delays first paint significantly. Users expect to see aircraft immediately.
-**Do this instead:** Load airport data asynchronously after the main app is initialized and rendering. Show a loading indicator in the search box ("Loading airports..."). Aircraft tracking works immediately while airports load in the background.
+### Anti-Pattern 5: Blocking the Main Thread with Data Fetching
 
-### Anti-Pattern 3: Rebuilding Terrain Meshes Every Frame
+**What:** Performing network requests synchronously or processing large CSV files on the main thread.
+**Why bad:** The main thread runs both the SwiftUI update cycle and the MTKView draw callback. Blocking it freezes both the UI and rendering.
+**Instead:** All network I/O happens in actors using async/await. The OurAirports CSV (12.5MB) is loaded and parsed in the `AirportDataActor` on a background thread. Results are published to AppState via `@MainActor` methods.
 
-**What people do:** Recreate terrain geometry in the animation loop.
-**Why it's wrong:** Geometry creation is expensive. 100 PlaneGeometries with 32x32 segments created 60 times per second would destroy performance.
-**Do this instead:** Create terrain meshes once when map bounds change (same lifecycle as map tiles). Cache them. Only update when zoom/pan triggers a new `loadMapTiles()` call.
+### Anti-Pattern 6: One Draw Call per Aircraft
 
-### Anti-Pattern 4: Fetching Global Data Without Geographic Bounds
+**What:** Encoding separate `drawPrimitives` for each individual aircraft, mirroring the web version's per-object THREE.Group approach.
+**Why bad:** Draw call overhead is the primary bottleneck in Metal rendering. With 200 aircraft and 6 mesh parts each, this would be 1,200 draw calls per frame. On Apple Silicon's TBDR architecture, the overhead compounds.
+**Instead:** Instanced rendering. Group aircraft by category (helicopter, small, jet, widebody, military, regional). Each category uses a single `drawIndexedPrimitives(instanceCount:)` call. 200 aircraft across 6 categories = 6 draw calls instead of 1,200.
 
-**What people do:** Fetch ALL global aircraft and filter client-side.
-**Why it's wrong:** adsb.lol tracks 20,000+ aircraft globally. Downloading all of them every second is wasteful and slow. Client-side filtering wastes bandwidth and CPU.
-**Do this instead:** Use the geographic API endpoint: `/v2/lat/{lat}/lon/{lon}/dist/{radius}`. The radius parameter limits results to aircraft near the current map center. Adjust radius based on zoom level.
+## Scalability Considerations
 
-### Anti-Pattern 5: Using THREE.TextGeometry for Airport Labels
+| Concern | At 100 aircraft | At 500 aircraft | At 2,000 aircraft |
+|---------|-----------------|------------------|--------------------|
+| **Draw calls** | 6 instanced calls (trivial) | 6 instanced calls (trivial) | 6 instanced calls (trivial) |
+| **Instance buffer** | ~10 KB (100 * 96 bytes) | ~48 KB | ~192 KB |
+| **Trail memory** | ~1.2 MB (100 trails * 200 points * 60 bytes) | ~6 MB | ~24 MB (may need to cap trail length) |
+| **Label textures** | 100 * 256x64 textures = ~6.4 MB | 500 textures = ~32 MB (need atlas) | Atlas required, LOD culling aggressive |
+| **CPU interpolation** | Negligible | ~0.5ms per frame | ~2ms per frame (may need SIMD batch) |
+| **Data polling** | One API call, ~20 KB response | One API call, ~100 KB response | Multiple API calls or WebSocket needed |
 
-**What people do:** Create 3D extruded text meshes for each airport label.
-**Why it's wrong:** TextGeometry requires loading a font file, produces heavy geometry (hundreds of triangles per character), and 50+ labels would create massive draw call overhead.
-**Do this instead:** Use CanvasTexture sprites (the existing pattern for aircraft labels). Render text to a 2D canvas, create a texture, apply to a Sprite. This is one draw call per label with minimal geometry. The app already does this for aircraft labels.
+### Scaling Strategy
+
+1. **Instance buffers scale linearly** and are trivially small. Even 10,000 aircraft would only be ~1 MB of instance data. This is the key advantage of the Metal rewrite over the web version.
+
+2. **Trail memory is the first bottleneck.** Each trail point needs position (12 bytes) + color (16 bytes) = 28 bytes minimum. At 200 points per trail and 500 aircraft, that is 2.8 MB of vertex data uploaded per frame. Solution: use a ring buffer for trail data, overwriting old points instead of reallocating.
+
+3. **Label textures need an atlas at scale.** Creating individual Metal textures per aircraft label is wasteful. At 200+ aircraft, use a texture atlas: render all labels into a single large texture (e.g., 2048x2048), with each label occupying a region. The label shader uses UV offsets to sample the correct region.
+
+4. **CPU interpolation should use SIMD.** The interpolation math (lerp position, slerp rotation) for 500+ aircraft can be vectorized using Swift's SIMD types (simd_float3, simd_quatf). At 2,000 aircraft, consider moving interpolation to a Metal compute shader.
 
 ## Integration Points
 
-### External Services
+### SwiftUI <-> Metal Renderer
 
-| Service | Integration Pattern | Notes |
-|---------|---------------------|-------|
-| dump1090 | HTTP polling every 1s, JSON response | Existing. No changes needed, wrapped by adapter. |
-| adsb.lol API v2 | HTTP GET with lat/lon/radius params | New. Geographic endpoint returns readsb-compatible JSON. No auth required. No rate limits currently. |
-| AWS S3 Terrain Tiles | HTTP GET for PNG tiles, Terrarium encoding | New. Free, no auth. Same tile coordinate system as map tiles. |
-| OpenAIP | GeoJSON download by country/region | New. Free data, may require periodic re-download. Consider embedding curated subset. |
-| OurAirports | CSV download, one-time load | New. ~12.5MB, public domain. Cached after first load. |
-| hexdb.io | Existing enrichment API | No changes. Already wrapped with availability check and caching. |
-| adsbdb.com | Existing route lookup API | No changes. Already has fallback chain. |
+| Integration | Mechanism | Direction |
+|-------------|-----------|-----------|
+| Aircraft data to GPU | AppState.aircraftList read in Renderer.draw() | AppState -> Renderer |
+| Camera controls | AppState.cameraAngle/pitch/distance mutated by SwiftUI sliders and MTKView gestures | Both directions |
+| Selection | Mouse click -> Renderer.hitTest() -> AppState.selectedAircraft -> SwiftUI detail panel | Renderer -> AppState -> SwiftUI |
+| Theme changes | AppState.settings.theme changed by SwiftUI -> Renderer recreates materials/colors | SwiftUI -> AppState -> Renderer |
+| Settings | SwiftUI controls mutate AppState.settings -> Renderer reads per frame | SwiftUI -> AppState -> Renderer |
+| FPS display | Renderer calculates FPS -> AppState.fps (or direct) -> SwiftUI StatusBar | Renderer -> SwiftUI |
 
-### Internal Boundaries
+### Data Layer <-> AppState
 
-| Boundary | Communication | Notes |
-|----------|---------------|-------|
-| DataSource <-> Interpolation | DataSource returns normalized JSON; interpolation consumes it unchanged | DataSource must match existing aircraft.json field names exactly |
-| Terrain <-> Map Tiles | Share tile coordinate system (`latLonToTile`) and lifecycle (`loadMapTiles`) | Terrain meshes should be created in the same loop as map tile meshes |
-| Airspace <-> Coordinate System | Airspace uses `latLonToXZ()` and `altitudeScale` for positioning | Must update airspace positions when `altitudeScale` slider changes |
-| Airport Labels <-> Scene | Labels are Sprites added/removed based on map bounds | Same lifecycle as map tiles; recalculate on pan/zoom |
-| Airport Search <-> Camera | Search results trigger `startMapTransition()` for fly-to | Reuse existing transition system; no new camera code needed |
+| Integration | Mechanism | Direction |
+|-------------|-----------|-----------|
+| Flight data updates | FlightDataActor.pollingStream -> Task consuming stream -> AppState.updateAircraft() | Actor -> @MainActor |
+| Enrichment data | EnrichmentActor.enrich(hex:) -> AppState.enrichAircraft() | Actor -> @MainActor |
+| Airport search | User types -> AirportDataActor.search(query:) -> AppState.airportSearchResults | SwiftUI -> Actor -> @MainActor |
+| Settings persistence | AppState.settings didSet -> SettingsStore.save() | @MainActor -> sync |
+| Connection status | FlightDataActor reports provider status -> AppState.connectionStatus | Actor -> @MainActor |
+
+### New Components (not in web version)
+
+| Component | Why New | Web Equivalent |
+|-----------|---------|----------------|
+| MetalView (NSViewRepresentable) | Required to host MTKView in SwiftUI | None (DOM container) |
+| Renderer (MTKViewDelegate) | Metal rendering loop replaces THREE.js renderer | `animate()` + `renderer.render()` |
+| ShaderTypes.h (bridging header) | Shares struct definitions between Swift and MSL | None (JS has no shader types) |
+| .metal shader files (4-5 files) | GPU programs replace THREE.js materials | Implicit in THREE.js materials |
+| FlightDataActor | Thread-safe data polling replaces `setInterval(fetchData)` | `fetchData()` + `setInterval` |
+| AircraftInterpolator | Explicit interpolation module replaces inline code | `interpolateAircraft()` (inline in animate) |
+| OrbitCamera | Camera math extracted into dedicated type | Camera variables + `updateCameraPosition()` |
+| TextureCache | LRU cache for map tile and label textures | `tileCache` Map |
+| AppState (@Observable) | Single source of truth replaces global variables | ~50 global variables |
+
+### Components Preserved (logic ported, not code)
+
+| Domain Logic | Web Implementation | Native Implementation |
+|--------------|-------------------|----------------------|
+| Coordinate transform | `latLonToXZ()` | `CoordinateSystem.latLonToXZ()` (same math, Swift struct) |
+| Altitude color mapping | `getAltitudeColor()` | `ColorUtilities.altitudeColor()` (same logic) |
+| Aircraft categorization | `getAircraftCategory()` | `AircraftCategory.from(data:)` (same rules) |
+| Data normalization | Inline in `fetchData()` | `DataNormalizer.normalize()` (extracted) |
+| Haversine distance | `haversine()` | `MathUtilities.haversine()` (same formula) |
+| Trail point collection | Inline in `interpolateAircraft()` | `TrailRenderer.addPoint()` (extracted) |
 
 ## Build Order (Dependency Analysis)
 
-The components have clear dependency ordering:
+Components have clear dependency ordering. This is the recommended implementation sequence:
 
 ```
-Phase 1: Data Source Abstraction
+Phase 1: Metal Foundation (Window + Rendering Surface)
     |
-    +--- No dependencies on other new components
-    |    Depends only on: existing fetchData(), existing interpolation
-    |    Unblocks: global mode, which enriches ALL subsequent features
+    +--- Xcode project setup, MetalView, Renderer skeleton, empty draw loop
+    |    ShaderTypes.h, first .metal file (clear color only)
+    |    AppState skeleton, ContentView with MetalView
+    |    RESULT: App window with colored Metal surface
     |
-Phase 2: Airport Database + Search + Labels
+Phase 2: Camera + Ground Plane
     |
-    +--- Depends on: coordinate system (existing), latLonToXZ (existing)
-    |    No dependency on terrain or airspace
-    |    Delivers visible value quickly (search + labels)
+    +--- OrbitCamera, CoordinateSystem, projection/view matrices
+    |    Map tile pipeline: textured quads on ground plane
+    |    MapTileManager: tile URL generation, async texture loading
+    |    Mouse/keyboard input handling on MTKView
+    |    RESULT: Pannable, zoomable map on Metal ground plane
     |
-Phase 3: Terrain Elevation
+Phase 3: Data Pipeline + Aircraft Rendering
     |
-    +--- Depends on: map tile coordinate system (existing), loadMapTiles lifecycle
-    |    No dependency on airspace or airports
-    |    Significant visual impact
+    +--- FlightDataActor, DataNormalizer, NetworkClient
+    |    AircraftModel, AircraftCategory
+    |    Aircraft mesh geometry (vertex buffers for each category)
+    |    AircraftShaders.metal (instanced rendering)
+    |    Per-instance buffer management
+    |    AircraftInterpolator (smooth movement between updates)
+    |    RESULT: Aircraft appearing and moving on the map
     |
-Phase 4: Airspace Volumes
+Phase 4: Trails + Labels + Selection
     |
-    +--- Depends on: coordinate system, altitudeScale (existing)
-    |    Benefits from terrain (volumes look better with terrain context)
-    |    Most complex polygon rendering
+    +--- TrailRenderer + TrailShaders.metal
+    |    LabelRenderer + LabelShaders.metal (Core Text -> texture)
+    |    Hit testing (ray-cast for aircraft selection)
+    |    SelectedPlaneView (SwiftUI detail panel)
+    |    EnrichmentActor (hexdb.io lookups)
+    |    RESULT: Full interactive flight visualization
+    |
+Phase 5: UI Controls + Settings
+    |
+    +--- InfoPanelView, ControlsView (theme, units, altitude scale)
+    |    SettingsStore (UserDefaults persistence)
+    |    Keyboard shortcuts
+    |    Theme switching (day/night/retro shader variants)
+    |    RESULT: Feature-complete core app
 ```
 
-**Rationale for this order:**
-1. Data Source Abstraction is foundational -- it enables global mode, which means all subsequent features work for both local and global users
-2. Airport Database is high-value, medium-complexity, and independent of terrain/airspace
-3. Terrain is visually impactful and establishes the ground truth that airspace volumes sit on
-4. Airspace is last because it benefits from terrain context and is the most complex rendering
+**Phase ordering rationale:**
+- **Phase 1 first** because everything depends on having a Metal rendering surface. Cannot test any rendering without this foundation. This is the "hello Metal" phase.
+- **Phase 2 second** because the camera and map tiles establish the coordinate system and visual frame that everything else is positioned within. Aircraft positions are meaningless without a map reference.
+- **Phase 3 third** because aircraft are the core value proposition. This phase connects the data pipeline to rendering and proves the instanced rendering architecture works. This is the most architecturally significant phase.
+- **Phase 4 fourth** because trails, labels, and selection add polish to the aircraft rendering established in Phase 3. These features depend on having working aircraft to attach to.
+- **Phase 5 last** because UI controls and settings are the final layer on top of a working visualization. The app is usable (if not configurable) without this phase.
+
+**Each phase is independently verifiable:** After each phase, the app is runnable and demonstrates the capability added. This allows catching architectural mistakes early.
 
 ## Sources
 
-- [adsb.lol API OpenAPI spec](https://api.adsb.lol/docs) -- Endpoint paths and parameters verified
-- [readsb JSON field specification](https://github.com/wiedehopf/readsb/blob/dev/README-json.md) -- Aircraft data fields verified
-- [Tilezen/joerd Terrarium format](https://github.com/tilezen/joerd/blob/master/docs/formats.md) -- Elevation encoding formula verified
-- [AWS Terrain Tiles registry](https://registry.opendata.aws/terrain-tiles/) -- S3 bucket availability verified
-- [OurAirports data downloads](https://ourairports.com/data/) -- CSV format and download URL verified
-- [OurAirports GitHub repository](https://github.com/davidmegginson/ourairports-data) -- Data fields and update frequency verified
-- [THREE.js ExtrudeGeometry documentation](https://threejs.org/docs/pages/ExtrudeGeometry.html) -- API verified
-- [OpenAIP airspace data](https://www.openaip.net/data/airspaces) -- GeoJSON availability confirmed
-- [Mapbox Terrain-RGB specification](https://docs.mapbox.com/data/tilesets/reference/mapbox-terrain-rgb-v1/) -- Alternative encoding reference
-- [Three.js performance best practices (Codrops 2025)](https://tympanus.net/codrops/2025/02/11/building-efficient-three-js-scenes-optimize-performance-while-maintaining-quality/) -- Draw call optimization patterns
-- [100 Three.js Best Practices (2026)](https://www.utsubo.com/blog/threejs-best-practices-100-tips) -- Performance patterns verified
-- Existing codebase analysis: `/Users/mit/Documents/GitHub/airplane-tracker-3d/airplane-tracker-3d-map.html` (4,631 lines)
+**Metal Rendering Architecture:**
+- [Writing a Modern Metal App from Scratch (Metal by Example)](https://metalbyexample.com/modern-metal-1/) -- Renderer class structure, MTKViewDelegate pattern, pipeline state creation (HIGH confidence)
+- [Metal by Example: Instanced Rendering](https://metalbyexample.com/instanced-rendering/) -- Per-instance buffer pattern, vertex descriptor step function, instance_id in shaders (HIGH confidence)
+- [Apple Metal Best Practices: Triple Buffering](https://developer.apple.com/library/archive/documentation/3DDrawing/Conceptual/MTLBestPracticesGuide/TripleBuffering.html) -- Semaphore synchronization, ring buffer pattern, completion handler (HIGH confidence)
+- [Apple MTKView Documentation](https://developer.apple.com/documentation/metalkit/mtkview) -- NSView subclass, delegate protocol, frame rate control (HIGH confidence)
+- [Metal Render Passes (Kodeco)](https://www.kodeco.com/books/metal-by-tutorials/v3.0/chapters/12-render-passes) -- Render pass descriptor setup, load/store actions, multi-pass encoding (HIGH confidence)
+- [Optimize GPU Renderers with Metal (WWDC23)](https://developer.apple.com/videos/play/wwdc2023/10127/) -- Function constants, async pipeline creation, occupancy optimization (HIGH confidence)
+- [Discover Metal 4 (WWDC25)](https://developer.apple.com/videos/play/wwdc2025/205/) -- Unified command encoder, Apple Silicon optimizations (MEDIUM confidence -- Metal 4 is new, may not be needed for v2.0)
+
+**SwiftUI + Metal Integration:**
+- [Swift x Metal for 3D Graphics Rendering (Medium)](https://carlosmbe.medium.com/swift-x-metal-for-3d-graphics-rendering-part-1-setting-up-in-swiftui-d2e90d6e5ec3) -- NSViewRepresentable wrapping MTKView, Coordinator as MTKViewDelegate (MEDIUM confidence)
+- [MetalKit in SwiftUI (Apple Developer Forums)](https://developer.apple.com/forums/thread/119112) -- Official guidance on SwiftUI + MTKView (HIGH confidence)
+- [NSView Keyboard and Mouse Input (GitHub)](https://github.com/twohyjr/NSView-Keyboard-and-Mouse-Input) -- MTKView subclass for input handling on macOS (MEDIUM confidence)
+
+**SwiftUI Architecture:**
+- [Apple: Discover Observation in SwiftUI (WWDC23)](https://developer.apple.com/videos/play/wwdc2023/10149/) -- @Observable macro, replaces ObservableObject (HIGH confidence)
+- [Apple: Migrating to @Observable](https://developer.apple.com/documentation/SwiftUI/Migrating-from-the-observable-object-protocol-to-the-observable-macro) -- Migration guide, property tracking (HIGH confidence)
+- [@Observable Macro Performance (SwiftLee)](https://www.avanderlee.com/swiftui/observable-macro-performance-increase-observableobject/) -- Per-property tracking reduces redraws (MEDIUM confidence)
+
+**Swift Concurrency:**
+- [AsyncSequence for Real-Time APIs (Medium)](https://medium.com/@wesleymatlock/asyncsequence-for-real-time-apis-from-legacy-polling-to-swift-6-elegance-c2b8139c21e0) -- AsyncStream polling pattern, cancellation handling (MEDIUM confidence)
+- [Swift Concurrency Deep Dive: Actors (Medium)](https://medium.com/@dhrumilraval212/swift-concurrency-deep-dive-beyond-async-await-architecting-concurrent-systems-with-actors-and-0bc46f0bbb74) -- Actor isolation for shared state, Sendable protocol (MEDIUM confidence)
+- [URLSession with Async/Await (Apple WWDC21)](https://developer.apple.com/videos/play/wwdc2021/10095/) -- Native async URLSession API (HIGH confidence)
+
+**Shader Organization:**
+- [Apple Developer Forums: Swift Package with Metal](https://developer.apple.com/forums/thread/649579) -- Why .metal files should be in main target, not SPM packages (HIGH confidence)
+- [Apple Developer Forums: Defining structs in .h for Swift and Metal](https://forums.developer.apple.com/thread/115086) -- ShaderTypes.h bridging header pattern (HIGH confidence)
+- [Metal Shaders Course: Shader Library Organization](https://www.metal.graphics/appendix-b-shader-library-organization) -- File organization best practices (MEDIUM confidence)
+
+**Existing Codebase:**
+- `/Users/mit/Documents/GitHub/airplane-tracker-3d/airplane-tracker-3d-map.html` -- Web version source (5,735 lines), analyzed for domain logic extraction and feature reference (HIGH confidence)
 
 ---
-*Architecture research for: Multi-source 3D flight tracker with terrain, airspace, and airport features*
-*Researched: 2026-02-07*
+*Architecture research for: Native macOS Metal flight tracker (rewrite from THREE.js web app)*
+*Researched: 2026-02-08*

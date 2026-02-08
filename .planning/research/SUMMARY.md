@@ -1,217 +1,365 @@
 # Project Research Summary
 
-**Project:** Airplane Tracker 3D -- Global Data, Terrain, Airspace, Airport Search
-**Domain:** 3D Flight Tracking Visualization
-**Researched:** 2026-02-07
-**Confidence:** MEDIUM-HIGH
+**Project:** Airplane Tracker 3D -- v2.0 Native macOS App
+**Domain:** Real-time 3D flight visualization (THREE.js/WebGL to Swift/Metal/SwiftUI rewrite)
+**Researched:** 2026-02-08
+**Confidence:** HIGH (verified against Apple official docs, Metal by Example, existing web app analysis)
 
 ## Executive Summary
 
-This project extends a mature 3D flight tracker (4,631 lines, THREE.js r128, single-file HTML architecture) with four major capabilities: global flight data sourcing via API fallback chains, 3D terrain elevation with satellite imagery, airspace volume rendering (Class B/C/D), and comprehensive airport search with ground labels. The existing system is performant (30fps+ with 200 aircraft) and architecturally sound with established patterns for aircraft interpolation, trail rendering, and map tile management.
+This project rewrites an existing 5,735-line THREE.js flight tracker web app as a native macOS application using Swift, Metal 3, and SwiftUI. The web version successfully demonstrates the domain: real-time ADS-B aircraft visualization with 6 aircraft model categories, smooth interpolation at 30fps, altitude-colored flight trails, map tile rendering, terrain elevation, and 3 distinct visual themes (day/night/retro wireframe). The native rewrite's primary value proposition is performance: Metal's instanced rendering can handle 10,000+ aircraft in 6 draw calls vs. the web version's per-object rendering bottleneck at 500 aircraft. Native macOS integration enables menu bar status items, notifications, widgets, and trackpad gestures that web cannot match.
 
-The recommended approach is incremental integration that reuses existing coordinate systems, tile grids, and rendering pipelines. Critical success factors: (1) implement terrain using vertex shader displacement rather than CPU-side vertex manipulation to avoid memory explosion, (2) respect API rate limits with geographic queries and fallback chains (airplanes.live -> adsb.lol -> OpenSky), (3) render airspace volumes as wireframe outlines to avoid WebGL transparency artifacts, (4) pre-filter OurAirports data to medium/large airports only (~5K airports vs 78K) to keep memory and performance reasonable.
+The recommended approach uses a three-layer architecture: (1) Data Layer with actor-isolated async/await network polling, (2) Metal Rendering Layer with instanced draw calls and triple-buffered buffers, and (3) SwiftUI UI Layer bridged via NSViewRepresentable. The web version's domain logic (coordinate transforms, interpolation math, data normalization) ports directly, but the rendering architecture must be rebuilt from scratch. Metal 3 (not Metal 4) provides mature, well-documented APIs for everything needed without requiring macOS 26+ and its bleeding-edge API redesign.
 
-The primary risk is terrain tile memory consumption -- naive implementation with 256x256 vertices per tile would create 6.5 million vertices across a 10x10 grid, crashing the browser. Using vertex shader displacement with shared low-poly geometry (32x32 segments) keeps terrain cost to <100 geometries total. Secondary risks include API rate limit bans (mitigated by 5-10 second polling intervals for global data) and single-file maintainability (4,631 lines growing to 6,500+ requires strict section organization or multi-file split).
+Key risks center on coordinate system mismatches (WebGL NDC depth [-1,+1] vs. Metal [0,+1]), CPU/GPU synchronization (triple buffering is non-negotiable), and SwiftUI/Metal integration (state changes must not destroy the Metal view). These are all architectural decisions that must be correct from day 1 -- fixing them later requires rewrites. The research identifies 15 specific pitfalls with prevention strategies, prioritized by impact. Code signing and notarization for DMG distribution must be configured in Phase 1, not deferred to launch, to avoid blocking distribution.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The stack extends the existing single-file HTML + THREE.js r128 + vanilla JS application with zero build tooling. All additions are CDN-free APIs consumed via `fetch()` or static data embedded/loaded at runtime.
+The native app uses **Swift 6.2, Metal 3, SwiftUI, and zero external dependencies**. Development requires Xcode 26.2 on macOS 26 Tahoe, deploying to macOS 14 Sonoma minimum. Metal 3 (not Metal 4) is selected because Metal 4 requires macOS 26+ and introduces an entirely new API surface (MTL4-prefixed types, mandatory function descriptors, explicit argument tables) that is bleeding-edge and under-documented. Metal 3 provides everything needed: instanced rendering, compute shaders, mesh shaders, MetalFX upscaling, and terrain tessellation. Metal 4 can be adopted in a future milestone after the API stabilizes.
 
 **Core technologies:**
+- **Metal 3 + MetalKit**: Direct GPU control for instanced aircraft rendering (6 draw calls for 500 aircraft vs. 2,500+ in THREE.js). MTKView provides drawable management, depth buffer, and display link timing automatically. MSL 3.1 shaders for vertex transforms, lighting, and altitude coloring.
+- **SwiftUI + Observation framework**: Declarative UI for panels, controls, and settings. `@Observable` (macOS 14+ requirement) replaces legacy ObservableObject with fine-grained property tracking. NSViewRepresentable bridges MTKView into SwiftUI layout. AppKit provides menu bar, dock integration, and keyboard shortcuts.
+- **URLSession + Swift Concurrency**: Actor-isolated async/await polling for dump1090 local receiver and global APIs (airplanes.live, adsb.lol, OpenSky). AsyncStream for continuous polling. Codable for type-safe JSON parsing. No Alamofire/Moya needed for simple GET+JSON requests.
+- **simd library**: Hardware-accelerated vector/matrix math with types directly compatible with Metal shaders (simd_float4x4 = MSL float4x4). Zero-cost CPU-to-GPU data transfer on Apple Silicon's unified memory.
+- **UserDefaults + FileManager**: Settings persistence and cached reference data (airport CSV, airspace GeoJSON). No Core Data/SwiftData needed -- no relational queries, no concurrent writes, just key-value settings and static lookup tables.
 
-- **airplanes.live API v2** (primary global data): 250nm radius queries, 1 req/sec rate limit, no auth, ADSBx v2 compatible response format -- best free option with richest field set
-- **adsb.lol API v2** (fallback): Drop-in replacement with identical response format, no current rate limits, Kubernetes-backed scalability
-- **OpenSky Network REST API** (second fallback): 400 credits/day anonymous, bounding-box queries, different response format requires adapter
-- **MapTiler Terrain-RGB v2**: Global elevation tiles at ~30m resolution (zoom 0-14), RGB-encoded PNG tiles decodable client-side, free tier 100K requests/month, requires free API key
-- **Open-Meteo Elevation API**: Point elevation queries for discrete locations (airport labels), no API key needed, 90m resolution
-- **ArcGIS World Imagery**: Satellite texture tiles, free with no API key, no documented rate limits, standard XYZ tile format
-- **FAA ADDS ArcGIS Feature Service**: US Class B/C/D airspace polygon boundaries with 3D altitude data (UPPER_VAL, LOWER_VAL), GeoJSON output, updated every 8 weeks
-- **OurAirports CSV dataset**: 78K+ airports (public domain, updated nightly), 12.5 MB CSV with all ICAO/IATA codes, coordinates, types -- filter to large/medium airports (~5K) for practical use
-- **Canvas Texture Sprites** (THREE.js r128): Airport ground labels using existing `_renderLabelToCanvas()` pattern already in codebase, no new library needed
-
-**Critical finding:** airplanes.live, adsb.lol, and the existing dump1090 local endpoint all share the ADSBx v2 response format -- same JSON structure, same field names. Write ONE parser and swap between providers with zero code changes.
+**Critical version constraint:** macOS 14 Sonoma minimum deployment target enables `@Observable` macro and SwiftUI inspector views. macOS 13 Ventura drops out of Apple security updates late 2025, making macOS 14 a pragmatic floor.
 
 ### Expected Features
 
+Research identified 35 distinct features across 4 priority tiers: table stakes (20 features), differentiators (8), polish (7), and anti-features (10 to explicitly avoid).
+
 **Must have (table stakes):**
-- Global flight data via API with geographic query (250nm radius around map center)
-- Automatic fallback between APIs (airplanes.live -> adsb.lol -> OpenSky)
-- Data source mode switch (local dump1090 vs global API) without restart
-- Airport search by name/IATA/ICAO code with autocomplete
-- Camera fly-to animation on airport selection
-- Terrain elevation with actual 3D ground mesh (not flat plane)
-- Satellite or map imagery draped on terrain
-- Airspace Class B/C/D volume rendering with characteristic 3D shapes (inverted wedding cake, tiered cylinders)
+- Metal 3D aircraft rendering with 6 model categories (helicopter, small prop, regional, narrowbody jet, widebody, military) using instanced rendering
+- Wireframe + solid rendering modes (retro theme uses wireframe, day/night use solid)
+- Flight trails with per-vertex altitude color gradient (blue-to-red or green), configurable length (50-4000 points) and width
+- Map tile ground plane with zoom levels 6-12, async tile loading, LRU cache
+- Terrain elevation from Mapbox terrain-RGB tiles with displacement mesh
+- Smooth position interpolation (1-5s data intervals to 60fps smooth animation with 2s delayed lerp)
+- Local dump1090 + global API data sources with automatic failover
+- Orbital camera (trackpad pinch zoom, two-finger rotate, drag pan)
+- Aircraft selection via ray-cast hit testing with SwiftUI detail panel
+- Three themes (day/night/retro) with distinct shader pipelines and color palettes
+- Aircraft labels (callsign + altitude) as billboard text with LOD culling
+- Airport database (78K+ from OurAirports CSV) with search autocomplete
+- Statistics graphs (message rate, aircraft count over time) using SwiftUI Charts
+- Settings persistence (theme, units, data source, camera position, window geometry)
 
 **Should have (competitive differentiators):**
-- Browse nearby airports list (ranked by distance/size)
-- 3D ground labels for major airports (visible on terrain)
-- Theme-aware terrain rendering (satellite for day, dark-tinted for night, wireframe green for retro)
-- Airspace opacity and per-class toggles (B/C/D on/off individually)
-- Focused radius mode (show only data within configurable radius)
-- Altitude exaggeration slider (makes vertical relationships visible -- real airspace has 36:1 width-to-height ratio)
-- Ground elevation offset (automatic or manual adjustment for different airport elevations)
+- Menu bar status item with aircraft count badge, mini sortable list, and quick actions (competitor ADS-B Radar uses this as primary interface)
+- macOS notifications for aircraft alerts (specific callsigns, emergency squawks 7500/7600/7700, altitude/distance thresholds)
+- MSAA 4x anti-aliasing (nearly free on Apple Silicon's tile-based GPU, massive visual quality improvement)
+- Dock icon badge with live aircraft count
+- Native trackpad gestures (pinch/rotate/scroll) that web version cannot match
+- Multiple windows showing different geographic regions with shared data source
+- Background data collection (app continues polling when minimized, unlike web tabs)
+- Fullscreen mode and Split View with other apps
 
-**Defer (v2+):**
-- International airspace beyond US (OpenAIP worldwide data)
-- Multiple map layer selector (7+ layer options)
-- Navigation aids overlay (VORs, waypoints, navaids)
-- Weather radar overlay (precipitation on terrain)
-- Real-time NOTAM/TFR display
-
-**Anti-features (deliberately NOT building):**
-- Full WASD fly mode (orbit controls already provide full 3D navigation)
-- Recording and playback (massive memory, complex UI)
-- Show ALL 78K airports with labels (performance disaster)
-- Worldwide airspace data on initial load (freezes browser)
+**Defer (v2+ or never):**
+- Desktop widgets (WidgetKit) -- useful but non-core
+- Post-processing bloom for retro glow -- nice-to-have polish
+- HDR/EDR rendering on capable displays -- enhancement
+- Spotlight search integration for active flights -- platform integration
+- Shortcuts/App Intents for Siri automation -- advanced integration
+- GPU compute interpolation -- profile CPU first, likely premature optimization
+- iOS/iPadOS port -- entirely separate project with different UI/gesture model
+- Recording/playback -- explicitly avoided in web version, massive scope
+- Photorealistic aircraft models -- conflicts with stylized aesthetic and instanced rendering architecture
 
 ### Architecture Approach
 
-The architecture evolves within strict constraints: single-file HTML (or multi-file with `<script src>` tags), no build tooling, vanilla JS, 30fps+ with 200+ aircraft. Every new component integrates with existing global state, the existing `animate()` loop, the existing `latLonToXZ()` coordinate system, and the existing `interpolateAircraft()` pipeline.
+The native app uses a **three-layer actor-isolated architecture** that is fundamentally different from the web version's single-threaded global state model. The web version uses a procedural `animate()` loop with global variables (`airplanes`, `selectedPlane`, `currentTheme`) and DOM manipulation. The native version uses actors for thread safety, value types for data models, protocol-oriented rendering, and SwiftUI's declarative UI.
 
 **Major components:**
+1. **AppState (@Observable @MainActor)** -- Central observable model holding aircraft list, selection, settings, camera state, and connection status. Published to both SwiftUI views and Metal Renderer. Replaces ~50 global variables from web version.
+2. **FlightDataActor** -- Actor-isolated async polling loop with provider fallback chain (local -> airplanes.live -> adsb.lol -> OpenSky). Normalizes responses to common AircraftModel struct. Produces AsyncStream consumed by AppState.
+3. **Renderer (MTKViewDelegate)** -- Owns all Metal state (device, command queue, pipeline states, buffers). Reads AppState each frame, updates instance buffers, encodes draw commands. Uses triple buffering (DispatchSemaphore with 3 ring buffers) to synchronize CPU/GPU access.
+4. **MetalView (NSViewRepresentable)** -- SwiftUI bridge wrapping MTKView. Coordinator holds Renderer reference and acts as MTKViewDelegate. Isolates Metal rendering surface from SwiftUI state changes.
+5. **AircraftInterpolator** -- Smooth position/rotation interpolation between 1-5s data updates to 60fps animation using 2s delayed lerp. Runs per-frame on render thread, not in network callback.
+6. **MapTileManager** -- Async tile fetching with URLSession, Metal texture creation via MTKTextureLoader, LRU cache with 300 tile limit. Tiles rendered as textured quads at Y=0.
+7. **TrailRenderer** -- GPU polyline rendering with per-vertex altitude color. Expands line segments into camera-facing quads in vertex shader (Metal has no native wide-line support).
+8. **EnrichmentActor** -- Lazily fetches aircraft metadata (registration, type, operator, route, photo) from hexdb.io and adsbdb.com with NSCache for results.
 
-1. **Data Source Abstraction Layer** -- Normalizes aircraft data from dump1090/airplanes.live/adsb.lol/OpenSky into common format that existing interpolation pipeline expects. Each source is an adapter. Fallback chain rotates through providers on failure.
+**Data flow:** FlightDataActor polls API -> JSON decoding on background thread -> @MainActor update to AppState -> Renderer reads AppState in draw(in:) callback -> AircraftInterpolator produces per-frame positions -> Instance buffer updated -> GPU renders via drawIndexedPrimitives(instanceCount:) -> SwiftUI reads AppState for detail panel updates.
 
-2. **Terrain Elevation Layer** -- Fetches MapTiler Terrain-RGB tiles (PNG) using same tile grid as existing map tiles, decodes RGB to elevation values, creates PlaneGeometry meshes with vertex shader displacement (NOT CPU-side), applies satellite imagery texture. LOD: 64x64 segments near camera, 32x32 medium, 16x16 far. Shares geometry across same-LOD tiles.
-
-3. **Airspace Volume Layer** -- Parses FAA ADDS GeoJSON (Class B/C/D polygons + floor/ceiling altitudes), converts to THREE.Shape, extrudes vertically using THREE.ExtrudeGeometry. Renders as wireframe outlines (not filled volumes) to avoid WebGL transparency sorting artifacts. Uses existing `latLonToXZ()` coordinate system.
-
-4. **Airport Database Layer** -- Loads OurAirports CSV once (pre-filtered to medium/large airports, ~5K rows), builds in-memory search index (Map by ICAO/IATA/name), renders 3D ground labels as CanvasTexture sprites using existing `_renderLabelToCanvas()` pattern. Labels positioned on terrain surface, LOD-based visibility.
-
-**Key patterns:**
-- **Terrain tiles align with map tiles**: Same tile grid (`latLonToTile`), same lifecycle (`loadMapTiles()`), terrain meshes and map tiles perfectly aligned
-- **Data source adapters**: Each source normalizes to common `{aircraft: [{hex, lat, lon, altitude, track, gs, ...}]}` format
-- **Vertex shader displacement for terrain**: Load elevation as texture, let GPU sample for displacement -- avoids tainted canvas CORS issue, vastly better performance than CPU vertex manipulation
-- **Airspace as wireframe outlines**: THREE.EdgesGeometry on extruded shapes, no transparency sorting issues, clean aesthetic matching existing retro/wireframe theme
-- **Airport search with fly-to**: In-memory search is instant for 5K records, fly-to reuses existing `startMapTransition()` camera animation
+**Key architectural difference from web version:** The web version has 1 draw call per aircraft (5-8 child meshes each = 2,500+ draw calls for 500 aircraft). The native version has 1 draw call per aircraft category (6 categories = 6 draw calls for 10,000 aircraft). This is the core performance advantage that justifies the rewrite.
 
 ### Critical Pitfalls
 
-1. **Terrain Tile Memory Explosion** -- Loading Terrarium PNG tiles and converting to PlaneGeometry with displaced vertices can create 6.5 million vertices (786 KB per tile * 100 tiles). Prevention: Use LOW vertex density (32x32 or 64x64 segments max, not 256x256), use vertex shader displacement instead of CPU-side modification, implement aggressive LOD, share geometry across tiles at same LOD level, cap at 25 terrain tiles loaded simultaneously.
+Research identified 15 specific pitfalls. Top 5 by impact:
 
-2. **Global Flight API Rate Limiting** -- Airplanes.live is 1 req/sec with 250nm radius. Naive tiling of global queries or carrying over dump1090's 1-second polling habit will exceed limits and get IP banned. Prevention: Use geographic queries (not "all aircraft"), implement request queue with minimum 5-10 second spacing for global mode, cache aggressively, exponential backoff on 429 responses.
+1. **WebGL-to-Metal coordinate system mismatch** -- THREE.js uses NDC depth [-1, +1] and counter-clockwise winding. Metal uses NDC depth [0, +1] and clockwise winding. Reusing THREE.js projection matrices verbatim causes depth corruption, inside-out geometry, and invisible rendering. **Prevention:** Build projection matrices from scratch using simd library functions for Metal's conventions. Set frontFacingWinding to .counterClockwise if reusing vertex data. Write unit test verifying a known aircraft projects correctly.
 
-3. **CORS Failures with Terrain Tile S3 Bucket** -- AWS S3 terrain tiles may not return CORS headers. Terrain tiles MUST be read as pixel data (not just displayed as textures) for elevation decoding, triggering tainted canvas error if CORS headers missing. Prevention: Test CORS FIRST before writing terrain code with `fetch('https://s3.amazonaws.com/elevation-tiles-prod/terrarium/10/163/395.png', {mode: 'cors'})`. If CORS blocked, use vertex shader displacement approach (no pixel reading needed) or switch to Nextzen tiles with API key.
+2. **Missing triple buffering for dynamic data** -- CPU and GPU run asynchronously. Writing new aircraft positions into the same buffer the GPU is reading causes torn frames, visual artifacts (vertices at 0,0,0), or deadlocks. **Prevention:** Implement triple buffering with DispatchSemaphore from day 1. Use ring of 3 buffers for all per-frame dynamic data (aircraft instances, trails, uniforms). Wait on semaphore before encoding, signal in command buffer completion handler.
 
-4. **Single-File HTML Beyond Maintainability** -- Current file is 4,631 lines. Adding terrain (~400 lines), global API (~300 lines), airspace (~500 lines), airport search (~400 lines), labels (~200 lines) pushes to 6,500+ lines. Prevention: Split to multi-file with `<script src>` tags (NOT build tooling, just basic HTML), or establish strict section ordering with consistent comment banners, or use simple concatenation script.
+3. **Network data updates on render thread** -- Processing JSON parsing (5-20ms for 200 aircraft) on the render thread exceeds the 16ms/60fps budget, causing visible stutters every poll interval. **Prevention:** All network I/O and JSON parsing on background actor. Use double-buffer pattern: network writes to staging model, render reads from current model, swap atomically at frame boundaries. Render thread never waits for network -- interpolates from cached state.
 
-5. **Airspace Transparent Volume Rendering Artifacts** -- THREE.js sorts transparent objects by center distance, not per-pixel. Overlapping Class B/C/D volumes flicker or render incorrectly depending on camera angle. Prevention: Use `depthWrite: false` on all airspace materials, set explicit `renderOrder` (Class D=1, C=2, B=3), use low opacity (0.05-0.15), OR (better) render as wireframe outlines with THREE.EdgesGeometry -- completely avoids transparency sorting.
+4. **SwiftUI state changes triggering Metal view recreation** -- If MTKView wrapper is in the same view hierarchy as changing UI state, SwiftUI recreates the Metal view on every state change, destroying pipeline states and causing frame drops. **Prevention:** Isolate MTKView wrapper into its own view with zero state dependencies. Communicate through shared Renderer class reference, not SwiftUI state. Use EquatableView to prevent unnecessary updates.
+
+5. **Creating MTLRenderPipelineState objects per frame** -- Pipeline state creation involves GPU shader compilation (10-100ms). Doing this per frame or per draw call destroys frame rate. **Prevention:** Create ALL pipeline states once at initialization (likely 5 states: aircraft, trails, map tiles, labels, altitude lines). Cache in dictionary if dynamic variants needed. Use Metal function constants for shader specialization, not full recompilation.
+
+**Additional high-impact pitfalls:**
+- Autorelease pool missing in render loop (memory leak)
+- Wrong GPU buffer storage mode (.shared vs .managed vs .private)
+- GLSL-to-MSL shader function differences (mod vs fmod, pow vs powr, texture sampling syntax)
+- Swift 6 concurrency checker conflicts with Metal's callback-based API (use MainActor.assumeIsolated in draw callbacks)
+- Code signing and notarization deferred to end (blocks DMG distribution)
 
 ## Implications for Roadmap
 
-Based on research, suggested phase structure follows dependency order and risk-first approach:
+Based on combined research, architecture dependencies, and pitfall mitigation, the recommended phase structure is:
 
-### Phase 1: Data Source Abstraction
-**Rationale:** Foundational -- enables global mode which enriches ALL subsequent features. No dependencies on terrain/airspace/airports. Pure refactoring of existing data fetch system.
-**Delivers:** Mode switch UI (local vs global), normalized adapter for each data source (dump1090, airplanes.live, adsb.lol, OpenSky), automatic fallback chain, geographic queries around map center.
-**Addresses:** Global data via API, automatic fallback (table stakes features from FEATURES.md)
-**Avoids:** API rate limiting pitfall (implements 5-10s polling, request queue, exponential backoff)
+### Phase 1: Metal Foundation + Ground Plane
+**Rationale:** Everything depends on having a working Metal rendering surface with correct coordinate system. Cannot test any aircraft rendering without map reference frame. Coordinate system mismatch (Pitfall #1) must be caught immediately, not after implementing complex geometry.
 
-### Phase 2: Airport Database + Search + Labels
-**Rationale:** High-value, medium-complexity, independent of terrain/airspace. Delivers visible functionality quickly. Airport labels BENEFIT from terrain (sit on surface) but can fall back to flat plane if terrain isn't ready yet.
-**Delivers:** OurAirports CSV loading (pre-filtered to 5K airports), in-memory search index (ICAO/IATA/name), autocomplete UI, camera fly-to animation (reuses existing `startMapTransition()`), 3D ground labels as canvas sprites (reuses existing `_renderLabelToCanvas()` pattern).
-**Uses:** Canvas texture sprites (from STACK.md)
-**Addresses:** Airport search, camera fly-to, browse nearby airports (table stakes + differentiator features)
-**Avoids:** OurAirports memory pitfall (pre-filter to 5K rows, not 78K)
+**Delivers:**
+- App window with Metal-backed MTKView wrapped in SwiftUI NSViewRepresentable
+- Orbital camera with trackpad gestures (pinch zoom, rotate, drag pan)
+- Map tile ground plane (textured quads at Y=0) with async tile loading
+- Coordinate system verification (known lat/lon projects to expected screen position)
 
-### Phase 3: Terrain Elevation
-**Rationale:** Visually impactful, establishes ground truth that airspace volumes sit on. Significant complexity but well-researched. Must address memory pitfall from day one.
-**Delivers:** MapTiler Terrain-RGB tile fetching (using existing tile grid), vertex shader displacement (NOT CPU-side), satellite imagery draping (ArcGIS World Imagery), LOD-based segment density (64/32/16), terrain mesh caching, ground elevation auto-offset.
-**Uses:** MapTiler Terrain-RGB v2, ArcGIS World Imagery, Open-Meteo point elevation (from STACK.md)
-**Implements:** Terrain Elevation Layer component (from ARCHITECTURE.md)
-**Addresses:** Terrain elevation, satellite imagery, altitude exaggeration (table stakes features)
-**Avoids:** Terrain memory explosion (vertex shader displacement, low segment counts, LOD, tile cap), CORS failures (test CORS first or use vertex shader approach)
+**Implements:**
+- MetalView + Renderer skeleton with triple buffering (Pitfall #3 prevention)
+- OrbitCamera with correct Metal projection matrices
+- MapTileManager with URLSession async texture loading
+- CoordinateSystem utilities (latLonToXZ, map bounds calculation)
 
-### Phase 4: Airspace Volumes
-**Rationale:** Most complex polygon rendering, benefits from terrain context (volumes look better with ground reference). Last because it depends on architecture patterns established by terrain.
-**Delivers:** FAA ADDS GeoJSON fetching (Class B/C/D polygons + altitudes), THREE.Shape creation from GeoJSON polygons, THREE.ExtrudeGeometry extrusion, wireframe outline rendering (THREE.EdgesGeometry), per-class toggles (B/C/D on/off), opacity slider, spatial query by bounding box.
-**Uses:** FAA ADDS ArcGIS Feature Service (from STACK.md)
-**Implements:** Airspace Volume Layer component (from ARCHITECTURE.md)
-**Addresses:** Airspace Class B/C/D rendering, per-class toggles, opacity control (table stakes + differentiators)
-**Avoids:** Transparent volume rendering artifacts (wireframe outlines instead of filled volumes, or depthWrite:false + renderOrder if filled)
+**Avoids:**
+- Coordinate system mismatch by verifying early with map tiles
+- Pipeline state per-frame by creating tile pipeline once at init
+- SwiftUI state destroying Metal view by isolating MetalView wrapper
+
+**Research flag:** Standard patterns, skip phase-specific research. Metal + SwiftUI integration is well-documented.
+
+---
+
+### Phase 2: Data Pipeline + Aircraft Rendering
+**Rationale:** Proves the core value proposition (instanced rendering performance). Must establish the network-to-GPU data flow and triple-buffered synchronization before adding complexity. This phase validates that Metal instancing works and delivers expected performance gains over THREE.js.
+
+**Delivers:**
+- Live aircraft appearing on map from dump1090 local + global APIs
+- Smooth movement via interpolation (60fps from 1-5s data updates)
+- 6 aircraft categories with distinct geometry (instanced rendering)
+- Altitude-based coloring per aircraft
+
+**Implements:**
+- FlightDataActor with AsyncStream polling and provider fallback
+- DataNormalizer for dump1090/airplanes.live/adsb.lol schemas
+- AircraftModel domain model (Sendable struct)
+- AircraftInterpolator with 2s delayed lerp
+- Aircraft mesh geometry (vertex buffers for 6 categories)
+- AircraftShaders.metal with instanced rendering
+- Per-instance buffer management (position, rotation, color, scale, phase)
+- AppState updates on @MainActor
+
+**Avoids:**
+- Network on render thread (Pitfall #5) by using actor isolation and double-buffer pattern
+- Triple buffering mistakes (Pitfall #3) by implementing semaphore synchronization from start
+- Excessive SwiftUI updates (Pitfall #14) by using snapshot approach for UI, not streaming every position
+
+**Research flag:** Standard patterns, skip research. Instanced rendering and async networking are well-documented.
+
+---
+
+### Phase 3: Trails + Labels + Selection
+**Rationale:** Adds visual richness and interactivity to the working aircraft rendering. Trails and labels are independent rendering passes that can be developed in parallel. Selection via hit testing enables the detail panel (table stakes feature).
+
+**Delivers:**
+- Flight trails with altitude color gradient, configurable length/width
+- Aircraft labels (callsign + altitude) as billboards with LOD
+- Aircraft selection via mouse click with hit testing
+- SwiftUI detail panel showing selected aircraft info
+
+**Implements:**
+- TrailRenderer with GPU polyline expansion (line segments to camera-facing quads)
+- TrailShaders.metal with per-vertex color interpolation
+- LabelRenderer with Core Text to Metal texture conversion
+- LabelShaders.metal with billboard vertex shader
+- Ray-cast hit testing (screen coordinates to 3D ray, intersect aircraft bounding spheres)
+- SelectedPlaneView SwiftUI panel
+- EnrichmentActor for hexdb.io/adsbdb lookups
+
+**Avoids:**
+- GLSL-to-MSL shader bugs (Pitfall #8) by porting manually and testing in isolation
+- Label texture memory explosion by using texture atlas at scale (>200 aircraft)
+- Trail memory blowup by using ring buffer, not unbounded arrays
+
+**Research flag:** **Needs research** for GPU polyline rendering techniques. Metal has no native wide-line support; must expand to geometry. Research best approach (quad strips vs. triangle strips, join/cap strategies).
+
+---
+
+### Phase 4: Terrain + Airspace + Themes
+**Rationale:** Adds depth perception (terrain elevation) and regulatory context (airspace volumes). These are independent rendering systems that can be developed in parallel. Theme switching proves the shader variant architecture works.
+
+**Delivers:**
+- Terrain elevation mesh from Mapbox terrain-RGB tiles
+- Airspace volumes (FAA Class B/C/D) as transparent extruded polygons
+- Three themes (day solid, night solid, retro wireframe)
+- Theme-specific shader pipelines and color palettes
+
+**Implements:**
+- Terrain tile decoding (RGB to elevation formula)
+- Terrain mesh generation with vertex displacement and LOD
+- Terrain scale linked to altitude exaggeration slider
+- Airspace polygon triangulation (ear clipping) and extrusion
+- Transparent rendering with depth-write disabled
+- Wireframe pipeline state for retro theme
+- Theme system with shader uniform updates
+
+**Avoids:**
+- Pipeline state per-frame (Pitfall #2) by creating all theme variants at init
+- Depth buffer issues with transparency by rendering opaque first, then transparent with depth-write off
+
+**Research flag:** **Needs research** for terrain mesh LOD strategies and polygon triangulation algorithms. Research efficient ear clipping or constrained Delaunay triangulation for airspace polygons.
+
+---
+
+### Phase 5: UI Controls + Settings + Persistence
+**Rationale:** Makes the app configurable and polished. All rendering features are complete; this phase adds the control surface. Settings persistence ensures preferences survive restarts.
+
+**Delivers:**
+- Airport database (78K+ OurAirports) with search autocomplete
+- SwiftUI controls (theme picker, units, altitude slider, trail toggles)
+- Keyboard shortcuts with native macOS menu bar
+- Statistics graphs (SwiftUI Charts for time-series)
+- Settings persistence (UserDefaults + FileManager)
+- Fly-to animation for airport search results
+
+**Implements:**
+- AirportDataActor with CSV loading and search indexing
+- AirportSearchView with autocomplete dropdown
+- ControlsView with all toggles/sliders
+- SettingsStore wrapping UserDefaults
+- Native menu bar with CommandGroup and CommandMenu
+- GraphsView with SwiftUI Charts for message rate / aircraft count
+
+**Avoids:**
+- Blocking main thread (Pitfall #5) by loading 12.5MB airport CSV in background actor
+- Excessive view updates (Pitfall #14) by throttling statistics updates to 2-second intervals
+
+**Research flag:** Standard patterns, skip research. SwiftUI Charts and UserDefaults are well-documented.
+
+---
+
+### Phase 6: Native macOS Integration
+**Rationale:** Delivers the differentiation that justifies going native. These features cannot exist in the web version and provide competitive advantages (ADS-B Radar competitor already has menu bar and notifications). Must be production-ready for distribution.
+
+**Delivers:**
+- Menu bar status item with aircraft count badge and mini list
+- macOS notifications for aircraft alerts (callsigns, squawks, altitude/distance)
+- Dock icon badge with live count
+- Multiple windows with shared data source
+- Code signing + notarization for DMG distribution
+
+**Implements:**
+- MenuBarExtra SwiftUI scene with independent lifecycle
+- UNUserNotificationCenter with local notifications
+- Alert rule system (pattern matching on callsign, squawk, altitude, distance)
+- NSApp.dockTile.badgeLabel updates
+- WindowGroup with shared AppState
+- Hardened Runtime entitlements (com.apple.security.network.client)
+- Code signing with Apple Developer account
+- Notarization workflow (app -> DMG -> notarize -> staple)
+
+**Avoids:**
+- Code signing deferred to end (Pitfall #10) by setting up in Phase 1 and testing on clean Mac before beta distribution
+- Notification spam by rate-limiting alert checks to 5-second intervals
+- Menu bar performance issues by throttling list updates to 1-second intervals
+
+**Research flag:** **Needs research** for notarization workflow details. Research DMG creation, signing order (frameworks first, then app, then DMG), and stapling process.
+
+---
 
 ### Phase Ordering Rationale
 
-- **Phase 1 first** because data source abstraction is foundational for ALL subsequent features (terrain/airspace/airports all work for both local and global users)
-- **Phase 2 second** because airport search delivers immediate user value, is independent of terrain/airspace, and establishes patterns for CSV loading and 3D label rendering
-- **Phase 3 third** because terrain is visually impactful and establishes the ground reference that airspace volumes sit on; also the most complex memory/performance challenge that must be solved correctly
-- **Phase 4 last** because airspace rendering benefits from terrain context (volumes look better with ground), is the most complex polygon rendering work, and can leverage lessons learned from terrain tile management
+**Dependency-driven ordering:**
+- Phase 1 establishes coordinate system and rendering surface (all later phases depend on this)
+- Phase 2 connects data to rendering (trails/labels/selection need aircraft to attach to)
+- Phase 3 adds visual richness (terrain/airspace need working scene to composite into)
+- Phase 4 provides depth cues (UI controls need features to control)
+- Phase 5 makes it configurable (native integration needs polished base app)
+- Phase 6 delivers differentiation (must be production-ready for DMG distribution)
 
-This ordering follows the dependency graph from ARCHITECTURE.md:
-```
-Data Source Abstraction (no dependencies)
-  |
-  +---> Airport Database (depends only on coordinate system, already exists)
-  |
-  +---> Terrain Elevation (depends on tile grid, already exists)
-          |
-          +---> Airspace Volumes (benefits from terrain context)
-```
+**Pitfall mitigation sequence:**
+- Coordinate system verified in Phase 1 (before complex geometry)
+- Triple buffering implemented in Phase 1 (before dynamic data in Phase 2)
+- Network/render separation architected in Phase 2 (before adding more data consumers)
+- SwiftUI/Metal isolation enforced in Phase 1 (before adding more UI in Phase 5)
+- Code signing configured in Phase 6 (with testing before distribution)
+
+**Architectural validation points:**
+- Phase 1 validates Metal + SwiftUI integration works
+- Phase 2 validates instanced rendering delivers expected performance
+- Phase 3 validates multi-pass rendering with transparency
+- Phase 4 validates shader variant architecture for themes
+- Phase 5 validates SwiftUI reactivity at scale (200+ aircraft in list)
+- Phase 6 validates distribution workflow
 
 ### Research Flags
 
-**Phases likely needing deeper research during planning:**
-- **Phase 3 (Terrain):** MapTiler API key setup, vertex shader displacement implementation (THREE.js displacementMap specifics), LOD segment density tuning, CORS validation with actual S3 bucket
-- **Phase 4 (Airspace):** FAA ADDS GeoJSON field mapping (UPPER_VAL/LOWER_VAL to feet), THREE.ExtrudeGeometry with complex polygons (holes, concave shapes), Class B shelf structures (different floor altitudes at different distances)
+**Phases needing deeper research during planning:**
+- **Phase 3 (Trails + Labels):** GPU polyline rendering techniques. Metal has no native wide lines; research geometry expansion strategies, join/cap algorithms, and performance at 500 trails with 200 points each.
+- **Phase 4 (Terrain + Airspace):** Terrain mesh LOD strategies for performance. Polygon triangulation for airspace volumes (ear clipping vs. Delaunay). Research efficient algorithms that run in <10ms for hundreds of polygons.
+- **Phase 6 (Native Integration):** Notarization workflow mechanics. Research DMG signing order, stapling process, and testing on clean Mac. Gatekeeper edge cases.
 
-**Phases with standard patterns (skip research-phase):**
-- **Phase 1 (Data Source):** Well-documented API endpoints (airplanes.live, adsb.lol verified via OpenAPI specs), adapter pattern is straightforward normalization
-- **Phase 2 (Airports):** CSV parsing is trivial (~30 lines), in-memory search is Map-based, canvas sprite labels reuse existing `_renderLabelToCanvas()` code, fly-to animation reuses existing `startMapTransition()`
+**Phases with well-documented patterns (skip research):**
+- **Phase 1 (Metal Foundation):** Metal + SwiftUI integration via NSViewRepresentable is standard Apple pattern with extensive documentation and examples.
+- **Phase 2 (Data Pipeline):** Actor-isolated async networking and instanced rendering are well-covered in Apple docs and Metal by Example.
+- **Phase 5 (UI Controls):** SwiftUI Charts, UserDefaults, and menu bar integration are standard platform features with comprehensive documentation.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All API endpoints verified via official docs or OpenAPI specs. Terrain tile encoding formula verified from Tilezen/joerd docs. ArcGIS World Imagery URL pattern verified from OpenLayers examples. |
-| Features | MEDIUM-HIGH | Feature expectations derived from Air Loom analysis (full codebase inspection via WebFetch) and Flightradar24 3D documentation. MVP definition clear. Anti-features well-reasoned. |
-| Architecture | HIGH | Existing codebase analyzed (4,631 lines). Integration patterns verified against THREE.js r128 capabilities. Data flow matches existing patterns. Build order follows clear dependency graph. |
-| Pitfalls | MEDIUM-HIGH | Terrain memory explosion verified from THREE.js forum discussions (high-segment PlaneGeometry performance issues). API rate limits from official docs. CORS issues from community patterns. Transparency artifacts from THREE.js documentation. |
+| **Stack** | HIGH | Metal 3 + Swift 6.2 + SwiftUI verified against current Xcode 26.2 / macOS 26 Tahoe / macOS 14+ deployment target. All technologies are stable, shipping, and well-documented. Metal 3 backward compatibility to macOS 13 confirmed. Metal 4 deliberately avoided due to bleeding-edge status. |
+| **Features** | HIGH | Full analysis of existing 5,735-line web app provides complete feature inventory. Competitor analysis (ADS-B Radar) confirms expected native features (menu bar, notifications). Apple Developer Award winner Flighty provides design reference. Feature priority derived from web version's proven value and native platform capabilities. |
+| **Architecture** | HIGH | Three-layer actor-isolated architecture matches Apple's recommended patterns for Swift concurrency + Metal. NSViewRepresentable bridge is standard documented approach. Instanced rendering confirmed as correct Metal pattern for this use case. Triple buffering confirmed as required for dynamic data. Web-to-native architectural differences clearly identified. |
+| **Pitfalls** | HIGH | All 15 pitfalls verified against Apple Developer Documentation, Metal Best Practices Guide, Apple Developer Forums, and authoritative community sources (Metal by Example, Kodeco). Coordinate system differences verified in multiple independent sources. Triple buffering pattern confirmed in Apple sample code. Swift 6 concurrency conflicts documented in Swift Forums. |
 
-**Overall confidence:** MEDIUM-HIGH
+**Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **MapTiler API key**: Need free MapTiler Cloud account for Terrain-RGB tiles. Free tier is 100K requests/month which should be sufficient for personal use. Requires adding API key to HTML file (acceptable since it's a client-side key with domain restrictions).
+**During Phase 3 planning (Trails + Labels):**
+- **GPU polyline rendering:** Research identified this as non-standard (Metal has no native wide lines). Need to evaluate quad strip vs. triangle strip expansion, join strategies (miter vs. bevel vs. round), and cap styles. Web version uses THREE.js Line2 (geometry shader-based); Metal equivalent requires manual expansion. Research performance characteristics with 500 trails * 200 points = 100K vertices updated per frame.
 
-- **ArcGIS World Imagery terms of service**: Usage terms for non-commercial display are assumed permissive but not explicitly verified. Need to check ESRI terms before production use. If restricted, fall back to CartoDB dark tiles (already in use) or MapTiler satellite (would consume free tier budget).
+**During Phase 4 planning (Terrain + Airspace):**
+- **Terrain LOD:** Research confirmed need for level-of-detail system but did not specify tile subdivision strategy. Need to determine: fixed subdivision (e.g., 64x64 vertices per tile) vs. quadtree adaptive refinement. Profile memory/performance tradeoffs during implementation.
+- **Airspace polygon triangulation:** Research identified ear clipping as standard algorithm but noted performance concerns with hundreds of polygons. May need to pre-triangulate during data loading rather than per-frame. Evaluate whether SwiftUI Path tessellation is sufficient or if manual implementation needed.
 
-- **Vertex shader displacement specifics**: THREE.js MeshStandardMaterial.displacementMap is documented for THREE.js r128 but actual implementation with Terrarium tiles needs prototyping. May need custom shader if displacementMap doesn't work as expected.
+**During Phase 6 planning (Native Integration):**
+- **Notarization edge cases:** Research covered standard workflow but noted cryptic errors are common. Plan for 2-3 day buffer before first beta release to debug signing issues. Test on completely clean Mac (new user account, not development machine) before distributing.
 
-- **FAA ADDS field mapping**: GeoJSON response fields (UPPER_VAL, LOWER_VAL, UPPER_UOM, LOWER_UOM) are documented but actual parsing and conversion to scene coordinates needs validation. Class B shelf structures (different floor altitudes) may require per-shelf extrusion rather than single volume per airspace.
-
-- **OurAirports filtering strategy**: Pre-filtering to medium/large airports reduces 78K to ~5K rows, but threshold needs tuning. "large_airport" is ~600 worldwide (always show), "medium_airport" is ~4,500 (show when zoomed in), but exact zoom-level thresholds need user testing.
-
-- **Single-file maintainability decision**: Current 4,631 lines growing to 6,500+ requires architectural decision BEFORE adding features. Options: (1) split to multi-file with `<script src>` tags, (2) strict section organization with comment banners, (3) simple build script (cat files). This decision should be made in Phase 0 or pre-work.
+**Deferred to implementation (not blocking):**
+- **Trail persistence:** Web version stores trails in IndexedDB for restoration. Native version should use SQLite/SwiftData but exact schema and query patterns deferred until implementing trail system in Phase 3.
+- **Multi-window coordination:** Phase 6 includes multiple windows with shared data, but exact state synchronization mechanism (shared AppState singleton vs. separate AppState per window with shared DataManager) deferred to implementation.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- [airplanes.live API Guide](https://airplanes.live/api-guide/) -- endpoints, rate limits, ADSBx v2 format
-- [adsb.lol API OpenAPI spec](https://api.adsb.lol/api/openapi.json) -- endpoint verification, ADSBx v2 compatibility
-- [OpenSky Network REST API](https://openskynetwork.github.io/opensky-api/rest.html) -- bounding-box queries, 400 credits/day
-- [MapTiler Terrain-RGB Docs](https://docs.maptiler.com/guides/map-tiling-hosting/data-hosting/rgb-terrain-by-maptiler/) -- encoding formula, tile URL pattern
-- [Open-Meteo Elevation API](https://open-meteo.com/en/docs/elevation-api) -- point queries, batch limits, 90m resolution
-- [FAA ADDS Class Airspace](https://adds-faa.opendata.arcgis.com/datasets/c6a62360338e408cb1512366ad61559e_0) -- GeoJSON fields, query patterns
-- [OurAirports Data Dictionary](https://ourairports.com/help/data-dictionary.html) -- CSV format, field descriptions, 78K airports
-- [THREE.js ExtrudeGeometry documentation](https://threejs.org/docs/pages/ExtrudeGeometry.html) -- extrusion API
-- [Tilezen/joerd Terrarium format](https://github.com/tilezen/joerd/blob/master/docs/formats.md) -- elevation encoding formula
-- Existing codebase: `/Users/mit/Documents/GitHub/airplane-tracker-3d/airplane-tracker-3d-map.html` (4,631 lines, THREE.js r128, direct inspection)
+- **Apple Developer Documentation:** Metal API reference, MTKView, Metal Best Practices Guide, Swift Concurrency, SwiftUI, Observation framework, URLSession async/await, simd library, Core Spotlight, WidgetKit, App Intents, UNUserNotificationCenter, code signing, notarization
+- **Apple WWDC Sessions:** Metal rendering (2019-2025), SwiftUI performance (2023), Observation framework (2023), App Intents (2025), Widgets (2025)
+- **Metal by Example:** Instanced rendering, modern Metal app structure, vertex descriptors, mesh shaders, GPU-driven rendering
+- **Kodeco Metal by Tutorials:** Rendering pipeline, coordinate spaces, performance optimization
+- **Existing web app:** `/Users/mit/Documents/GitHub/airplane-tracker-3d/airplane-tracker-3d-map.html` (5,735 lines) -- complete feature inventory, domain logic, interpolation math, data schemas
 
 ### Secondary (MEDIUM confidence)
-- [Air Loom application](https://objectiveunclear.com/airloom.html) -- feature analysis via source inspection, terrain implementation patterns
-- [ArcGIS World Imagery](https://www.arcgis.com/home/item.html?id=974d45be315c4c87b2ac32be59af9a0b) -- tile URL, usage terms unclear
-- [THREE.js Canvas Textures Manual](https://threejs.org/manual/en/canvas-textures.html) -- canvas-to-texture approach
-- [THREE.js performance best practices (Codrops 2025)](https://tympanus.net/codrops/2025/02/11/building-efficient-three-js-scenes-optimize-performance-while-maintaining-quality/) -- draw call optimization
-- [THREE.js text labels discussion](https://discourse.threejs.org/t/how-to-create-lots-of-optimized-2d-text-labels/66927) -- sprite performance at scale
-- [THREE.js transparent rendering issues](https://discourse.threejs.org/t/threejs-and-the-transparent-problem/11553) -- object-center sorting limitation
+- **MetalShapes Blog:** OpenGL-to-Metal projection matrix differences
+- **JAMESCUBE:** Metal & OpenGL coordinate systems comparison
+- **Swift Forums:** Swift concurrency + Metal integration, Sendable conflicts with Metal callbacks
+- **TrozWare:** SwiftUI for Mac 2025 best practices
+- **SwiftLee:** @Observable performance, default actor isolation in Swift 6.2, URLSession async/await
+- **Medium articles:** Metal + SwiftUI integration, AsyncStream for polling, SIMD optimization
+- **GitHub repos:** Metal sample projects, NSView input handling, MetalViewUI wrapper
 
-### Tertiary (LOW confidence)
-- OpenAIP worldwide airspace data format -- needs direct API verification
-- ESRI World Imagery non-commercial usage terms -- needs official verification
+### Tertiary (LOW confidence, needs validation)
+- **GPU polyline rendering:** Community articles on drawing lines in Metal (Matt DesLauriers, Patricio Gonzalez Vivo) describe WebGL techniques that need adaptation to Metal
+- **ikyle.me blog:** Metal texture tiling for large panoramas (2026) -- very recent, may contain unverified techniques
+- **Metal 4 sources:** Low End Mac overview, Apple Metal 4 announcement -- Metal 4 is bleeding-edge; specific features may change before stable release
 
 ---
-*Research completed: 2026-02-07*
+*Research completed: 2026-02-08*
 *Ready for roadmap: yes*
