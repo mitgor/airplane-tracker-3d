@@ -35,6 +35,8 @@
 		A10001000000000000000026 /* TerrainTileManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000028 /* TerrainTileManager.swift */; };
 		A10001000000000000000027 /* TerrainShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000029 /* TerrainShaders.metal */; };
 		A10001000000000000000030 /* ThemeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000030 /* ThemeManager.swift */; };
+		A10001000000000000000031 /* AirportLabelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000031 /* AirportLabelManager.swift */; };
+		A10001000000000000000032 /* airports.json in Resources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000032 /* airports.json */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -68,6 +70,8 @@
 		A10002000000000000000028 /* TerrainTileManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerrainTileManager.swift; sourceTree = "<group>"; };
 		A10002000000000000000029 /* TerrainShaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = TerrainShaders.metal; sourceTree = "<group>"; };
 		A10002000000000000000030 /* ThemeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeManager.swift; sourceTree = "<group>"; };
+		A10002000000000000000031 /* AirportLabelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirportLabelManager.swift; sourceTree = "<group>"; };
+		A10002000000000000000032 /* airports.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = airports.json; sourceTree = "<group>"; };
 		A10003000000000000000001 /* AirplaneTracker3D.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AirplaneTracker3D.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -102,6 +106,7 @@
 				A10005000000000000000007 /* Models */,
 				A10005000000000000000008 /* DataLayer */,
 				A10005000000000000000009 /* Views */,
+				A10005000000000000000010 /* Data */,
 			);
 			path = AirplaneTracker3D;
 			sourceTree = "<group>";
@@ -126,6 +131,7 @@
 				A10002000000000000000028 /* TerrainTileManager.swift */,
 				A10002000000000000000029 /* TerrainShaders.metal */,
 				A10002000000000000000030 /* ThemeManager.swift */,
+				A10002000000000000000031 /* AirportLabelManager.swift */,
 			);
 			path = Rendering;
 			sourceTree = "<group>";
@@ -175,6 +181,14 @@
 			path = Views;
 			sourceTree = "<group>";
 		};
+		A10005000000000000000010 /* Data */ = {
+			isa = PBXGroup;
+			children = (
+				A10002000000000000000032 /* airports.json */,
+			);
+			path = Data;
+			sourceTree = "<group>";
+		};
 		A10005000000000000000005 /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -185,6 +199,17 @@
 		};
 /* End PBXGroup section */
 
+/* Begin PBXResourcesBuildPhase section */
+		A10007000000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10001000000000000000032 /* airports.json in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXNativeTarget section */
 		A10006000000000000000001 /* AirplaneTracker3D */ = {
 			isa = PBXNativeTarget;
@@ -192,6 +217,7 @@
 			buildPhases = (
 				A10007000000000000000001 /* Sources */,
 				A10004000000000000000001 /* Frameworks */,
+				A10007000000000000000002 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -268,6 +294,7 @@
 				A10001000000000000000026 /* TerrainTileManager.swift in Sources */,
 				A10001000000000000000027 /* TerrainShaders.metal in Sources */,
 				A10001000000000000000030 /* ThemeManager.swift in Sources */,
+				A10001000000000000000031 /* AirportLabelManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
