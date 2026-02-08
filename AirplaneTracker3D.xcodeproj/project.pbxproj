@@ -16,6 +16,9 @@
 		A10001000000000000000007 /* MapCoordinateSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000009 /* MapCoordinateSystem.swift */; };
 		A10001000000000000000008 /* TileCoordinate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000010 /* TileCoordinate.swift */; };
 		A10001000000000000000009 /* MapTileManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000011 /* MapTileManager.swift */; };
+		A10001000000000000000010 /* AircraftModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000012 /* AircraftModel.swift */; };
+		A10001000000000000000011 /* AircraftCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000013 /* AircraftCategory.swift */; };
+		A10001000000000000000012 /* DataNormalizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000014 /* DataNormalizer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -30,6 +33,9 @@
 		A10002000000000000000009 /* MapCoordinateSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapCoordinateSystem.swift; sourceTree = "<group>"; };
 		A10002000000000000000010 /* TileCoordinate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TileCoordinate.swift; sourceTree = "<group>"; };
 		A10002000000000000000011 /* MapTileManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapTileManager.swift; sourceTree = "<group>"; };
+		A10002000000000000000012 /* AircraftModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AircraftModel.swift; sourceTree = "<group>"; };
+		A10002000000000000000013 /* AircraftCategory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AircraftCategory.swift; sourceTree = "<group>"; };
+		A10002000000000000000014 /* DataNormalizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataNormalizer.swift; sourceTree = "<group>"; };
 		A10003000000000000000001 /* AirplaneTracker3D.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AirplaneTracker3D.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -61,6 +67,8 @@
 				A10005000000000000000003 /* Rendering */,
 				A10005000000000000000004 /* Camera */,
 				A10005000000000000000006 /* Map */,
+				A10005000000000000000007 /* Models */,
+				A10005000000000000000008 /* DataLayer */,
 			);
 			path = AirplaneTracker3D;
 			sourceTree = "<group>";
@@ -92,6 +100,23 @@
 				A10002000000000000000011 /* MapTileManager.swift */,
 			);
 			path = Map;
+			sourceTree = "<group>";
+		};
+		A10005000000000000000007 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				A10002000000000000000012 /* AircraftModel.swift */,
+				A10002000000000000000013 /* AircraftCategory.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		A10005000000000000000008 /* DataLayer */ = {
+			isa = PBXGroup;
+			children = (
+				A10002000000000000000014 /* DataNormalizer.swift */,
+			);
+			path = DataLayer;
 			sourceTree = "<group>";
 		};
 		A10005000000000000000005 /* Products */ = {
@@ -168,6 +193,9 @@
 				A10001000000000000000007 /* MapCoordinateSystem.swift in Sources */,
 				A10001000000000000000008 /* TileCoordinate.swift in Sources */,
 				A10001000000000000000009 /* MapTileManager.swift in Sources */,
+				A10001000000000000000010 /* AircraftModel.swift in Sources */,
+				A10001000000000000000011 /* AircraftCategory.swift in Sources */,
+				A10001000000000000000012 /* DataNormalizer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
