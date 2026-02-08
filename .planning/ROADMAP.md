@@ -55,11 +55,11 @@
   3. User can reset the camera to the default view position with a single action
   4. User can enable auto-rotate and the camera orbits smoothly around the center point as an ambient display
   5. Map tiles load asynchronously as the user navigates -- tiles appear progressively without blocking the rendering loop
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 05-01: Xcode project, MTKView + SwiftUI shell, triple-buffered renderer, and orbital camera
-- [ ] 05-02: Map tile ground plane with async tile loading and coordinate system
+- [ ] 05-01-PLAN.md -- Xcode project, MTKView + SwiftUI shell, triple-buffered renderer, and orbital camera
+- [ ] 05-02-PLAN.md -- Map tile ground plane with async tile loading and coordinate system
 
 ### Phase 6: Data Pipeline + Aircraft Rendering
 **Goal**: User sees live aircraft appearing on the map from real ADS-B data sources, rendered as distinct 3D models with smooth 60fps movement
@@ -194,7 +194,7 @@ Phases execute in numeric order: 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 2. Airport Search and Labels | v1.0 | 2/2 | Complete | 2026-02-07 |
 | 3. Terrain Elevation | v1.0 | 2/2 | Complete | 2026-02-07 |
 | 4. Airspace Volumes | v1.0 | 1/1 | Complete | 2026-02-07 |
-| 5. Metal Foundation + Ground Plane | v2.0 | 0/2 | Not started | - |
+| 5. Metal Foundation + Ground Plane | v2.0 | 0/2 | Planning complete | - |
 | 6. Data Pipeline + Aircraft Rendering | v2.0 | 0/2 | Not started | - |
 | 7. Trails + Labels + Selection | v2.0 | 0/2 | Not started | - |
 | 8. Terrain + Themes | v2.0 | 0/2 | Not started | - |
