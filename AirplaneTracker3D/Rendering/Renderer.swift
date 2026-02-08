@@ -10,6 +10,11 @@ final class Renderer: NSObject {
     let pipelineState: MTLRenderPipelineState
     let depthStencilState: MTLDepthStencilState
 
+    // MARK: - Textured Tile Pipeline States
+
+    let texturedPipelineState: MTLRenderPipelineState
+    let placeholderPipelineState: MTLRenderPipelineState
+
     // MARK: - Triple Buffering
 
     static let maxFramesInFlight = 3
@@ -19,8 +24,16 @@ final class Renderer: NSObject {
 
     // MARK: - Geometry
 
-    private let groundVertexBuffer: MTLBuffer
-    private let groundVertexCount: Int
+    private let tileQuadVertexBuffer: MTLBuffer
+    private let tileQuadVertexCount: Int = 6
+
+    // MARK: - Tile Map
+
+    let tileManager: MapTileManager
+    private let coordSystem = MapCoordinateSystem.shared
+
+    /// Per-tile model matrix buffer (reused each frame)
+    private let modelMatrixBuffer: MTLBuffer
 
     // MARK: - Camera
 
@@ -29,6 +42,11 @@ final class Renderer: NSObject {
     // MARK: - Timing
 
     private var lastFrameTime: CFTimeInterval = 0
+
+    // MARK: - Zoom Tracking
+
+    private var currentZoom: Int = 8
+    private var lastZoom: Int = 8
 
     // MARK: - Init
 
@@ -47,25 +65,22 @@ final class Renderer: NSObject {
         guard let library = device.makeDefaultLibrary() else {
             fatalError("Failed to load default Metal library")
         }
+
+        // --- Original colored vertex pipeline (kept for future use) ---
         let vertexFunction = library.makeFunction(name: "vertex_main")
         let fragmentFunction = library.makeFunction(name: "fragment_main")
 
-        // --- Vertex Descriptor ---
         let vertexDescriptor = MTLVertexDescriptor()
-        // position: float3 at offset 0
         vertexDescriptor.attributes[0].format = .float3
         vertexDescriptor.attributes[0].offset = 0
         vertexDescriptor.attributes[0].bufferIndex = Int(BufferIndexVertices.rawValue)
-        // color: float4 at offset 12 (after float3)
         vertexDescriptor.attributes[1].format = .float4
         vertexDescriptor.attributes[1].offset = MemoryLayout<SIMD3<Float>>.stride
         vertexDescriptor.attributes[1].bufferIndex = Int(BufferIndexVertices.rawValue)
-        // layout
         vertexDescriptor.layouts[Int(BufferIndexVertices.rawValue)].stride = MemoryLayout<Vertex>.stride
         vertexDescriptor.layouts[Int(BufferIndexVertices.rawValue)].stepRate = 1
         vertexDescriptor.layouts[Int(BufferIndexVertices.rawValue)].stepFunction = .perVertex
 
-        // --- Pipeline State ---
         let pipelineDescriptor = MTLRenderPipelineDescriptor()
         pipelineDescriptor.vertexFunction = vertexFunction
         pipelineDescriptor.fragmentFunction = fragmentFunction
@@ -80,9 +95,54 @@ final class Renderer: NSObject {
             fatalError("Failed to create pipeline state: \(error)")
         }
 
+        // --- Textured tile vertex descriptor ---
+        let texturedVertexDescriptor = MTLVertexDescriptor()
+        // position: float3 at offset 0
+        texturedVertexDescriptor.attributes[0].format = .float3
+        texturedVertexDescriptor.attributes[0].offset = 0
+        texturedVertexDescriptor.attributes[0].bufferIndex = Int(BufferIndexVertices.rawValue)
+        // texCoord: float2 at offset 16 (float3 is padded to 16 bytes in stride)
+        texturedVertexDescriptor.attributes[1].format = .float2
+        texturedVertexDescriptor.attributes[1].offset = MemoryLayout<SIMD3<Float>>.stride
+        texturedVertexDescriptor.attributes[1].bufferIndex = Int(BufferIndexVertices.rawValue)
+        // layout
+        texturedVertexDescriptor.layouts[Int(BufferIndexVertices.rawValue)].stride = MemoryLayout<TexturedVertex>.stride
+        texturedVertexDescriptor.layouts[Int(BufferIndexVertices.rawValue)].stepRate = 1
+        texturedVertexDescriptor.layouts[Int(BufferIndexVertices.rawValue)].stepFunction = .perVertex
+
+        // --- Textured pipeline state ---
+        let texturedPipelineDesc = MTLRenderPipelineDescriptor()
+        texturedPipelineDesc.vertexFunction = library.makeFunction(name: "vertex_textured")
+        texturedPipelineDesc.fragmentFunction = library.makeFunction(name: "fragment_textured")
+        texturedPipelineDesc.vertexDescriptor = texturedVertexDescriptor
+        texturedPipelineDesc.colorAttachments[0].pixelFormat = metalView.colorPixelFormat
+        texturedPipelineDesc.depthAttachmentPixelFormat = metalView.depthStencilPixelFormat
+        texturedPipelineDesc.rasterSampleCount = metalView.sampleCount
+
+        do {
+            texturedPipelineState = try device.makeRenderPipelineState(descriptor: texturedPipelineDesc)
+        } catch {
+            fatalError("Failed to create textured pipeline state: \(error)")
+        }
+
+        // --- Placeholder pipeline state ---
+        let placeholderPipelineDesc = MTLRenderPipelineDescriptor()
+        placeholderPipelineDesc.vertexFunction = library.makeFunction(name: "vertex_textured")
+        placeholderPipelineDesc.fragmentFunction = library.makeFunction(name: "fragment_placeholder")
+        placeholderPipelineDesc.vertexDescriptor = texturedVertexDescriptor
+        placeholderPipelineDesc.colorAttachments[0].pixelFormat = metalView.colorPixelFormat
+        placeholderPipelineDesc.depthAttachmentPixelFormat = metalView.depthStencilPixelFormat
+        placeholderPipelineDesc.rasterSampleCount = metalView.sampleCount
+
+        do {
+            placeholderPipelineState = try device.makeRenderPipelineState(descriptor: placeholderPipelineDesc)
+        } catch {
+            fatalError("Failed to create placeholder pipeline state: \(error)")
+        }
+
         // --- Depth Stencil State ---
         let depthDescriptor = MTLDepthStencilDescriptor()
-        depthDescriptor.depthCompareFunction = .less
+        depthDescriptor.depthCompareFunction = .lessEqual
         depthDescriptor.isDepthWriteEnabled = true
         guard let dss = device.makeDepthStencilState(descriptor: depthDescriptor) else {
             fatalError("Failed to create depth stencil state")
@@ -99,28 +159,84 @@ final class Renderer: NSObject {
             uniformBuffers.append(buffer)
         }
 
-        // --- Ground Plane Geometry ---
-        // Two triangles forming a quad from -500 to +500 in X and Z at Y=0
-        let gray = SIMD4<Float>(0.2, 0.2, 0.2, 1.0) // dark gray #333333
-        let vertices: [Vertex] = [
-            Vertex(position: SIMD3<Float>(-500, 0,  500), color: gray),
-            Vertex(position: SIMD3<Float>( 500, 0,  500), color: gray),
-            Vertex(position: SIMD3<Float>( 500, 0, -500), color: gray),
+        // --- Tile Quad Geometry ---
+        // Unit quad at Y=0, from (0,0,0) to (1,0,1) with texture coordinates.
+        // Two triangles, 6 vertices. Clockwise winding when viewed from above (+Y).
+        // Metal texture coordinate origin is top-left: (0,0) = top-left, (1,1) = bottom-right.
+        // Tile y=0 is north (top), so texCoord.v=0 should be at the min-Z (north) edge
+        // and texCoord.v=1 at the max-Z (south) edge.
+        let tileVertices: [TexturedVertex] = [
+            // Triangle 1: top-left, top-right, bottom-right (north edge first)
+            TexturedVertex(position: SIMD3<Float>(0, 0, 0), texCoord: SIMD2<Float>(0, 0)),
+            TexturedVertex(position: SIMD3<Float>(1, 0, 0), texCoord: SIMD2<Float>(1, 0)),
+            TexturedVertex(position: SIMD3<Float>(1, 0, 1), texCoord: SIMD2<Float>(1, 1)),
 
-            Vertex(position: SIMD3<Float>(-500, 0,  500), color: gray),
-            Vertex(position: SIMD3<Float>( 500, 0, -500), color: gray),
-            Vertex(position: SIMD3<Float>(-500, 0, -500), color: gray),
+            // Triangle 2: top-left, bottom-right, bottom-left
+            TexturedVertex(position: SIMD3<Float>(0, 0, 0), texCoord: SIMD2<Float>(0, 0)),
+            TexturedVertex(position: SIMD3<Float>(1, 0, 1), texCoord: SIMD2<Float>(1, 1)),
+            TexturedVertex(position: SIMD3<Float>(0, 0, 1), texCoord: SIMD2<Float>(0, 1)),
         ]
-        groundVertexCount = vertices.count
-        guard let vb = device.makeBuffer(bytes: vertices,
-                                         length: MemoryLayout<Vertex>.stride * vertices.count,
-                                         options: .storageModeShared) else {
-            fatalError("Failed to create ground vertex buffer")
+
+        guard let vb = device.makeBuffer(bytes: tileVertices,
+                                          length: MemoryLayout<TexturedVertex>.stride * tileVertices.count,
+                                          options: .storageModeShared) else {
+            fatalError("Failed to create tile quad vertex buffer")
         }
-        vb.label = "Ground Vertices"
-        groundVertexBuffer = vb
+        vb.label = "Tile Quad Vertices"
+        tileQuadVertexBuffer = vb
+
+        // --- Per-tile model matrix buffer (reused) ---
+        guard let mmb = device.makeBuffer(length: MemoryLayout<simd_float4x4>.stride, options: .storageModeShared) else {
+            fatalError("Failed to create model matrix buffer")
+        }
+        mmb.label = "Tile Model Matrix"
+        modelMatrixBuffer = mmb
+
+        // --- Tile Manager ---
+        tileManager = MapTileManager(device: device)
 
         super.init()
+    }
+
+    // MARK: - Tile Rendering Helpers
+
+    /// Build a model matrix that transforms the unit quad to the tile's world-space bounds.
+    private func tileModelMatrix(for tile: TileCoordinate) -> simd_float4x4 {
+        let bounds = TileCoordinate.tileBounds(tile: tile)
+
+        // Convert geographic bounds to world-space
+        let minX = coordSystem.lonToX(bounds.minLon)
+        let maxX = coordSystem.lonToX(bounds.maxLon)
+        // Note: latToZ has negative Z for north, so maxLat -> smaller Z
+        let minZ = coordSystem.latToZ(bounds.maxLat) // north edge -> smaller Z value
+        let maxZ = coordSystem.latToZ(bounds.minLat) // south edge -> larger Z value
+
+        let scaleX = maxX - minX
+        let scaleZ = maxZ - minZ
+
+        // Scale and translate the unit quad (0,0)-(1,1) to world bounds
+        var matrix = matrix_identity_float4x4
+        // Scale
+        matrix.columns.0.x = scaleX
+        matrix.columns.2.z = scaleZ
+        // Translate
+        matrix.columns.3.x = minX
+        matrix.columns.3.z = minZ
+
+        return matrix
+    }
+
+    /// Determine tile radius based on zoom level (fewer tiles at high zoom for performance).
+    private func tileRadius(forZoom zoom: Int) -> Int {
+        switch zoom {
+        case 6...7: return 4
+        case 8: return 5
+        case 9: return 5
+        case 10: return 5
+        case 11: return 4
+        case 12: return 3
+        default: return 4
+        }
     }
 }
 
@@ -163,6 +279,18 @@ extension Renderer: MTKViewDelegate {
             uniforms.pointee.viewMatrix = camera.viewMatrix
             uniforms.pointee.projectionMatrix = camera.projectionMatrix
 
+            // Determine tile zoom level and visible tiles
+            currentZoom = tileManager.zoomLevel(forCameraDistance: camera.distance)
+            let centerLat = coordSystem.zToLat(camera.target.z)
+            let centerLon = coordSystem.xToLon(camera.target.x)
+            let radius = tileRadius(forZoom: currentZoom)
+            let visibleTiles = TileCoordinate.visibleTiles(
+                centerLat: centerLat,
+                centerLon: centerLon,
+                zoom: currentZoom,
+                radius: radius
+            )
+
             // Command buffer
             guard let commandBuffer = commandQueue.makeCommandBuffer() else {
                 frameSemaphore.signal()
@@ -185,16 +313,37 @@ extension Renderer: MTKViewDelegate {
                 frameSemaphore.signal()
                 return
             }
-            encoder.label = "Ground Plane Encoder"
+            encoder.label = "Tile Map Encoder"
 
-            encoder.setRenderPipelineState(pipelineState)
             encoder.setDepthStencilState(depthStencilState)
             encoder.setFrontFacing(.clockwise)
-            encoder.setCullMode(.back)
+            encoder.setCullMode(.none) // Render both sides for robustness
 
+            // Bind shared buffers for textured tiles
             encoder.setVertexBuffer(uniformBuffer, offset: 0, index: Int(BufferIndexUniforms.rawValue))
-            encoder.setVertexBuffer(groundVertexBuffer, offset: 0, index: Int(BufferIndexVertices.rawValue))
-            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: groundVertexCount)
+            encoder.setVertexBuffer(tileQuadVertexBuffer, offset: 0, index: Int(BufferIndexVertices.rawValue))
+
+            // Draw each visible tile
+            let modelMatrixPtr = modelMatrixBuffer.contents().bindMemory(to: simd_float4x4.self, capacity: 1)
+
+            for tile in visibleTiles {
+                // Compute model matrix for this tile
+                let modelMatrix = tileModelMatrix(for: tile)
+                modelMatrixPtr.pointee = modelMatrix
+                encoder.setVertexBuffer(modelMatrixBuffer, offset: 0, index: Int(BufferIndexModelMatrix.rawValue))
+
+                // Check for cached texture
+                if let texture = tileManager.texture(for: tile) {
+                    // Textured tile
+                    encoder.setRenderPipelineState(texturedPipelineState)
+                    encoder.setFragmentTexture(texture, index: Int(TextureIndexColor.rawValue))
+                } else {
+                    // Placeholder (gray) while loading
+                    encoder.setRenderPipelineState(placeholderPipelineState)
+                }
+
+                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: tileQuadVertexCount)
+            }
 
             encoder.endEncoding()
 
@@ -211,6 +360,9 @@ extension Renderer: MTKViewDelegate {
 
             // Advance ring buffer index
             currentBufferIndex = (currentBufferIndex + 1) % Renderer.maxFramesInFlight
+
+            // Track zoom changes
+            lastZoom = currentZoom
         }
     }
 }
