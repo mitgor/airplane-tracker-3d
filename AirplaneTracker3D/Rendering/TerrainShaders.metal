@@ -69,3 +69,36 @@ fragment float4 terrain_fragment_placeholder(
 
     return float4(baseColor * lighting, 1.0);
 }
+
+// Retro terrain fragment: green-tinted CRT look with directional lighting.
+// Reuses terrain_vertex -- only the fragment stage changes.
+fragment float4 fragment_retro_terrain(
+    TerrainVertexOut in [[stage_in]],
+    texture2d<float> colorTexture [[texture(TextureIndexColor)]]
+) {
+    constexpr sampler texSampler(mag_filter::linear, min_filter::linear, mip_filter::linear);
+    float4 texColor = colorTexture.sample(texSampler, in.texCoord);
+
+    // Convert to grayscale and invert for retro look
+    float gray = 1.0 - (texColor.r * 0.3 + texColor.g * 0.59 + texColor.b * 0.11);
+
+    // Apply directional lighting
+    float3 lightDir = normalize(float3(0.5, 1.0, 0.3));
+    float3 normal = normalize(in.worldNormal);
+    float diffuse = max(dot(normal, lightDir), 0.0);
+    float lighting = 0.4 + diffuse * 0.6;
+
+    return float4(0.0, gray * 0.8 * lighting, 0.0, 1.0);
+}
+
+// Retro terrain placeholder (no texture yet, wireframe shape in green).
+fragment float4 fragment_retro_terrain_placeholder(
+    TerrainVertexOut in [[stage_in]]
+) {
+    float3 lightDir = normalize(float3(0.5, 1.0, 0.3));
+    float3 normal = normalize(in.worldNormal);
+    float diffuse = max(dot(normal, lightDir), 0.0);
+    float lighting = 0.4 + diffuse * 0.6;
+
+    return float4(0.0, 0.15 * lighting, 0.0, 1.0);
+}

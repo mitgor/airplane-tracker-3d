@@ -34,6 +34,7 @@
 		A10001000000000000000025 /* AircraftDetailPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000027 /* AircraftDetailPanel.swift */; };
 		A10001000000000000000026 /* TerrainTileManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000028 /* TerrainTileManager.swift */; };
 		A10001000000000000000027 /* TerrainShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000029 /* TerrainShaders.metal */; };
+		A10001000000000000000030 /* ThemeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000030 /* ThemeManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -66,6 +67,7 @@
 		A10002000000000000000027 /* AircraftDetailPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AircraftDetailPanel.swift; sourceTree = "<group>"; };
 		A10002000000000000000028 /* TerrainTileManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerrainTileManager.swift; sourceTree = "<group>"; };
 		A10002000000000000000029 /* TerrainShaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = TerrainShaders.metal; sourceTree = "<group>"; };
+		A10002000000000000000030 /* ThemeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeManager.swift; sourceTree = "<group>"; };
 		A10003000000000000000001 /* AirplaneTracker3D.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AirplaneTracker3D.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -123,6 +125,7 @@
 				A10002000000000000000025 /* SelectionManager.swift */,
 				A10002000000000000000028 /* TerrainTileManager.swift */,
 				A10002000000000000000029 /* TerrainShaders.metal */,
+				A10002000000000000000030 /* ThemeManager.swift */,
 			);
 			path = Rendering;
 			sourceTree = "<group>";
@@ -264,6 +267,7 @@
 				A10001000000000000000025 /* AircraftDetailPanel.swift in Sources */,
 				A10001000000000000000026 /* TerrainTileManager.swift in Sources */,
 				A10001000000000000000027 /* TerrainShaders.metal in Sources */,
+				A10001000000000000000030 /* ThemeManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

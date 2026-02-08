@@ -26,6 +26,9 @@ final class MapTileManager {
     /// Serial queue for thread-safe cache access
     private let cacheQueue = DispatchQueue(label: "com.airplanetracker3d.tilecache")
 
+    /// Current visual theme (affects tile URL provider)
+    var currentTheme: Theme = .day
+
     // MARK: - Init
 
     init(device: MTLDevice) {
@@ -42,13 +45,19 @@ final class MapTileManager {
         self.urlSession = URLSession(configuration: config)
     }
 
+    // MARK: - Theme Switching
+
+    /// Switch to a new theme and clear tile cache (tiles need re-download with new style).
+    func switchTheme(_ theme: Theme) {
+        currentTheme = theme
+        clearCache()
+    }
+
     // MARK: - Tile URL
 
-    /// Build the tile URL, rotating between a/b/c subdomains for load balancing.
+    /// Build the tile URL using the current theme's tile provider.
     func tileURL(for tile: TileCoordinate) -> URL {
-        let subdomains = ["a", "b", "c"]
-        let subdomain = subdomains[abs(tile.x) % 3]
-        return URL(string: "https://\(subdomain).tile.openstreetmap.org/\(tile.zoom)/\(tile.x)/\(tile.y).png")!
+        return ThemeManager.tileURL(for: tile, theme: currentTheme)
     }
 
     // MARK: - Texture Access
