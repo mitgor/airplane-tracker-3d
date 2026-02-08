@@ -78,7 +78,7 @@ class AircraftInstanceManager {
 
     /// Update instance buffers with interpolated aircraft states for the current frame.
     func update(states: [InterpolatedAircraftState], bufferIndex: Int,
-                deltaTime: Float, time: Float) {
+                deltaTime: Float, time: Float, selectedHex: String? = nil) {
         let count = min(states.count, maxInstances)
         totalAircraftCount = count
 
@@ -141,6 +141,9 @@ class AircraftInstanceManager {
             // Glow intensity
             let glowIntensity: Float = 0.3 + 0.15 * sin(phase * 0.5)
 
+            // Selection flag: bit 0 = selected (gold highlight in AircraftShaders.metal)
+            let flags: UInt32 = (state.hex == selectedHex) ? 1 : 0
+
             // Populate aircraft instance
             instancePtr[i] = AircraftInstanceData(
                 modelMatrix: modelMatrix,
@@ -148,7 +151,7 @@ class AircraftInstanceManager {
                 lightPhase: phase,
                 glowIntensity: glowIntensity,
                 rotorAngle: rotorAngle,
-                flags: 0
+                flags: flags
             )
 
             // Populate glow instance

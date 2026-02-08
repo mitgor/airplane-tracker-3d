@@ -328,7 +328,10 @@ final class FlightDataManager {
                 altitude: alt,
                 category: category,
                 hex: hex,
-                callsign: classifySource.callsign
+                callsign: classifySource.callsign,
+                squawk: classifySource.squawk,
+                lat: lat,
+                lon: lon
             )
             results.append(state)
         }

@@ -29,6 +29,9 @@
 		A10001000000000000000020 /* LabelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000022 /* LabelManager.swift */; };
 		A10001000000000000000021 /* LabelShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000023 /* LabelShaders.metal */; };
 		A10001000000000000000022 /* AltitudeLineShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000024 /* AltitudeLineShaders.metal */; };
+		A10001000000000000000023 /* SelectionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000025 /* SelectionManager.swift */; };
+		A10001000000000000000024 /* EnrichmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000026 /* EnrichmentService.swift */; };
+		A10001000000000000000025 /* AircraftDetailPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000027 /* AircraftDetailPanel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -56,6 +59,9 @@
 		A10002000000000000000022 /* LabelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelManager.swift; sourceTree = "<group>"; };
 		A10002000000000000000023 /* LabelShaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = LabelShaders.metal; sourceTree = "<group>"; };
 		A10002000000000000000024 /* AltitudeLineShaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = AltitudeLineShaders.metal; sourceTree = "<group>"; };
+		A10002000000000000000025 /* SelectionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionManager.swift; sourceTree = "<group>"; };
+		A10002000000000000000026 /* EnrichmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnrichmentService.swift; sourceTree = "<group>"; };
+		A10002000000000000000027 /* AircraftDetailPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AircraftDetailPanel.swift; sourceTree = "<group>"; };
 		A10003000000000000000001 /* AirplaneTracker3D.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AirplaneTracker3D.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -89,6 +95,7 @@
 				A10005000000000000000006 /* Map */,
 				A10005000000000000000007 /* Models */,
 				A10005000000000000000008 /* DataLayer */,
+				A10005000000000000000009 /* Views */,
 			);
 			path = AirplaneTracker3D;
 			sourceTree = "<group>";
@@ -109,6 +116,7 @@
 				A10002000000000000000022 /* LabelManager.swift */,
 				A10002000000000000000023 /* LabelShaders.metal */,
 				A10002000000000000000024 /* AltitudeLineShaders.metal */,
+				A10002000000000000000025 /* SelectionManager.swift */,
 			);
 			path = Rendering;
 			sourceTree = "<group>";
@@ -145,8 +153,17 @@
 			children = (
 				A10002000000000000000014 /* DataNormalizer.swift */,
 				A10002000000000000000015 /* FlightDataActor.swift */,
+				A10002000000000000000026 /* EnrichmentService.swift */,
 			);
 			path = DataLayer;
+			sourceTree = "<group>";
+		};
+		A10005000000000000000009 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A10002000000000000000027 /* AircraftDetailPanel.swift */,
+			);
+			path = Views;
 			sourceTree = "<group>";
 		};
 		A10005000000000000000005 /* Products */ = {
@@ -236,6 +253,9 @@
 				A10001000000000000000020 /* LabelManager.swift in Sources */,
 				A10001000000000000000021 /* LabelShaders.metal in Sources */,
 				A10001000000000000000022 /* AltitudeLineShaders.metal in Sources */,
+				A10001000000000000000023 /* SelectionManager.swift in Sources */,
+				A10001000000000000000024 /* EnrichmentService.swift in Sources */,
+				A10001000000000000000025 /* AircraftDetailPanel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

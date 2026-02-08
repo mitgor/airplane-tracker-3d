@@ -39,6 +39,13 @@ final class OrbitCamera {
     var isAutoRotating: Bool = false
     var autoRotateSpeed: Float = 0.5 // radians per second
 
+    // MARK: - Follow Target
+
+    /// When set, camera smoothly tracks this point
+    var followTarget: SIMD3<Float>? = nil
+    /// Exponential decay factor for follow smoothing
+    let followSmoothness: Float = 0.08
+
     // MARK: - Computed Properties
 
     /// Camera position in world space from spherical coordinates
@@ -91,8 +98,14 @@ final class OrbitCamera {
         elevation = 0.5
     }
 
-    /// Update per frame (auto-rotation)
+    /// Update per frame (follow target + auto-rotation)
     func update(deltaTime: Float) {
+        // Follow target: smooth lerp toward followed aircraft
+        if let ft = followTarget {
+            let lerpFactor = 1.0 - pow(1.0 - followSmoothness, deltaTime * 60.0)
+            target = target + (ft - target) * lerpFactor
+        }
+
         if isAutoRotating {
             azimuth += autoRotateSpeed * deltaTime
         }

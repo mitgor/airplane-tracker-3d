@@ -145,4 +145,33 @@ struct InterpolatedAircraftState: Sendable {
     var hex: String
     /// Flight callsign
     var callsign: String
+    /// Squawk code
+    var squawk: String
+    /// Latitude in degrees
+    var lat: Double
+    /// Longitude in degrees
+    var lon: Double
+}
+
+// MARK: - Selected Aircraft Info (for detail panel)
+
+/// Data structure passed to SwiftUI detail panel when an aircraft is selected.
+struct SelectedAircraftInfo: Identifiable {
+    let id: String  // hex
+    let hex: String
+    let callsign: String
+    let altitude: Float     // feet
+    let groundSpeed: Float  // knots
+    let heading: Float      // degrees
+    let verticalRate: Float // ft/min
+    let squawk: String
+    let lat: Double
+    let lon: Double
+    let position: SIMD3<Float>  // world-space for follow camera
+    // Enrichment data (populated asynchronously)
+    var registration: String?
+    var aircraftType: String?
+    var operator_: String?
+    var origin: String?
+    var destination: String?
 }

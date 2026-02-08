@@ -38,6 +38,10 @@ final class Renderer: NSObject {
     let altLinePipeline: MTLRenderPipelineState
     let labelManager: LabelManager
 
+    // MARK: - Selection
+
+    let selectionManager = SelectionManager()
+
     /// Flight data manager set externally after init (from ContentView/MetalView)
     var flightDataManager: FlightDataManager?
 
@@ -703,8 +707,16 @@ extension Renderer: MTKViewDelegate {
             // --- Aircraft Rendering ---
             let states = flightDataManager?.interpolatedStates(at: now) ?? []
             if !states.isEmpty {
+                // Follow camera: track selected aircraft position
+                if let pos = selectionManager.selectedPosition(from: states) {
+                    camera.followTarget = selectionManager.isFollowing ? pos : nil
+                } else {
+                    camera.followTarget = nil
+                }
+
                 instanceManager.update(states: states, bufferIndex: currentBufferIndex,
-                                       deltaTime: deltaTime, time: Float(now))
+                                       deltaTime: deltaTime, time: Float(now),
+                                       selectedHex: selectionManager.selectedHex)
 
                 // Update trail buffers with current aircraft positions
                 trailManager.update(states: states, bufferIndex: currentBufferIndex)
