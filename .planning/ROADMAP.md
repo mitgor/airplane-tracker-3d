@@ -37,7 +37,7 @@
 - Decimal phases (e.g., 6.1): Urgent insertions (marked with INSERTED)
 
 - [x] **Phase 5: Metal Foundation + Ground Plane** - MTKView rendering surface, orbital camera with trackpad gestures, and map tile ground plane ✅
-- [ ] **Phase 6: Data Pipeline + Aircraft Rendering** - Live aircraft from network APIs with instanced Metal rendering and smooth interpolation
+- [x] **Phase 6: Data Pipeline + Aircraft Rendering** - Live aircraft from network APIs with instanced Metal rendering and smooth interpolation ✅
 - [ ] **Phase 7: Trails + Labels + Selection** - Flight trails, billboard text labels, aircraft selection with detail panel, and follow mode
 - [ ] **Phase 8: Terrain + Themes** - Elevation mesh, three visual themes, and airport ground labels
 - [ ] **Phase 9: UI Controls + Settings + Airports** - SwiftUI controls, airport search, statistics, keyboard shortcuts, and settings persistence
@@ -73,8 +73,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 06-01-PLAN.md -- Flight data actor, network polling, provider fallback, and data normalization
-- [ ] 06-02-PLAN.md -- Instanced aircraft rendering with 6 model categories, interpolation, and visual effects
+- [x] 06-01-PLAN.md -- Flight data actor, network polling, provider fallback, and data normalization
+- [x] 06-02-PLAN.md -- Instanced aircraft rendering with 6 model categories, interpolation, and visual effects
 
 ### Phase 7: Trails + Labels + Selection
 **Goal**: User can identify aircraft by their labels, trace their flight paths, select aircraft for details, and follow them with the camera
@@ -195,7 +195,7 @@ Phases execute in numeric order: 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 3. Terrain Elevation | v1.0 | 2/2 | Complete | 2026-02-07 |
 | 4. Airspace Volumes | v1.0 | 1/1 | Complete | 2026-02-07 |
 | 5. Metal Foundation + Ground Plane | v2.0 | 2/2 | Complete | 2026-02-08 |
-| 6. Data Pipeline + Aircraft Rendering | v2.0 | 0/2 | Not started | - |
+| 6. Data Pipeline + Aircraft Rendering | v2.0 | 2/2 | Complete | 2026-02-08 |
 | 7. Trails + Labels + Selection | v2.0 | 0/2 | Not started | - |
 | 8. Terrain + Themes | v2.0 | 0/2 | Not started | - |
 | 9. UI Controls + Settings + Airports | v2.0 | 0/2 | Not started | - |
