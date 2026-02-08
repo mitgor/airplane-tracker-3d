@@ -2,91 +2,97 @@
 
 ## What This Is
 
-A browser-based 3D flight tracker that visualizes real-time aircraft positions using THREE.js WebGL rendering. It supports two data modes: local (dump1090 ADS-B receiver) and global (public APIs like airplanes.live and ADS-B Exchange). The app shows aircraft with smooth interpolated movement, flight trails, multiple themes, and rich enrichment data — plus terrain elevation, airspace volumes, airport search, and 3D airport labels.
+A real-time 3D flight tracker available as both a browser-based web app (THREE.js/WebGL) and a native macOS application (Swift/Metal/SwiftUI). It visualizes aircraft positions with smooth interpolated movement, flight trails, and rich enrichment data. The web version includes terrain elevation, airspace volumes, airport search, and 3D labels. The native macOS version is being built as a high-performance ARM-optimized Metal application.
 
 ## Core Value
 
 Real-time 3D flight visualization that works both as a personal ADS-B receiver dashboard and as a global flight explorer with airport discovery.
 
+## Current Milestone: v2.0 Native macOS App
+
+**Goal:** Rewrite the core flight visualization as a fully native macOS application using Swift, Metal, and SwiftUI — optimized for Apple Silicon, no WebView.
+
+**Target features (core first):**
+- Native Metal 3D rendering pipeline for aircraft visualization
+- Real-time data polling (dump1090 local + global API sources)
+- Smooth aircraft interpolation and flight trails
+- SwiftUI controls and aircraft detail panel
+- ARM-optimized performance targeting 60fps+
+
 ## Requirements
 
 ### Validated
 
-- ✓ 3D aircraft rendering with smooth interpolation between data updates — existing
-- ✓ Real-time data polling from dump1090 (aircraft.json, stats.json) — existing
-- ✓ Three visual themes: day, night, retro 80s — existing
-- ✓ Flight trails with altitude/speed color coding — existing
-- ✓ Aircraft enrichment via hexdb.io, adsbdb.com, adsb.lol APIs — existing
-- ✓ Map tile rendering with zoom/pan (OSM, CartoDB, Stamen) — existing
-- ✓ Aircraft selection with detail panel and external links — existing
-- ✓ Statistics graphs (message rate, aircraft count, signal level) — existing
-- ✓ Settings persistence via cookies — existing
-- ✓ Keyboard shortcuts and touch controls — existing
-- ✓ Performance optimization (object pooling, LOD, shared geometries) — existing
-- ✓ IndexedDB persistence for stats history and trail data — existing
-- ✓ Aircraft category detection (helicopter, military, small, regional, widebody, jet) — existing
-- ✓ Follow aircraft mode with smooth camera tracking — existing
-- ✓ Coverage heatmap visualization — existing
+- ✓ 3D aircraft rendering with smooth interpolation between data updates — v1.0 web
+- ✓ Real-time data polling from dump1090 (aircraft.json, stats.json) — v1.0 web
+- ✓ Three visual themes: day, night, retro 80s — v1.0 web
+- ✓ Flight trails with altitude/speed color coding — v1.0 web
+- ✓ Aircraft enrichment via hexdb.io, adsbdb.com, adsb.lol APIs — v1.0 web
+- ✓ Map tile rendering with zoom/pan (OSM, CartoDB, Stamen) — v1.0 web
+- ✓ Aircraft selection with detail panel and external links — v1.0 web
+- ✓ Statistics graphs (message rate, aircraft count, signal level) — v1.0 web
+- ✓ Settings persistence via cookies — v1.0 web
+- ✓ Keyboard shortcuts and touch controls — v1.0 web
+- ✓ Performance optimization (object pooling, LOD, shared geometries) — v1.0 web
+- ✓ IndexedDB persistence for stats history and trail data — v1.0 web
+- ✓ Aircraft category detection (helicopter, military, small, regional, widebody, jet) — v1.0 web
+- ✓ Follow aircraft mode with smooth camera tracking — v1.0 web
+- ✓ Coverage heatmap visualization — v1.0 web
+- ✓ Data source abstraction with local/global mode switch — v1.0 web
+- ✓ Global data sourcing with API fallback (airplanes.live, adsb.lol) — v1.0 web
+- ✓ Airport search, labels, fly-to, nearby browse — v1.0 web
+- ✓ 3D terrain elevation with satellite imagery — v1.0 web
+- ✓ Airspace volume rendering (Class B/C/D) — v1.0 web
 
 ### Active
 
-- [ ] DATA-01: Data source abstraction layer with mode switch (local dump1090 / global APIs)
-- [ ] DATA-02: Global data sourcing from multiple APIs with fallback (airplanes.live, ADS-B Exchange, adsb.lol)
-- [ ] ARPT-01: Airport locator with search by name, IATA/ICAO code, and autocomplete
-- [ ] ARPT-02: Browse nearby airports list
-- [ ] ARPT-03: 3D text labels on ground for major airports (city/airport name)
-- [ ] TERR-01: 3D terrain elevation with satellite imagery
-- [ ] ASPC-01: Airspace volume rendering (Class B/C/D boundaries)
-- [ ] CORE-01: Both modes share all new features (terrain, labels, airspace)
-- [ ] ARPT-04: Camera fly-to animation when selecting airport from search
+<!-- v2.0 — Native macOS App requirements defined in REQUIREMENTS.md -->
+
+(Defined in REQUIREMENTS.md)
 
 ### Out of Scope
 
 - Recording/playback functionality — adds significant complexity, not core to the vision
 - Fly mode (WASD navigation) — orbit camera is sufficient
-- Mobile native app — web-first, works in mobile browser
+- Mobile native app — macOS-first for v2.0
 - User accounts or authentication — client-side only
 - Real-time chat or social features — this is a visualization tool
-
-## Traceability
-
-| Requirement | Phase | Status |
-|-------------|-------|--------|
-| DATA-01 | Phase 1: Data Source Abstraction | Pending |
-| DATA-02 | Phase 1: Data Source Abstraction | Pending |
-| CORE-01 | Phase 1: Data Source Abstraction | Pending |
-| ARPT-01 | Phase 2: Airport Search and Labels | Pending |
-| ARPT-02 | Phase 2: Airport Search and Labels | Pending |
-| ARPT-03 | Phase 2: Airport Search and Labels | Pending |
-| ARPT-04 | Phase 2: Airport Search and Labels | Pending |
-| TERR-01 | Phase 3: Terrain Elevation | Pending |
-| ASPC-01 | Phase 4: Airspace Volumes | Pending |
+- WebView/WKWebView wrapper — must be fully native Metal rendering
+- Mac App Store distribution — direct download for v2.0
+- Full feature parity with web version in v2.0 — core features first, add terrain/airspace/airports in later milestones
 
 ## Context
 
-This is a brownfield project with a working single-file HTML application (~4,600 lines). The current architecture is procedural JavaScript with extensive performance optimizations (object pooling, shared geometries, LOD). The app currently only supports local dump1090 data. The main evolution is adding global data sources and richer geographic context (terrain, airports, airspace).
+This is a platform rewrite. The existing web app (~5,600 lines, single HTML file) serves as the feature reference. The v2.0 native app will be built in Swift using Metal for 3D rendering and SwiftUI for UI controls. The goal is native performance optimized for Apple Silicon (M1/M2/M3/M4), targeting 60fps+ with hundreds of aircraft.
 
-Inspiration: [Air Loom](http://objectiveunclear.com/airloom.html) — a similar 3D flight tracker with terrain elevation, airspace rendering, and airport search. The goal is to bring those capabilities into this project while maintaining the existing local mode.
+The web version remains the production app. The native version starts with core rendering and data pipeline, with richer features (terrain, airports, airspace) planned for subsequent milestones.
+
+Inspiration: [Air Loom](http://objectiveunclear.com/airloom.html) — the native app should feel as polished and performant as dedicated aviation software.
 
 Airport data source: OurAirports dataset (open data, includes coordinates, IATA/ICAO codes, names, types).
 
 ## Constraints
 
-- **Tech stack**: Must remain a single-file HTML application with vanilla JavaScript and THREE.js (no build tooling)
-- **Performance**: Must maintain 30fps+ with 200+ aircraft visible
-- **Compatibility**: Must work in modern browsers (Chrome 80+, Firefox 75+, Safari 13+)
+- **Tech stack**: Swift, Metal, SwiftUI — no WebView, no Electron, no Catalyst
+- **Architecture**: Apple Silicon ARM-optimized, universal binary acceptable but ARM primary
+- **Performance**: Must target 60fps+ with 200+ aircraft on Apple Silicon
 - **Data sources**: Global APIs must be free/public (no paid API keys required)
 - **Offline tolerance**: App should degrade gracefully when APIs are unavailable
+- **Distribution**: Direct download (DMG), no App Store sandboxing constraints
+- **macOS version**: macOS 13 Ventura+ (Metal 3 support)
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Shared core with mode switch (not separate files) | Avoids code duplication, both modes benefit from new features | — Pending |
-| Multiple global APIs with fallback | No single free API guarantees uptime; fallback ensures reliability | — Pending |
-| Major airports only for 3D labels | Showing all airports would be visually cluttered and hurt performance | — Pending |
-| Terrain elevation for both modes | Local mode users also benefit from geographic context | — Pending |
-| 4-phase roadmap: Data -> Airports -> Terrain -> Airspace | Follows dependency chain; each phase delivers independently verifiable capability | — Active |
+| Shared core with mode switch (not separate files) | Avoids code duplication, both modes benefit from new features | ✓ Good — v1.0 |
+| Multiple global APIs with fallback | No single free API guarantees uptime; fallback ensures reliability | ✓ Good — v1.0 |
+| Major airports only for 3D labels | Showing all airports would be visually cluttered and hurt performance | ✓ Good — v1.0 |
+| 4-phase roadmap: Data -> Airports -> Terrain -> Airspace | Follows dependency chain; each phase delivers independently verifiable capability | ✓ Good — v1.0 |
+| Metal over SceneKit for 3D | Maximum performance and control for real-time flight data rendering | — Pending |
+| SwiftUI over AppKit for UI | Modern, declarative, sufficient for controls/panels/settings | — Pending |
+| Core features first, add terrain/airports later | Reduces v2.0 scope to achievable milestone, proves native rendering works | — Pending |
+| Direct download distribution | No App Store sandboxing, faster iteration, full system access | — Pending |
 
 ---
-*Last updated: 2026-02-07 after roadmap creation*
+*Last updated: 2026-02-08 after v2.0 milestone start*
