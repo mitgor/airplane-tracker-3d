@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-08)
 
 ## Current Position
 
-Phase: 6 of 10 (Data Pipeline + Aircraft Rendering) -- IN PROGRESS
-Plan: 1 of 2 in current phase
-Status: Executing
-Last activity: 2026-02-08 -- Completed 06-01 (data pipeline)
+Phase: 6 of 10 (Data Pipeline + Aircraft Rendering) -- COMPLETE
+Plan: 2 of 2 in current phase
+Status: Phase Complete
+Last activity: 2026-02-08 -- Completed 06-02 (aircraft rendering)
 
-Progress: [==========----] 77% (10/13 plans across all milestones)
+Progress: [===========---] 85% (11/13 plans across all milestones)
 
 ## Performance Metrics
 
@@ -32,7 +32,7 @@ Progress: [==========----] 77% (10/13 plans across all milestones)
 | 3 (v1.0) | 2 | -- | -- |
 | 4 (v1.0) | 1 | -- | -- |
 | 5 (v2.0) | 2 | 9min | 4.5min |
-| 6 (v2.0) | 1/2 | 4min | 4min |
+| 6 (v2.0) | 2/2 | 10min | 5min |
 
 **Recent Trend:**
 - v1.0 completed all 7 plans
@@ -40,6 +40,7 @@ Progress: [==========----] 77% (10/13 plans across all milestones)
 - v2.0 plan 05-02 completed in 4 min
 - Phase 5 verified: 5/5 automated checks pass
 - v2.0 plan 06-01 completed in 4 min (2 tasks, 5 files)
+- v2.0 plan 06-02 completed in 6 min (2 tasks, 9 files)
 
 *Updated after each plan completion*
 
@@ -66,6 +67,9 @@ Recent decisions affecting current work:
 - [06-01]: FlightDataManager @MainActor pattern for synchronous render-loop access
 - [06-01]: Buffer snapshot approach: actor stores raw data, manager copies for render-thread interpolation
 - [06-01]: Altitude scale 0.001 (35000ft = 35 world units) with worldScale=500
+- [06-02]: Category-sorted instanced batching: one draw call per non-empty category (max 8 total)
+- [06-02]: Persistent per-aircraft animation state (lightPhase, rotorAngle) keyed by hex for continuity
+- [06-02]: Additive glow blending with depth-read/no-write stencil state
 
 ### Pending Todos
 
@@ -79,5 +83,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Completed 06-01-PLAN.md, ready for 06-02
+Stopped at: Completed 06-02-PLAN.md, Phase 6 complete, ready for Phase 7
 Resume file: None
