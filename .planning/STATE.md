@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-02-08)
 
 ## Current Position
 
-Phase: 8 of 10 (Terrain + Themes) -- IN PROGRESS
-Plan: 1 of 2 in current phase
-Status: Executing
-Last activity: 2026-02-08 -- Plan 08-01 (terrain elevation) complete
+Phase: 8 of 10 (Terrain + Themes) -- COMPLETE
+Plan: 2 of 2 in current phase
+Status: Phase complete
+Last activity: 2026-02-09 -- Plan 08-02 (themes + airport labels) complete
 
-Progress: [==============-] 94% (14/15 plans across all milestones)
+Progress: [===============] 100% (15/15 plans across all milestones)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 13 (7 v1.0 + 6 v2.0)
-- Average duration: ~5.0min (v2.0)
-- Total execution time: ~30min (v2.0)
+- Total plans completed: 15 (7 v1.0 + 8 v2.0)
+- Average duration: ~4.9min (v2.0)
+- Total execution time: ~37min (v2.0)
 
 **By Phase:**
 
@@ -34,7 +34,7 @@ Progress: [==============-] 94% (14/15 plans across all milestones)
 | 5 (v2.0) | 2 | 9min | 4.5min |
 | 6 (v2.0) | 2 | 10min | 5min |
 | 7 (v2.0) | 2 | 11min | 5.5min |
-| 8 (v2.0) | 1* | 3min | 3min |
+| 8 (v2.0) | 2 | 10min | 5min |
 
 **Recent Trend:**
 - Phase 5 verified: 5/5 automated checks pass
@@ -43,6 +43,7 @@ Progress: [==============-] 94% (14/15 plans across all milestones)
 - v2.0 plan 07-01 completed in 4 min
 - v2.0 plan 07-02 completed in 7 min
 - v2.0 plan 08-01 completed in 3 min
+- v2.0 plan 08-02 completed in 7 min
 
 *Updated after each plan completion*
 
@@ -63,6 +64,10 @@ Recent decisions affecting current work:
 - [07-02]: EnrichmentService actor with caching
 - [08-01]: Terrain scale factor 0.003, 32x32 mesh subdivision, CPU-side vertex displacement
 - [08-01]: Terrarium elevation decoding from AWS S3, UInt32 indices for future LOD
+- [08-02]: CartoDB Positron (day), Dark Matter (night), OSM+green-shader (retro) -- no API keys
+- [08-02]: ThemeConfig pure-data struct, NotificationCenter-driven theme switching
+- [08-02]: AltLineVertex extended to 32 bytes with color for theme-aware altitude lines
+- [08-02]: Retro wireframe via setTriangleFillMode(.lines) for terrain+aircraft, .fill for labels/trails
 
 ### Pending Todos
 
@@ -75,6 +80,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-08
-Stopped at: Completed 08-01-PLAN.md (terrain elevation), proceeding to 08-02
+Last session: 2026-02-09
+Stopped at: Completed 08-02-PLAN.md (themes + airport labels), Phase 8 complete
 Resume file: None
