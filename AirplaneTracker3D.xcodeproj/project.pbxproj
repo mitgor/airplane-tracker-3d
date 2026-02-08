@@ -20,6 +20,9 @@
 		A10001000000000000000011 /* AircraftCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000013 /* AircraftCategory.swift */; };
 		A10001000000000000000012 /* DataNormalizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000014 /* DataNormalizer.swift */; };
 		A10001000000000000000013 /* FlightDataActor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000015 /* FlightDataActor.swift */; };
+		A10001000000000000000014 /* AircraftMeshLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000016 /* AircraftMeshLibrary.swift */; };
+		A10001000000000000000015 /* AircraftShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000017 /* AircraftShaders.metal */; };
+		A10001000000000000000016 /* GlowShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000018 /* GlowShaders.metal */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -38,6 +41,9 @@
 		A10002000000000000000013 /* AircraftCategory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AircraftCategory.swift; sourceTree = "<group>"; };
 		A10002000000000000000014 /* DataNormalizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataNormalizer.swift; sourceTree = "<group>"; };
 		A10002000000000000000015 /* FlightDataActor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlightDataActor.swift; sourceTree = "<group>"; };
+		A10002000000000000000016 /* AircraftMeshLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AircraftMeshLibrary.swift; sourceTree = "<group>"; };
+		A10002000000000000000017 /* AircraftShaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = AircraftShaders.metal; sourceTree = "<group>"; };
+		A10002000000000000000018 /* GlowShaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = GlowShaders.metal; sourceTree = "<group>"; };
 		A10003000000000000000001 /* AirplaneTracker3D.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AirplaneTracker3D.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -82,6 +88,9 @@
 				A10002000000000000000004 /* Renderer.swift */,
 				A10002000000000000000005 /* Shaders.metal */,
 				A10002000000000000000007 /* ShaderTypes.h */,
+				A10002000000000000000016 /* AircraftMeshLibrary.swift */,
+				A10002000000000000000017 /* AircraftShaders.metal */,
+				A10002000000000000000018 /* GlowShaders.metal */,
 			);
 			path = Rendering;
 			sourceTree = "<group>";
@@ -200,6 +209,9 @@
 				A10001000000000000000011 /* AircraftCategory.swift in Sources */,
 				A10001000000000000000012 /* DataNormalizer.swift in Sources */,
 				A10001000000000000000013 /* FlightDataActor.swift in Sources */,
+				A10001000000000000000014 /* AircraftMeshLibrary.swift in Sources */,
+				A10001000000000000000015 /* AircraftShaders.metal in Sources */,
+				A10001000000000000000016 /* GlowShaders.metal in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
