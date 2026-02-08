@@ -32,6 +32,12 @@ final class Renderer: NSObject {
     private let lineWidthBuffer: MTLBuffer
     private let resolutionBuffer: MTLBuffer
 
+    // MARK: - Label & Altitude Line Pipeline States
+
+    let labelPipeline: MTLRenderPipelineState
+    let altLinePipeline: MTLRenderPipelineState
+    let labelManager: LabelManager
+
     /// Flight data manager set externally after init (from ContentView/MetalView)
     var flightDataManager: FlightDataManager?
 
@@ -325,6 +331,51 @@ final class Renderer: NSObject {
         rb.label = "Trail Resolution"
         resolutionBuffer = rb
 
+        // --- Label Manager ---
+        labelManager = LabelManager(device: device)
+
+        // --- Label Pipeline State (alpha blending for text billboards) ---
+        let labelPipelineDesc = MTLRenderPipelineDescriptor()
+        labelPipelineDesc.vertexFunction = library.makeFunction(name: "label_vertex")
+        labelPipelineDesc.fragmentFunction = library.makeFunction(name: "label_fragment")
+        labelPipelineDesc.colorAttachments[0].pixelFormat = metalView.colorPixelFormat
+        labelPipelineDesc.colorAttachments[0].isBlendingEnabled = true
+        labelPipelineDesc.colorAttachments[0].rgbBlendOperation = .add
+        labelPipelineDesc.colorAttachments[0].alphaBlendOperation = .add
+        labelPipelineDesc.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+        labelPipelineDesc.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+        labelPipelineDesc.colorAttachments[0].sourceAlphaBlendFactor = .sourceAlpha
+        labelPipelineDesc.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        labelPipelineDesc.depthAttachmentPixelFormat = metalView.depthStencilPixelFormat
+        labelPipelineDesc.rasterSampleCount = metalView.sampleCount
+
+        do {
+            labelPipeline = try device.makeRenderPipelineState(descriptor: labelPipelineDesc)
+        } catch {
+            fatalError("Failed to create label pipeline: \(error)")
+        }
+
+        // --- Altitude Line Pipeline State (alpha blending for dashed lines) ---
+        let altLinePipelineDesc = MTLRenderPipelineDescriptor()
+        altLinePipelineDesc.vertexFunction = library.makeFunction(name: "altline_vertex")
+        altLinePipelineDesc.fragmentFunction = library.makeFunction(name: "altline_fragment")
+        altLinePipelineDesc.colorAttachments[0].pixelFormat = metalView.colorPixelFormat
+        altLinePipelineDesc.colorAttachments[0].isBlendingEnabled = true
+        altLinePipelineDesc.colorAttachments[0].rgbBlendOperation = .add
+        altLinePipelineDesc.colorAttachments[0].alphaBlendOperation = .add
+        altLinePipelineDesc.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+        altLinePipelineDesc.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+        altLinePipelineDesc.colorAttachments[0].sourceAlphaBlendFactor = .sourceAlpha
+        altLinePipelineDesc.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        altLinePipelineDesc.depthAttachmentPixelFormat = metalView.depthStencilPixelFormat
+        altLinePipelineDesc.rasterSampleCount = metalView.sampleCount
+
+        do {
+            altLinePipeline = try device.makeRenderPipelineState(descriptor: altLinePipelineDesc)
+        } catch {
+            fatalError("Failed to create altitude line pipeline: \(error)")
+        }
+
         super.init()
     }
 
@@ -475,6 +526,52 @@ final class Renderer: NSObject {
         encoder.setDepthStencilState(depthStencilState)
     }
 
+    // MARK: - Altitude Line Rendering
+
+    /// Encode dashed altitude reference lines from aircraft to ground.
+    private func encodeAltitudeLines(encoder: MTLRenderCommandEncoder, uniformBuffer: MTLBuffer) {
+        let vertexCount = labelManager.altLineVertexCount(at: currentBufferIndex)
+        guard vertexCount > 0 else { return }
+
+        encoder.setRenderPipelineState(altLinePipeline)
+        encoder.setDepthStencilState(depthStencilState)
+
+        encoder.setVertexBuffer(uniformBuffer, offset: 0, index: Int(BufferIndexUniforms.rawValue))
+        encoder.setVertexBuffer(labelManager.altLineBuffer(at: currentBufferIndex), offset: 0,
+                                 index: Int(BufferIndexAltLineVertices.rawValue))
+
+        // Draw as lines (2 vertices per aircraft = one line segment each)
+        encoder.drawPrimitives(type: .line, vertexStart: 0, vertexCount: vertexCount)
+    }
+
+    // MARK: - Label Rendering
+
+    /// Encode billboard label sprites with alpha blending.
+    private func encodeLabels(encoder: MTLRenderCommandEncoder, uniformBuffer: MTLBuffer) {
+        let labelCount = labelManager.labelVertexCount(at: currentBufferIndex)
+        guard labelCount > 0 else { return }
+
+        encoder.setRenderPipelineState(labelPipeline)
+        encoder.setDepthStencilState(glowDepthStencilState) // depth-read, no-write
+
+        encoder.setVertexBuffer(uniformBuffer, offset: 0, index: Int(BufferIndexUniforms.rawValue))
+        encoder.setVertexBuffer(labelManager.labelBuffer(at: currentBufferIndex), offset: 0,
+                                 index: Int(BufferIndexLabelInstances.rawValue))
+
+        if let atlas = labelManager.textureAtlas {
+            encoder.setFragmentTexture(atlas, index: 0)
+        }
+
+        encoder.drawPrimitives(
+            type: .triangle,
+            vertexStart: 0,
+            vertexCount: 6,
+            instanceCount: labelCount
+        )
+    }
+
+    // MARK: - Glow Rendering
+
     /// Encode glow billboard sprites with additive blending.
     private func encodeGlow(encoder: MTLRenderCommandEncoder, uniformBuffer: MTLBuffer) {
         guard instanceManager.totalAircraftCount > 0 else { return }
@@ -612,6 +709,13 @@ extension Renderer: MTKViewDelegate {
                 // Update trail buffers with current aircraft positions
                 trailManager.update(states: states, bufferIndex: currentBufferIndex)
 
+                // Update label and altitude line buffers
+                labelManager.update(states: states, bufferIndex: currentBufferIndex,
+                                     cameraPosition: camera.position)
+
+                // Encode altitude lines (right after tiles, before aircraft)
+                encodeAltitudeLines(encoder: encoder, uniformBuffer: uniformBuffer)
+
                 // Encode aircraft bodies (one instanced draw per category)
                 encodeAircraft(encoder: encoder, uniformBuffer: uniformBuffer)
 
@@ -620,6 +724,9 @@ extension Renderer: MTKViewDelegate {
 
                 // Encode trail polylines (after aircraft, before glow)
                 encodeTrails(encoder: encoder, uniformBuffer: uniformBuffer, drawableSize: drawableSize)
+
+                // Encode billboard labels (after trails, before glow)
+                encodeLabels(encoder: encoder, uniformBuffer: uniformBuffer)
 
                 // Encode glow sprites (additive blend)
                 encodeGlow(encoder: encoder, uniformBuffer: uniformBuffer)

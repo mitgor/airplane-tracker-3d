@@ -10,7 +10,9 @@ typedef enum {
     BufferIndexModelMatrix = 2,
     BufferIndexInstances = 3,
     BufferIndexGlowInstances = 4,
-    BufferIndexTrailVertices = 5
+    BufferIndexTrailVertices = 5,
+    BufferIndexLabelInstances = 6,
+    BufferIndexAltLineVertices = 7
 } BufferIndex;
 
 // Texture indices
@@ -75,5 +77,25 @@ typedef struct {
     float _pad1;                // Padding (4 bytes)
 } TrailVertex;
 // Total: 64 bytes, naturally aligned
+
+// Per-instance data for billboard label rendering (48 bytes, GPU-aligned)
+typedef struct {
+    simd_float3 position;    // 12 bytes: world position (above aircraft)
+    float size;              // 4 bytes: billboard size
+    simd_float2 atlasUV;    // 8 bytes: UV offset into atlas (top-left corner)
+    simd_float2 atlasSize;  // 8 bytes: UV size of this label's slot in atlas
+    float opacity;           // 4 bytes: distance-based fade (LOD)
+    float _pad0;             // 4 bytes: padding
+    float _pad1;             // 4 bytes: padding
+    float _pad2;             // 4 bytes: padding
+} LabelInstanceData;
+// Total: 48 bytes
+
+// Per-vertex data for altitude reference lines (16 bytes)
+typedef struct {
+    simd_float3 position;    // 12 bytes: world position
+    float worldY;            // 4 bytes: Y value for dash pattern
+} AltLineVertex;
+// Total: 16 bytes
 
 #endif /* ShaderTypes_h */
