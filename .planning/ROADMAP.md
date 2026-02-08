@@ -39,7 +39,7 @@
 - [x] **Phase 5: Metal Foundation + Ground Plane** - MTKView rendering surface, orbital camera with trackpad gestures, and map tile ground plane ✅
 - [x] **Phase 6: Data Pipeline + Aircraft Rendering** - Live aircraft from network APIs with instanced Metal rendering and smooth interpolation ✅
 - [x] **Phase 7: Trails + Labels + Selection** - Flight trails, billboard text labels, aircraft selection with detail panel, and follow mode ✅
-- [ ] **Phase 8: Terrain + Themes** - Elevation mesh, three visual themes, and airport ground labels
+- [x] **Phase 8: Terrain + Themes** - Elevation mesh, three visual themes, and airport ground labels ✅
 - [ ] **Phase 9: UI Controls + Settings + Airports** - SwiftUI controls, airport search, statistics, keyboard shortcuts, and settings persistence
 - [ ] **Phase 10: Native macOS Integration + Distribution** - Menu bar status item, dock badge, notifications, native menus, and notarized DMG
 
@@ -103,8 +103,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 08-01-PLAN.md -- Terrain elevation mesh from AWS Terrarium tiles with 32x32 subdivided meshes and vertex displacement
-- [ ] 08-02-PLAN.md -- Three-theme system (day/night/retro) with theme-aware rendering for all passes, and airport ground labels
+- [x] 08-01-PLAN.md -- Terrain elevation mesh from AWS Terrarium tiles with 32x32 subdivided meshes and vertex displacement
+- [x] 08-02-PLAN.md -- Three-theme system (day/night/retro) with theme-aware rendering for all passes, and airport ground labels
 
 ### Phase 9: UI Controls + Settings + Airports
 **Goal**: User can configure every aspect of the app, search and fly to airports, view statistics, and control the app via keyboard -- and all preferences persist across restarts
@@ -197,6 +197,6 @@ Phases execute in numeric order: 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 5. Metal Foundation + Ground Plane | v2.0 | 2/2 | Complete | 2026-02-08 |
 | 6. Data Pipeline + Aircraft Rendering | v2.0 | 2/2 | Complete | 2026-02-08 |
 | 7. Trails + Labels + Selection | v2.0 | 2/2 | Complete | 2026-02-08 |
-| 8. Terrain + Themes | v2.0 | 0/2 | Not started | - |
+| 8. Terrain + Themes | v2.0 | 2/2 | Complete | 2026-02-09 |
 | 9. UI Controls + Settings + Airports | v2.0 | 0/2 | Not started | - |
 | 10. Native macOS Integration + Distribution | v2.0 | 0/2 | Not started | - |
