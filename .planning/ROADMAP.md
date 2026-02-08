@@ -100,11 +100,11 @@ Plans:
   1. User sees terrain elevation from terrain-RGB tiles with visible mountains, valleys, and coastlines that match real-world geography
   2. User can switch between three themes -- day (solid), night (solid), and retro (wireframe) -- and the entire scene updates: ground, aircraft, trails, labels, and sky
   3. User sees 3D text labels on the ground for nearby major airports that remain readable as the camera moves
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 08-01: Terrain elevation mesh with vertex displacement
-- [ ] 08-02: Theme system with three visual modes, and airport ground labels
+- [ ] 08-01-PLAN.md -- Terrain elevation mesh from AWS Terrarium tiles with 32x32 subdivided meshes and vertex displacement
+- [ ] 08-02-PLAN.md -- Three-theme system (day/night/retro) with theme-aware rendering for all passes, and airport ground labels
 
 ### Phase 9: UI Controls + Settings + Airports
 **Goal**: User can configure every aspect of the app, search and fly to airports, view statistics, and control the app via keyboard -- and all preferences persist across restarts
