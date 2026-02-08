@@ -57,6 +57,13 @@ final class LabelManager {
     /// Stale tracking: consecutive frames a hex is missing
     private var missingFrames: [String: Int] = [:]
 
+    /// Theme-aware text and background colors for label rasterization
+    var textColor: NSColor = .white
+    var bgColor: NSColor = NSColor(red: 0, green: 0, blue: 0, alpha: 0.6)
+
+    /// Theme-aware altitude line color
+    var altLineColor: SIMD4<Float> = SIMD4<Float>(0.5, 0.5, 0.5, 0.3)
+
     // MARK: - Init
 
     init(device: MTLDevice) {
@@ -127,21 +134,21 @@ final class LabelManager {
         // Clear to transparent
         ctx.clear(CGRect(x: 0, y: 0, width: slotWidth, height: slotHeight))
 
-        // Semi-transparent dark background rounded rect
+        // Semi-transparent background rounded rect (theme-aware color)
         let bgRect = CGRect(x: 2, y: 2, width: slotWidth - 4, height: slotHeight - 4)
         let bgPath = CGPath(roundedRect: bgRect, cornerWidth: 6, cornerHeight: 6, transform: nil)
-        ctx.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 0.6))
+        ctx.setFillColor(bgColor.cgColor)
         ctx.addPath(bgPath)
         ctx.fillPath()
 
         // Split text into lines
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
 
-        // Draw each line with CoreText
+        // Draw each line with CoreText (theme-aware text color)
         let font = NSFont.boldSystemFont(ofSize: 14)
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: NSColor.white
+            .foregroundColor: textColor
         ]
 
         // Flip context for text drawing (CoreText uses bottom-left origin)
@@ -188,6 +195,17 @@ final class LabelManager {
     private func freeSlot(_ slot: Int) {
         guard slot >= 0 && slot < maxSlots else { return }
         slotAllocator[slot] = false
+    }
+
+    // MARK: - Cache Invalidation
+
+    /// Clear all cached labels so they are re-rasterized next frame with current theme colors.
+    func invalidateCache() {
+        for (_, cached) in labelCache {
+            freeSlot(cached.slot)
+        }
+        labelCache.removeAll()
+        missingFrames.removeAll()
     }
 
     // MARK: - Per-Frame Update
@@ -277,13 +295,15 @@ final class LabelManager {
             // Write altitude line vertices (top = aircraft, bottom = ground)
             altLinePtr[altLineIdx] = AltLineVertex(
                 position: state.position,
-                worldY: state.position.y
+                worldY: state.position.y,
+                color: altLineColor
             )
             altLineIdx += 1
 
             altLinePtr[altLineIdx] = AltLineVertex(
                 position: SIMD3<Float>(state.position.x, 0, state.position.z),
-                worldY: 0
+                worldY: 0,
+                color: altLineColor
             )
             altLineIdx += 1
         }

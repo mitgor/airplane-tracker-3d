@@ -91,12 +91,13 @@ typedef struct {
 } LabelInstanceData;
 // Total: 48 bytes
 
-// Per-vertex data for altitude reference lines (16 bytes)
+// Per-vertex data for altitude reference lines (32 bytes)
 typedef struct {
     simd_float3 position;    // 12 bytes: world position
     float worldY;            // 4 bytes: Y value for dash pattern
+    simd_float4 color;       // 16 bytes: theme-aware RGBA color
 } AltLineVertex;
-// Total: 16 bytes
+// Total: 32 bytes
 
 // Per-vertex data for terrain mesh (position + texCoord + normal)
 typedef struct {

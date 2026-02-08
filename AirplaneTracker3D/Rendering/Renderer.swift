@@ -15,6 +15,7 @@ final class Renderer: NSObject {
 
     let texturedPipelineState: MTLRenderPipelineState
     let placeholderPipelineState: MTLRenderPipelineState
+    let retroTexturedPipeline: MTLRenderPipelineState
 
     // MARK: - Aircraft Rendering Pipeline States
 
@@ -37,12 +38,22 @@ final class Renderer: NSObject {
     let terrainTileManager: TerrainTileManager
     let terrainPipeline: MTLRenderPipelineState
     let terrainPlaceholderPipeline: MTLRenderPipelineState
+    let retroTerrainPipeline: MTLRenderPipelineState
+    let retroTerrainPlaceholderPipeline: MTLRenderPipelineState
 
     // MARK: - Label & Altitude Line Pipeline States
 
     let labelPipeline: MTLRenderPipelineState
     let altLinePipeline: MTLRenderPipelineState
     let labelManager: LabelManager
+
+    // MARK: - Airport Labels
+
+    let airportLabelManager: AirportLabelManager
+
+    // MARK: - Theme
+
+    let themeManager = ThemeManager()
 
     // MARK: - Selection
 
@@ -174,6 +185,21 @@ final class Renderer: NSObject {
             placeholderPipelineState = try device.makeRenderPipelineState(descriptor: placeholderPipelineDesc)
         } catch {
             fatalError("Failed to create placeholder pipeline state: \(error)")
+        }
+
+        // --- Retro textured pipeline (green-tint fragment for flat tiles) ---
+        let retroTexturedPipelineDesc = MTLRenderPipelineDescriptor()
+        retroTexturedPipelineDesc.vertexFunction = library.makeFunction(name: "vertex_textured")
+        retroTexturedPipelineDesc.fragmentFunction = library.makeFunction(name: "fragment_retro_textured")
+        retroTexturedPipelineDesc.vertexDescriptor = texturedVertexDescriptor
+        retroTexturedPipelineDesc.colorAttachments[0].pixelFormat = metalView.colorPixelFormat
+        retroTexturedPipelineDesc.depthAttachmentPixelFormat = metalView.depthStencilPixelFormat
+        retroTexturedPipelineDesc.rasterSampleCount = metalView.sampleCount
+
+        do {
+            retroTexturedPipeline = try device.makeRenderPipelineState(descriptor: retroTexturedPipelineDesc)
+        } catch {
+            fatalError("Failed to create retro textured pipeline: \(error)")
         }
 
         // --- Depth Stencil State ---
@@ -436,7 +462,72 @@ final class Renderer: NSObject {
             fatalError("Failed to create terrain placeholder pipeline: \(error)")
         }
 
+        // --- Retro Terrain Pipeline (green-tint terrain fragment) ---
+        let retroTerrainPipelineDesc = MTLRenderPipelineDescriptor()
+        retroTerrainPipelineDesc.vertexFunction = library.makeFunction(name: "terrain_vertex")
+        retroTerrainPipelineDesc.fragmentFunction = library.makeFunction(name: "fragment_retro_terrain")
+        retroTerrainPipelineDesc.vertexDescriptor = terrainVertexDesc
+        retroTerrainPipelineDesc.colorAttachments[0].pixelFormat = metalView.colorPixelFormat
+        retroTerrainPipelineDesc.depthAttachmentPixelFormat = metalView.depthStencilPixelFormat
+        retroTerrainPipelineDesc.rasterSampleCount = metalView.sampleCount
+
+        do {
+            retroTerrainPipeline = try device.makeRenderPipelineState(descriptor: retroTerrainPipelineDesc)
+        } catch {
+            fatalError("Failed to create retro terrain pipeline: \(error)")
+        }
+
+        // --- Retro Terrain Placeholder Pipeline ---
+        let retroTerrainPlaceholderPipelineDesc = MTLRenderPipelineDescriptor()
+        retroTerrainPlaceholderPipelineDesc.vertexFunction = library.makeFunction(name: "terrain_vertex")
+        retroTerrainPlaceholderPipelineDesc.fragmentFunction = library.makeFunction(name: "fragment_retro_terrain_placeholder")
+        retroTerrainPlaceholderPipelineDesc.vertexDescriptor = terrainVertexDesc
+        retroTerrainPlaceholderPipelineDesc.colorAttachments[0].pixelFormat = metalView.colorPixelFormat
+        retroTerrainPlaceholderPipelineDesc.depthAttachmentPixelFormat = metalView.depthStencilPixelFormat
+        retroTerrainPlaceholderPipelineDesc.rasterSampleCount = metalView.sampleCount
+
+        do {
+            retroTerrainPlaceholderPipeline = try device.makeRenderPipelineState(descriptor: retroTerrainPlaceholderPipelineDesc)
+        } catch {
+            fatalError("Failed to create retro terrain placeholder pipeline: \(error)")
+        }
+
+        // --- Airport Label Manager ---
+        airportLabelManager = AirportLabelManager(device: device)
+
         super.init()
+
+        // Apply initial theme to label manager
+        applyThemeToLabels(themeManager.config)
+
+        // Set up theme change callback
+        themeManager.onThemeChanged = { [weak self] theme in
+            self?.handleThemeChange(theme)
+        }
+    }
+
+    // MARK: - Theme Change Handling
+
+    /// Respond to theme change: clear caches, re-rasterize labels, switch tile URLs.
+    private func handleThemeChange(_ theme: Theme) {
+        let config = themeManager.config
+
+        // Switch map tile URL provider and clear tile cache
+        tileManager.switchTheme(theme)
+
+        // Re-rasterize labels with new theme colors
+        applyThemeToLabels(config)
+        labelManager.invalidateCache()
+
+        // Re-rasterize airport labels
+        airportLabelManager.updateTheme(config)
+    }
+
+    /// Apply theme config to label manager text/bg colors.
+    private func applyThemeToLabels(_ config: ThemeConfig) {
+        labelManager.textColor = config.labelTextColor
+        labelManager.bgColor = config.labelBgColor
+        labelManager.altLineColor = config.altLineColor
     }
 
     // MARK: - Tile Rendering Helpers
@@ -630,6 +721,32 @@ final class Renderer: NSObject {
         )
     }
 
+    // MARK: - Airport Label Rendering
+
+    /// Encode airport ground label sprites with alpha blending.
+    private func encodeAirportLabels(encoder: MTLRenderCommandEncoder, uniformBuffer: MTLBuffer) {
+        let count = airportLabelManager.labelCount(at: currentBufferIndex)
+        guard count > 0 else { return }
+
+        encoder.setRenderPipelineState(labelPipeline)
+        encoder.setDepthStencilState(glowDepthStencilState) // depth-read, no-write
+
+        encoder.setVertexBuffer(uniformBuffer, offset: 0, index: Int(BufferIndexUniforms.rawValue))
+        encoder.setVertexBuffer(airportLabelManager.labelBuffer(at: currentBufferIndex), offset: 0,
+                                 index: Int(BufferIndexLabelInstances.rawValue))
+
+        if let atlas = airportLabelManager.textureAtlas {
+            encoder.setFragmentTexture(atlas, index: 0)
+        }
+
+        encoder.drawPrimitives(
+            type: .triangle,
+            vertexStart: 0,
+            vertexCount: 6,
+            instanceCount: count
+        )
+    }
+
     // MARK: - Glow Rendering
 
     /// Encode glow billboard sprites with additive blending.
@@ -667,6 +784,10 @@ extension Renderer: MTKViewDelegate {
         autoreleasepool {
             // Wait for an available buffer slot (triple buffering)
             frameSemaphore.wait()
+
+            // Theme config for this frame
+            let config = themeManager.config
+            let isRetro = config.isWireframe
 
             // Timing
             let now = CACurrentMediaTime()
@@ -719,9 +840,9 @@ extension Renderer: MTKViewDelegate {
                 return
             }
 
-            // Set clear color to sky blue
+            // Set clear color from theme
             renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(
-                red: 0.529, green: 0.808, blue: 0.922, alpha: 1.0
+                red: config.clearColor.r, green: config.clearColor.g, blue: config.clearColor.b, alpha: 1.0
             )
 
             guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
@@ -733,6 +854,11 @@ extension Renderer: MTKViewDelegate {
             encoder.setDepthStencilState(depthStencilState)
             encoder.setFrontFacing(.clockwise)
             encoder.setCullMode(.none) // Render both sides for robustness
+
+            // Wireframe mode for terrain and aircraft in retro theme
+            if isRetro {
+                encoder.setTriangleFillMode(.lines)
+            }
 
             // Bind shared uniforms
             encoder.setVertexBuffer(uniformBuffer, offset: 0, index: Int(BufferIndexUniforms.rawValue))
@@ -750,12 +876,18 @@ extension Renderer: MTKViewDelegate {
                     encoder.setVertexBuffer(uniformBuffer, offset: 0, index: Int(BufferIndexUniforms.rawValue))
 
                     if let texture = mapTexture {
-                        // Textured terrain with lighting
-                        encoder.setRenderPipelineState(terrainPipeline)
+                        if isRetro {
+                            encoder.setRenderPipelineState(retroTerrainPipeline)
+                        } else {
+                            encoder.setRenderPipelineState(terrainPipeline)
+                        }
                         encoder.setFragmentTexture(texture, index: Int(TextureIndexColor.rawValue))
                     } else {
-                        // Placeholder terrain (shows elevation shape while texture loads)
-                        encoder.setRenderPipelineState(terrainPlaceholderPipeline)
+                        if isRetro {
+                            encoder.setRenderPipelineState(retroTerrainPlaceholderPipeline)
+                        } else {
+                            encoder.setRenderPipelineState(terrainPlaceholderPipeline)
+                        }
                     }
 
                     encoder.drawIndexedPrimitives(
@@ -774,7 +906,11 @@ extension Renderer: MTKViewDelegate {
                     encoder.setVertexBuffer(modelMatrixBuffer, offset: 0, index: Int(BufferIndexModelMatrix.rawValue))
 
                     if let texture = mapTexture {
-                        encoder.setRenderPipelineState(texturedPipelineState)
+                        if isRetro {
+                            encoder.setRenderPipelineState(retroTexturedPipeline)
+                        } else {
+                            encoder.setRenderPipelineState(texturedPipelineState)
+                        }
                         encoder.setFragmentTexture(texture, index: Int(TextureIndexColor.rawValue))
                     } else {
                         encoder.setRenderPipelineState(placeholderPipelineState)
@@ -786,6 +922,12 @@ extension Renderer: MTKViewDelegate {
 
             // --- Aircraft Rendering ---
             let states = flightDataManager?.interpolatedStates(at: now) ?? []
+
+            // Update airport labels every frame (distance-culled)
+            airportLabelManager.update(bufferIndex: currentBufferIndex,
+                                       cameraPosition: camera.position,
+                                       themeConfig: config)
+
             if !states.isEmpty {
                 // Follow camera: track selected aircraft position
                 if let pos = selectionManager.selectedPosition(from: states) {
@@ -794,12 +936,17 @@ extension Renderer: MTKViewDelegate {
                     camera.followTarget = nil
                 }
 
+                // Tint color for retro mode
+                let tint: SIMD4<Float>? = isRetro ? config.aircraftTint : nil
+
                 instanceManager.update(states: states, bufferIndex: currentBufferIndex,
                                        deltaTime: deltaTime, time: Float(now),
-                                       selectedHex: selectionManager.selectedHex)
+                                       selectedHex: selectionManager.selectedHex,
+                                       tintColor: tint)
 
                 // Update trail buffers with current aircraft positions
-                trailManager.update(states: states, bufferIndex: currentBufferIndex)
+                let trailTint: SIMD4<Float>? = isRetro ? config.trailTint : nil
+                trailManager.update(states: states, bufferIndex: currentBufferIndex, tintColor: trailTint)
 
                 // Update label and altitude line buffers
                 labelManager.update(states: states, bufferIndex: currentBufferIndex,
@@ -809,10 +956,16 @@ extension Renderer: MTKViewDelegate {
                 encodeAltitudeLines(encoder: encoder, uniformBuffer: uniformBuffer)
 
                 // Encode aircraft bodies (one instanced draw per category)
+                // Note: wireframe fill mode is already set for retro
                 encodeAircraft(encoder: encoder, uniformBuffer: uniformBuffer)
 
                 // Encode spinning parts (rotors + propellers)
                 encodeSpinningParts(encoder: encoder, uniformBuffer: uniformBuffer)
+
+                // Restore fill mode for everything below (trails, labels, glow)
+                if isRetro {
+                    encoder.setTriangleFillMode(.fill)
+                }
 
                 // Encode trail polylines (after aircraft, before glow)
                 encodeTrails(encoder: encoder, uniformBuffer: uniformBuffer, drawableSize: drawableSize)
@@ -820,8 +973,19 @@ extension Renderer: MTKViewDelegate {
                 // Encode billboard labels (after trails, before glow)
                 encodeLabels(encoder: encoder, uniformBuffer: uniformBuffer)
 
+                // Encode airport labels
+                encodeAirportLabels(encoder: encoder, uniformBuffer: uniformBuffer)
+
                 // Encode glow sprites (additive blend)
                 encodeGlow(encoder: encoder, uniformBuffer: uniformBuffer)
+            } else {
+                // Restore fill mode even when no aircraft
+                if isRetro {
+                    encoder.setTriangleFillMode(.fill)
+                }
+
+                // Still render airport labels when no aircraft visible
+                encodeAirportLabels(encoder: encoder, uniformBuffer: uniformBuffer)
             }
 
             encoder.endEncoding()

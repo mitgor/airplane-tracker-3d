@@ -87,6 +87,10 @@ struct MetalView: NSViewRepresentable {
                 self, selector: #selector(handleClearSelection),
                 name: .clearSelection, object: nil
             )
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(handleCycleTheme),
+                name: .cycleTheme, object: nil
+            )
         }
 
         deinit {
@@ -95,6 +99,10 @@ struct MetalView: NSViewRepresentable {
 
         @objc private func handleFollowToggle() {
             toggleFollow()
+        }
+
+        @objc private func handleCycleTheme() {
+            renderer?.themeManager.cycleTheme()
         }
 
         @objc private func handleClearSelection() {
@@ -199,6 +207,8 @@ class MetalMTKView: MTKView {
             camera.reset()
         case "a":
             camera.isAutoRotating.toggle()
+        case "t":
+            NotificationCenter.default.post(name: .cycleTheme, object: nil)
         default:
             super.keyDown(with: event)
         }

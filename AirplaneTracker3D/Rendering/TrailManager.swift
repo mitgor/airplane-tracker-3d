@@ -95,7 +95,8 @@ final class TrailManager {
     /// - Parameters:
     ///   - states: Current frame's interpolated aircraft states.
     ///   - bufferIndex: Which triple-buffer slot to write to.
-    func update(states: [InterpolatedAircraftState], bufferIndex: Int) {
+    ///   - tintColor: When non-nil, replaces altitude colors with this tint (retro mode).
+    func update(states: [InterpolatedAircraftState], bufferIndex: Int, tintColor: SIMD4<Float>? = nil) {
         // Build set of current hex IDs
         currentHexSet.removeAll(keepingCapacity: true)
         for state in states {
@@ -160,7 +161,9 @@ final class TrailManager {
                 // First vertex of this trail (direction = +1)
                 let firstPoint = points[0]
                 let nextPoint = points[1]
-                let firstColor = altitudeColor(firstPoint.altitude, alphaForIndex: 0, totalCount: points.count)
+                let firstColor = tintColor.map { tint -> SIMD4<Float> in
+                    var c = tint; c.w = 0.3; return c
+                } ?? altitudeColor(firstPoint.altitude, alphaForIndex: 0, totalCount: points.count)
                 vertexPtr[vertexIndex] = TrailVertex(
                     position: firstPoint.position,
                     direction: 1.0,
@@ -181,7 +184,14 @@ final class TrailManager {
                 let point = points[i]
                 let prevPos = i > 0 ? points[i - 1].position : point.position
                 let nextPos = i < points.count - 1 ? points[i + 1].position : point.position
-                let color = altitudeColor(point.altitude, alphaForIndex: i, totalCount: points.count)
+                let color: SIMD4<Float>
+                if let tint = tintColor {
+                    // Retro mode: use tint with age-based alpha
+                    let alphaT: Float = points.count > 1 ? Float(i) / Float(points.count - 1) : 1.0
+                    color = SIMD4<Float>(tint.x, tint.y, tint.z, 0.3 + 0.7 * alphaT)
+                } else {
+                    color = altitudeColor(point.altitude, alphaForIndex: i, totalCount: points.count)
+                }
 
                 // +1 side
                 vertexPtr[vertexIndex] = TrailVertex(

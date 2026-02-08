@@ -77,8 +77,10 @@ class AircraftInstanceManager {
     // MARK: - Per-Frame Update
 
     /// Update instance buffers with interpolated aircraft states for the current frame.
+    /// When tintColor is non-nil, all aircraft and glow colors are overridden (retro mode).
     func update(states: [InterpolatedAircraftState], bufferIndex: Int,
-                deltaTime: Float, time: Float, selectedHex: String? = nil) {
+                deltaTime: Float, time: Float, selectedHex: String? = nil,
+                tintColor: SIMD4<Float>? = nil) {
         let count = min(states.count, maxInstances)
         totalAircraftCount = count
 
@@ -135,8 +137,13 @@ class AircraftInstanceManager {
             let rotation = rotationY(state.heading)
             let modelMatrix = translation * rotation
 
-            // Altitude color
-            let color = altitudeColor(state.altitude)
+            // Altitude color (or tint override for retro mode)
+            let color: SIMD4<Float>
+            if let tint = tintColor {
+                color = tint
+            } else {
+                color = altitudeColor(state.altitude)
+            }
 
             // Glow intensity
             let glowIntensity: Float = 0.3 + 0.15 * sin(phase * 0.5)

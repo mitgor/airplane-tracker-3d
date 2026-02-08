@@ -8,6 +8,7 @@ using namespace metal;
 struct AltLineVertexOut {
     float4 position [[position]];
     float worldY;
+    float4 color;
 };
 
 vertex AltLineVertexOut altline_vertex(
@@ -23,6 +24,7 @@ vertex AltLineVertexOut altline_vertex(
     float4 viewPos = uniforms.viewMatrix * worldPos;
     out.position = uniforms.projectionMatrix * viewPos;
     out.worldY = v.worldY;
+    out.color = v.color;
 
     return out;
 }
@@ -34,6 +36,6 @@ fragment float4 altline_fragment(
     float pattern = fmod(abs(in.worldY), 2.0) / 2.0;
     if (pattern > 0.5) discard_fragment();
 
-    // Semi-transparent gray
-    return float4(0.5, 0.5, 0.5, 0.3);
+    // Use theme-aware color from vertex data
+    return in.color;
 }

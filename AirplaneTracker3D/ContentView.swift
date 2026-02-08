@@ -8,6 +8,9 @@ struct ContentView: View {
     /// Coordinator reference for follow mode toggle (set after MetalView creates)
     @State private var metalCoordinator: MetalView.Coordinator? = nil
 
+    /// Current theme label for the toggle button
+    @State private var themeLabel: String = "DAY"
+
     var body: some View {
         ZStack(alignment: .trailing) {
             MetalView(
@@ -19,6 +22,29 @@ struct ContentView: View {
                 }
             )
             .ignoresSafeArea()
+
+            // Theme toggle button (top-left corner)
+            VStack {
+                HStack {
+                    Button(action: {
+                        NotificationCenter.default.post(name: .cycleTheme, object: nil)
+                    }) {
+                        Text(themeLabel)
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.black.opacity(0.5))
+                            .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.leading, 12)
+                    .padding(.top, 12)
+
+                    Spacer()
+                }
+                Spacer()
+            }
 
             if let aircraft = selectedAircraft {
                 AircraftDetailPanel(
@@ -49,6 +75,15 @@ struct ContentView: View {
             let center = (lat: MapCoordinateSystem.shared.centerLat,
                           lon: MapCoordinateSystem.shared.centerLon)
             flightDataManager.startPolling(mode: .global, center: center)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .themeChanged)) { notification in
+            if let theme = notification.object as? Theme {
+                switch theme {
+                case .day: themeLabel = "DAY"
+                case .night: themeLabel = "NIGHT"
+                case .retro: themeLabel = "RETRO"
+                }
+            }
         }
     }
 }
