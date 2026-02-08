@@ -24,6 +24,8 @@
 		A10001000000000000000015 /* AircraftShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000017 /* AircraftShaders.metal */; };
 		A10001000000000000000016 /* GlowShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000018 /* GlowShaders.metal */; };
 		A10001000000000000000017 /* AircraftInstanceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000019 /* AircraftInstanceManager.swift */; };
+		A10001000000000000000018 /* TrailManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000020 /* TrailManager.swift */; };
+		A10001000000000000000019 /* TrailShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000021 /* TrailShaders.metal */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -46,6 +48,8 @@
 		A10002000000000000000017 /* AircraftShaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = AircraftShaders.metal; sourceTree = "<group>"; };
 		A10002000000000000000018 /* GlowShaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = GlowShaders.metal; sourceTree = "<group>"; };
 		A10002000000000000000019 /* AircraftInstanceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AircraftInstanceManager.swift; sourceTree = "<group>"; };
+		A10002000000000000000020 /* TrailManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrailManager.swift; sourceTree = "<group>"; };
+		A10002000000000000000021 /* TrailShaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = TrailShaders.metal; sourceTree = "<group>"; };
 		A10003000000000000000001 /* AirplaneTracker3D.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AirplaneTracker3D.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -94,6 +98,8 @@
 				A10002000000000000000017 /* AircraftShaders.metal */,
 				A10002000000000000000018 /* GlowShaders.metal */,
 				A10002000000000000000019 /* AircraftInstanceManager.swift */,
+				A10002000000000000000020 /* TrailManager.swift */,
+				A10002000000000000000021 /* TrailShaders.metal */,
 			);
 			path = Rendering;
 			sourceTree = "<group>";
@@ -216,6 +222,8 @@
 				A10001000000000000000015 /* AircraftShaders.metal in Sources */,
 				A10001000000000000000016 /* GlowShaders.metal in Sources */,
 				A10001000000000000000017 /* AircraftInstanceManager.swift in Sources */,
+				A10001000000000000000018 /* TrailManager.swift in Sources */,
+				A10001000000000000000019 /* TrailShaders.metal in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

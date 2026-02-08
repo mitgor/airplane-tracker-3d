@@ -25,6 +25,13 @@ final class Renderer: NSObject {
     let instanceManager: AircraftInstanceManager
     let glowTexture: MTLTexture
 
+    // MARK: - Trail Rendering Pipeline States
+
+    let trailPipeline: MTLRenderPipelineState
+    let trailManager: TrailManager
+    private let lineWidthBuffer: MTLBuffer
+    private let resolutionBuffer: MTLBuffer
+
     /// Flight data manager set externally after init (from ContentView/MetalView)
     var flightDataManager: FlightDataManager?
 
@@ -279,6 +286,45 @@ final class Renderer: NSObject {
         // --- Instance Manager ---
         instanceManager = AircraftInstanceManager(device: device, meshLibrary: meshLibrary)
 
+        // --- Trail Manager ---
+        trailManager = TrailManager(device: device)
+
+        // --- Trail Pipeline State (alpha blending for fading trail tails) ---
+        let trailPipelineDesc = MTLRenderPipelineDescriptor()
+        trailPipelineDesc.vertexFunction = library.makeFunction(name: "trail_vertex")
+        trailPipelineDesc.fragmentFunction = library.makeFunction(name: "trail_fragment")
+        trailPipelineDesc.colorAttachments[0].pixelFormat = metalView.colorPixelFormat
+        trailPipelineDesc.colorAttachments[0].isBlendingEnabled = true
+        trailPipelineDesc.colorAttachments[0].rgbBlendOperation = .add
+        trailPipelineDesc.colorAttachments[0].alphaBlendOperation = .add
+        trailPipelineDesc.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+        trailPipelineDesc.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+        trailPipelineDesc.colorAttachments[0].sourceAlphaBlendFactor = .sourceAlpha
+        trailPipelineDesc.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        trailPipelineDesc.depthAttachmentPixelFormat = metalView.depthStencilPixelFormat
+        trailPipelineDesc.rasterSampleCount = metalView.sampleCount
+        // No vertex descriptor needed -- reading raw buffer by vertexID
+
+        do {
+            trailPipeline = try device.makeRenderPipelineState(descriptor: trailPipelineDesc)
+        } catch {
+            fatalError("Failed to create trail pipeline: \(error)")
+        }
+
+        // --- Trail auxiliary buffers ---
+        guard let lwb = device.makeBuffer(length: MemoryLayout<Float>.stride, options: .storageModeShared) else {
+            fatalError("Failed to create line width buffer")
+        }
+        lwb.label = "Trail Line Width"
+        lwb.contents().bindMemory(to: Float.self, capacity: 1).pointee = 3.0
+        lineWidthBuffer = lwb
+
+        guard let rb = device.makeBuffer(length: MemoryLayout<SIMD2<Float>>.stride, options: .storageModeShared) else {
+            fatalError("Failed to create resolution buffer")
+        }
+        rb.label = "Trail Resolution"
+        resolutionBuffer = rb
+
         super.init()
     }
 
@@ -394,6 +440,39 @@ final class Renderer: NSObject {
                 instanceCount: instanceManager.propCount
             )
         }
+    }
+
+    // MARK: - Trail Rendering
+
+    /// Encode trail polyline rendering with screen-space extrusion.
+    private func encodeTrails(encoder: MTLRenderCommandEncoder, uniformBuffer: MTLBuffer, drawableSize: CGSize) {
+        let vertexCount = trailManager.trailVertexCount(at: currentBufferIndex)
+        guard vertexCount > 0 else { return }
+
+        encoder.setRenderPipelineState(trailPipeline)
+        encoder.setDepthStencilState(glowDepthStencilState)  // depth-read, no-write (semi-transparent)
+
+        // Bind uniforms
+        encoder.setVertexBuffer(uniformBuffer, offset: 0, index: Int(BufferIndexUniforms.rawValue))
+
+        // Bind trail vertex data
+        encoder.setVertexBuffer(trailManager.trailBuffer(at: currentBufferIndex), offset: 0,
+                                 index: Int(BufferIndexTrailVertices.rawValue))
+
+        // Update and bind line width
+        lineWidthBuffer.contents().bindMemory(to: Float.self, capacity: 1).pointee = trailManager.lineWidth
+        encoder.setVertexBuffer(lineWidthBuffer, offset: 0, index: Int(BufferIndexModelMatrix.rawValue))
+
+        // Update and bind resolution
+        let resolution = SIMD2<Float>(Float(drawableSize.width), Float(drawableSize.height))
+        resolutionBuffer.contents().bindMemory(to: SIMD2<Float>.self, capacity: 1).pointee = resolution
+        encoder.setVertexBuffer(resolutionBuffer, offset: 0, index: Int(BufferIndexInstances.rawValue))
+
+        // Draw as triangle strip
+        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: vertexCount)
+
+        // Restore depth stencil state
+        encoder.setDepthStencilState(depthStencilState)
     }
 
     /// Encode glow billboard sprites with additive blending.
@@ -530,11 +609,17 @@ extension Renderer: MTKViewDelegate {
                 instanceManager.update(states: states, bufferIndex: currentBufferIndex,
                                        deltaTime: deltaTime, time: Float(now))
 
+                // Update trail buffers with current aircraft positions
+                trailManager.update(states: states, bufferIndex: currentBufferIndex)
+
                 // Encode aircraft bodies (one instanced draw per category)
                 encodeAircraft(encoder: encoder, uniformBuffer: uniformBuffer)
 
                 // Encode spinning parts (rotors + propellers)
                 encodeSpinningParts(encoder: encoder, uniformBuffer: uniformBuffer)
+
+                // Encode trail polylines (after aircraft, before glow)
+                encodeTrails(encoder: encoder, uniformBuffer: uniformBuffer, drawableSize: drawableSize)
 
                 // Encode glow sprites (additive blend)
                 encodeGlow(encoder: encoder, uniformBuffer: uniformBuffer)
