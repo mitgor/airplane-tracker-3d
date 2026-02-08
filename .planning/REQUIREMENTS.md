@@ -97,14 +97,14 @@ Deferred to future milestones. Tracked but not in current roadmap.
 
 | Feature | Reason |
 |---------|--------|
-| WebView / WKWebView | Must be fully native Metal rendering — defeats the purpose of the rewrite |
+| WebView / WKWebView | Must be fully native Metal rendering -- defeats the purpose of the rewrite |
 | SceneKit / RealityKit | Higher-level 3D frameworks prevent instanced rendering architecture |
 | MapKit for 3D view | Cannot composite with custom Metal rendering pipeline |
-| iOS / iPadOS port | Different UI, gesture model, and platform integration — separate project |
+| iOS / iPadOS port | Different UI, gesture model, and platform integration -- separate project |
 | Photorealistic aircraft models | Conflicts with stylized aesthetic and breaks instancing (shared geometry required) |
 | Recording / playback | Massive scope, explicitly excluded in web version |
 | Real-time audio / ATC | Zero overlap with visual tracking, enormous scope |
-| ML flight prediction | Research project, not product feature — linear extrapolation sufficient |
+| ML flight prediction | Research project, not product feature -- linear extrapolation sufficient |
 | Electron / Catalyst | Defeats native Metal + SwiftUI purpose |
 | Touch Bar | Discontinued hardware, zero new users |
 | Mac App Store | Direct download for v2.0, App Store can be added later |
@@ -113,13 +113,51 @@ Deferred to future milestones. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (Populated during roadmap creation) | | |
+| REND-01 | Phase 6 | Pending |
+| REND-02 | Phase 6 | Pending |
+| REND-03 | Phase 6 | Pending |
+| REND-04 | Phase 6 | Pending |
+| REND-05 | Phase 6 | Pending |
+| REND-06 | Phase 7 | Pending |
+| REND-07 | Phase 5 | Pending |
+| REND-08 | Phase 8 | Pending |
+| REND-09 | Phase 8 | Pending |
+| REND-10 | Phase 5 | Pending |
+| CAM-01 | Phase 5 | Pending |
+| CAM-02 | Phase 5 | Pending |
+| CAM-03 | Phase 5 | Pending |
+| CAM-04 | Phase 5 | Pending |
+| CAM-05 | Phase 5 | Pending |
+| CAM-06 | Phase 7 | Pending |
+| DATA-01 | Phase 6 | Pending |
+| DATA-02 | Phase 6 | Pending |
+| DATA-03 | Phase 6 | Pending |
+| DATA-04 | Phase 6 | Pending |
+| ACFT-01 | Phase 7 | Pending |
+| ACFT-02 | Phase 7 | Pending |
+| ACFT-03 | Phase 7 | Pending |
+| ACFT-04 | Phase 7 | Pending |
+| ARPT-01 | Phase 9 | Pending |
+| ARPT-02 | Phase 9 | Pending |
+| ARPT-03 | Phase 8 | Pending |
+| ARPT-04 | Phase 9 | Pending |
+| UI-01 | Phase 9 | Pending |
+| UI-02 | Phase 9 | Pending |
+| UI-03 | Phase 9 | Pending |
+| UI-04 | Phase 9 | Pending |
+| UI-05 | Phase 9 | Pending |
+| UI-06 | Phase 9 | Pending |
+| MAC-01 | Phase 10 | Pending |
+| MAC-02 | Phase 10 | Pending |
+| MAC-03 | Phase 10 | Pending |
+| MAC-04 | Phase 10 | Pending |
+| MAC-05 | Phase 10 | Pending |
 
 **Coverage:**
-- v2.0 requirements: 35 total
-- Mapped to phases: 0
-- Unmapped: 35
+- v2.0 requirements: 39 total
+- Mapped to phases: 39
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-08*
-*Last updated: 2026-02-08 after initial definition*
+*Last updated: 2026-02-08 after roadmap creation*

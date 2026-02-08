@@ -5,36 +5,63 @@
 See: .planning/PROJECT.md (updated 2026-02-08)
 
 **Core value:** Real-time 3D flight visualization that works both as a personal ADS-B receiver dashboard and as a global flight explorer with airport discovery.
-**Current focus:** v2.0 Native macOS App — defining requirements
+**Current focus:** Phase 5 -- Metal Foundation + Ground Plane
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-02-08 — Milestone v2.0 started
+Phase: 5 of 10 (Metal Foundation + Ground Plane)
+Plan: 0 of 2 in current phase
+Status: Ready to plan
+Last activity: 2026-02-08 -- Roadmap created for v2.0 milestone (Phases 5-10)
+
+Progress: [=======-------] 54% (7/13 plans across all milestones)
+
+## Performance Metrics
+
+**Velocity:**
+- Total plans completed: 7 (v1.0)
+- Average duration: --
+- Total execution time: --
+
+**By Phase:**
+
+| Phase | Plans | Total | Avg/Plan |
+|-------|-------|-------|----------|
+| 1 (v1.0) | 2 | -- | -- |
+| 2 (v1.0) | 2 | -- | -- |
+| 3 (v1.0) | 2 | -- | -- |
+| 4 (v1.0) | 1 | -- | -- |
+
+**Recent Trend:**
+- v1.0 completed all 7 plans
+- Trend: Starting fresh milestone
+
+*Updated after each plan completion*
 
 ## Accumulated Context
 
 ### Decisions
 
-- [Phase 1]: Used ADSBx v2 format normalization — one parser for airplanes.live and adsb.lol
-- [Phase 2]: Pre-filtered airports to medium/large only (~5K) for performance
-- [Phase 3]: Used CPU-side vertex displacement (32x32 segments) for terrain
-- [Phase 4]: Used wireframe outlines for airspace to avoid transparency sorting artifacts
-- [v2.0]: Metal over SceneKit — maximum performance and control
-- [v2.0]: SwiftUI for UI — modern, declarative
-- [v2.0]: Core features first — prove native rendering, add terrain/airports later
+Decisions are logged in PROJECT.md Key Decisions table.
+Recent decisions affecting current work:
 
-### Notes
+- [v2.0]: Metal 3 over Metal 4 -- mature, stable, well-documented; Metal 4 is bleeding-edge
+- [v2.0]: macOS 14 Sonoma minimum -- enables @Observable macro, drops Ventura (EOL)
+- [v2.0]: Core features first, terrain/airports/airspace later in phased delivery
+- [v2.0]: Zero external dependencies -- URLSession, simd, UserDefaults cover all needs
+- [v2.0]: Triple buffering from day 1 -- non-negotiable for CPU/GPU sync
 
-- Web app at ~5,616 lines — serves as feature reference for native port
-- Terrain uses AWS S3 Terrarium tiles (free, no auth) — reuse in native version
-- Airspace is US-only (FAA ADDS) — deferred to future native milestone
-- Native app targets macOS 13+ for Metal 3 support
+### Pending Todos
+
+None yet.
+
+### Blockers/Concerns
+
+- Research flags Phase 7 (GPU polyline rendering) and Phase 8 (terrain LOD) as needing deeper research during planning
+- Research flags Phase 10 (notarization workflow) as needing research for DMG signing
 
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Milestone v2.0 initialization
+Stopped at: Roadmap created for v2.0 milestone
 Resume file: None
