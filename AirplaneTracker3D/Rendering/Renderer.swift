@@ -1,5 +1,6 @@
 import MetalKit
 import simd
+import QuartzCore
 
 final class Renderer: NSObject {
 
@@ -14,6 +15,18 @@ final class Renderer: NSObject {
 
     let texturedPipelineState: MTLRenderPipelineState
     let placeholderPipelineState: MTLRenderPipelineState
+
+    // MARK: - Aircraft Rendering Pipeline States
+
+    let aircraftPipeline: MTLRenderPipelineState
+    let glowPipeline: MTLRenderPipelineState
+    let glowDepthStencilState: MTLDepthStencilState
+    let meshLibrary: AircraftMeshLibrary
+    let instanceManager: AircraftInstanceManager
+    let glowTexture: MTLTexture
+
+    /// Flight data manager set externally after init (from ContentView/MetalView)
+    var flightDataManager: FlightDataManager?
 
     // MARK: - Triple Buffering
 
@@ -195,6 +208,77 @@ final class Renderer: NSObject {
         // --- Tile Manager ---
         tileManager = MapTileManager(device: device)
 
+        // --- Aircraft Mesh Library ---
+        meshLibrary = AircraftMeshLibrary(device: device)
+
+        // --- Aircraft Pipeline State ---
+        let aircraftVertexDesc = MTLVertexDescriptor()
+        // position: float3 at attribute 0
+        aircraftVertexDesc.attributes[0].format = .float3
+        aircraftVertexDesc.attributes[0].offset = 0
+        aircraftVertexDesc.attributes[0].bufferIndex = Int(BufferIndexVertices.rawValue)
+        // normal: float3 at attribute 1
+        aircraftVertexDesc.attributes[1].format = .float3
+        aircraftVertexDesc.attributes[1].offset = MemoryLayout<SIMD3<Float>>.stride  // 16 bytes (padded)
+        aircraftVertexDesc.attributes[1].bufferIndex = Int(BufferIndexVertices.rawValue)
+        // layout for vertices
+        aircraftVertexDesc.layouts[Int(BufferIndexVertices.rawValue)].stride = MemoryLayout<AircraftVertex>.stride
+        aircraftVertexDesc.layouts[Int(BufferIndexVertices.rawValue)].stepRate = 1
+        aircraftVertexDesc.layouts[Int(BufferIndexVertices.rawValue)].stepFunction = .perVertex
+
+        let aircraftPipelineDesc = MTLRenderPipelineDescriptor()
+        aircraftPipelineDesc.vertexFunction = library.makeFunction(name: "aircraft_vertex")
+        aircraftPipelineDesc.fragmentFunction = library.makeFunction(name: "aircraft_fragment")
+        aircraftPipelineDesc.vertexDescriptor = aircraftVertexDesc
+        aircraftPipelineDesc.colorAttachments[0].pixelFormat = metalView.colorPixelFormat
+        aircraftPipelineDesc.depthAttachmentPixelFormat = metalView.depthStencilPixelFormat
+        aircraftPipelineDesc.rasterSampleCount = metalView.sampleCount
+
+        do {
+            aircraftPipeline = try device.makeRenderPipelineState(descriptor: aircraftPipelineDesc)
+        } catch {
+            fatalError("Failed to create aircraft pipeline: \(error)")
+        }
+
+        // --- Glow Pipeline State (additive blending) ---
+        let glowPipelineDesc = MTLRenderPipelineDescriptor()
+        glowPipelineDesc.vertexFunction = library.makeFunction(name: "glow_vertex")
+        glowPipelineDesc.fragmentFunction = library.makeFunction(name: "glow_fragment")
+        glowPipelineDesc.colorAttachments[0].pixelFormat = metalView.colorPixelFormat
+        glowPipelineDesc.colorAttachments[0].isBlendingEnabled = true
+        glowPipelineDesc.colorAttachments[0].rgbBlendOperation = .add
+        glowPipelineDesc.colorAttachments[0].alphaBlendOperation = .add
+        glowPipelineDesc.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+        glowPipelineDesc.colorAttachments[0].destinationRGBBlendFactor = .one
+        glowPipelineDesc.colorAttachments[0].sourceAlphaBlendFactor = .sourceAlpha
+        glowPipelineDesc.colorAttachments[0].destinationAlphaBlendFactor = .one
+        glowPipelineDesc.depthAttachmentPixelFormat = metalView.depthStencilPixelFormat
+        glowPipelineDesc.rasterSampleCount = metalView.sampleCount
+
+        do {
+            glowPipeline = try device.makeRenderPipelineState(descriptor: glowPipelineDesc)
+        } catch {
+            fatalError("Failed to create glow pipeline: \(error)")
+        }
+
+        // --- Glow Depth Stencil State (read depth, no write) ---
+        let glowDepthDesc = MTLDepthStencilDescriptor()
+        glowDepthDesc.depthCompareFunction = .lessEqual
+        glowDepthDesc.isDepthWriteEnabled = false
+        guard let glowDSS = device.makeDepthStencilState(descriptor: glowDepthDesc) else {
+            fatalError("Failed to create glow depth stencil state")
+        }
+        glowDepthStencilState = glowDSS
+
+        // --- Glow Texture ---
+        guard let gt = AircraftMeshLibrary.createGlowTexture(device: device) else {
+            fatalError("Failed to create glow texture")
+        }
+        glowTexture = gt
+
+        // --- Instance Manager ---
+        instanceManager = AircraftInstanceManager(device: device, meshLibrary: meshLibrary)
+
         super.init()
     }
 
@@ -237,6 +321,101 @@ final class Renderer: NSObject {
         case 12: return 3
         default: return 4
         }
+    }
+
+    // MARK: - Aircraft Rendering
+
+    /// Encode instanced aircraft body draw calls (one per category with non-zero count).
+    private func encodeAircraft(encoder: MTLRenderCommandEncoder, uniformBuffer: MTLBuffer) {
+        encoder.setRenderPipelineState(aircraftPipeline)
+        encoder.setDepthStencilState(depthStencilState)
+        encoder.setVertexBuffer(uniformBuffer, offset: 0, index: Int(BufferIndexUniforms.rawValue))
+
+        let instanceStride = MemoryLayout<AircraftInstanceData>.stride
+        let instBuffer = instanceManager.instanceBuffer(at: currentBufferIndex)
+
+        for category in AircraftCategory.allCases {
+            guard let range = instanceManager.categoryRanges[category], range.count > 0 else { continue }
+            let mesh = instanceManager.meshLibrary.mesh(for: category)
+
+            encoder.setVertexBuffer(mesh.vertexBuffer, offset: 0,
+                                     index: Int(BufferIndexVertices.rawValue))
+            encoder.setVertexBuffer(instBuffer, offset: range.offset * instanceStride,
+                                     index: Int(BufferIndexInstances.rawValue))
+
+            encoder.drawIndexedPrimitives(
+                type: .triangle,
+                indexCount: mesh.indexCount,
+                indexType: .uint16,
+                indexBuffer: mesh.indexBuffer,
+                indexBufferOffset: 0,
+                instanceCount: range.count
+            )
+        }
+    }
+
+    /// Encode instanced spinning part draw calls (rotors for helicopters, propellers for small props).
+    private func encodeSpinningParts(encoder: MTLRenderCommandEncoder, uniformBuffer: MTLBuffer) {
+        let instanceStride = MemoryLayout<AircraftInstanceData>.stride
+        let spinBuf = instanceManager.spinBuffer(at: currentBufferIndex)
+
+        // Helicopter rotors
+        if instanceManager.helicopterCount > 0, let rotorMesh = instanceManager.meshLibrary.rotorMesh {
+            encoder.setRenderPipelineState(aircraftPipeline)
+            encoder.setVertexBuffer(uniformBuffer, offset: 0, index: Int(BufferIndexUniforms.rawValue))
+            encoder.setVertexBuffer(rotorMesh.vertexBuffer, offset: 0,
+                                     index: Int(BufferIndexVertices.rawValue))
+            encoder.setVertexBuffer(spinBuf, offset: instanceManager.helicopterSpinOffset * instanceStride,
+                                     index: Int(BufferIndexInstances.rawValue))
+            encoder.drawIndexedPrimitives(
+                type: .triangle,
+                indexCount: rotorMesh.indexCount,
+                indexType: .uint16,
+                indexBuffer: rotorMesh.indexBuffer,
+                indexBufferOffset: 0,
+                instanceCount: instanceManager.helicopterCount
+            )
+        }
+
+        // Propellers
+        if instanceManager.propCount > 0, let propMesh = instanceManager.meshLibrary.propellerMesh {
+            encoder.setRenderPipelineState(aircraftPipeline)
+            encoder.setVertexBuffer(uniformBuffer, offset: 0, index: Int(BufferIndexUniforms.rawValue))
+            encoder.setVertexBuffer(propMesh.vertexBuffer, offset: 0,
+                                     index: Int(BufferIndexVertices.rawValue))
+            encoder.setVertexBuffer(spinBuf, offset: instanceManager.propSpinOffset * instanceStride,
+                                     index: Int(BufferIndexInstances.rawValue))
+            encoder.drawIndexedPrimitives(
+                type: .triangle,
+                indexCount: propMesh.indexCount,
+                indexType: .uint16,
+                indexBuffer: propMesh.indexBuffer,
+                indexBufferOffset: 0,
+                instanceCount: instanceManager.propCount
+            )
+        }
+    }
+
+    /// Encode glow billboard sprites with additive blending.
+    private func encodeGlow(encoder: MTLRenderCommandEncoder, uniformBuffer: MTLBuffer) {
+        guard instanceManager.totalAircraftCount > 0 else { return }
+
+        encoder.setRenderPipelineState(glowPipeline)
+        encoder.setDepthStencilState(glowDepthStencilState)
+        encoder.setVertexBuffer(uniformBuffer, offset: 0, index: Int(BufferIndexUniforms.rawValue))
+        encoder.setVertexBuffer(instanceManager.glowBuffer(at: currentBufferIndex), offset: 0,
+                                 index: Int(BufferIndexGlowInstances.rawValue))
+        encoder.setFragmentTexture(glowTexture, index: 0)
+
+        encoder.drawPrimitives(
+            type: .triangle,
+            vertexStart: 0,
+            vertexCount: 6,
+            instanceCount: instanceManager.totalAircraftCount
+        )
+
+        // Restore original depth stencil state for subsequent passes
+        encoder.setDepthStencilState(depthStencilState)
     }
 }
 
@@ -343,6 +522,22 @@ extension Renderer: MTKViewDelegate {
                 }
 
                 encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: tileQuadVertexCount)
+            }
+
+            // --- Aircraft Rendering ---
+            let states = flightDataManager?.interpolatedStates(at: now) ?? []
+            if !states.isEmpty {
+                instanceManager.update(states: states, bufferIndex: currentBufferIndex,
+                                       deltaTime: deltaTime, time: Float(now))
+
+                // Encode aircraft bodies (one instanced draw per category)
+                encodeAircraft(encoder: encoder, uniformBuffer: uniformBuffer)
+
+                // Encode spinning parts (rotors + propellers)
+                encodeSpinningParts(encoder: encoder, uniformBuffer: uniformBuffer)
+
+                // Encode glow sprites (additive blend)
+                encodeGlow(encoder: encoder, uniformBuffer: uniformBuffer)
             }
 
             encoder.endEncoding()

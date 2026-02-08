@@ -23,6 +23,7 @@
 		A10001000000000000000014 /* AircraftMeshLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000016 /* AircraftMeshLibrary.swift */; };
 		A10001000000000000000015 /* AircraftShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000017 /* AircraftShaders.metal */; };
 		A10001000000000000000016 /* GlowShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000018 /* GlowShaders.metal */; };
+		A10001000000000000000017 /* AircraftInstanceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000019 /* AircraftInstanceManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -44,6 +45,7 @@
 		A10002000000000000000016 /* AircraftMeshLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AircraftMeshLibrary.swift; sourceTree = "<group>"; };
 		A10002000000000000000017 /* AircraftShaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = AircraftShaders.metal; sourceTree = "<group>"; };
 		A10002000000000000000018 /* GlowShaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = GlowShaders.metal; sourceTree = "<group>"; };
+		A10002000000000000000019 /* AircraftInstanceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AircraftInstanceManager.swift; sourceTree = "<group>"; };
 		A10003000000000000000001 /* AirplaneTracker3D.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AirplaneTracker3D.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -91,6 +93,7 @@
 				A10002000000000000000016 /* AircraftMeshLibrary.swift */,
 				A10002000000000000000017 /* AircraftShaders.metal */,
 				A10002000000000000000018 /* GlowShaders.metal */,
+				A10002000000000000000019 /* AircraftInstanceManager.swift */,
 			);
 			path = Rendering;
 			sourceTree = "<group>";
@@ -212,6 +215,7 @@
 				A10001000000000000000014 /* AircraftMeshLibrary.swift in Sources */,
 				A10001000000000000000015 /* AircraftShaders.metal in Sources */,
 				A10001000000000000000016 /* GlowShaders.metal in Sources */,
+				A10001000000000000000017 /* AircraftInstanceManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

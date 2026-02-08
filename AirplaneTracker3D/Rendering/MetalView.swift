@@ -5,6 +5,9 @@ import MetalKit
 /// IMPORTANT: This view has ZERO dependency on SwiftUI @State to prevent recreation.
 struct MetalView: NSViewRepresentable {
 
+    /// Flight data manager injected from ContentView for aircraft rendering.
+    var flightDataManager: FlightDataManager?
+
     func makeCoordinator() -> Coordinator {
         Coordinator()
     }
@@ -29,6 +32,7 @@ struct MetalView: NSViewRepresentable {
 
         // Create renderer and set delegate
         let renderer = Renderer(metalView: mtkView)
+        renderer.flightDataManager = flightDataManager
         context.coordinator.renderer = renderer
         mtkView.delegate = context.coordinator
         mtkView.coordinator = context.coordinator
@@ -52,7 +56,10 @@ struct MetalView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: MTKView, context: Context) {
-        // No SwiftUI state drives updates -- Metal renders independently
+        // Propagate flight data manager if it was set after initial creation
+        if let fdm = flightDataManager {
+            context.coordinator.renderer?.flightDataManager = fdm
+        }
     }
 
     // MARK: - Coordinator
