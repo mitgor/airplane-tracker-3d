@@ -38,7 +38,7 @@
 
 - [x] **Phase 5: Metal Foundation + Ground Plane** - MTKView rendering surface, orbital camera with trackpad gestures, and map tile ground plane ✅
 - [x] **Phase 6: Data Pipeline + Aircraft Rendering** - Live aircraft from network APIs with instanced Metal rendering and smooth interpolation ✅
-- [ ] **Phase 7: Trails + Labels + Selection** - Flight trails, billboard text labels, aircraft selection with detail panel, and follow mode
+- [x] **Phase 7: Trails + Labels + Selection** - Flight trails, billboard text labels, aircraft selection with detail panel, and follow mode ✅
 - [ ] **Phase 8: Terrain + Themes** - Elevation mesh, three visual themes, and airport ground labels
 - [ ] **Phase 9: UI Controls + Settings + Airports** - SwiftUI controls, airport search, statistics, keyboard shortcuts, and settings persistence
 - [ ] **Phase 10: Native macOS Integration + Distribution** - Menu bar status item, dock badge, notifications, native menus, and notarized DMG
@@ -89,8 +89,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 07-01-PLAN.md -- GPU polyline trail rendering with screen-space extrusion and altitude color gradient
-- [ ] 07-02-PLAN.md -- Billboard labels, altitude lines, ray-cast selection, detail panel, enrichment, and follow camera
+- [x] 07-01-PLAN.md -- GPU polyline trail rendering with screen-space extrusion and altitude color gradient
+- [x] 07-02-PLAN.md -- Billboard labels, altitude lines, ray-cast selection, detail panel, enrichment, and follow camera
 
 ### Phase 8: Terrain + Themes
 **Goal**: The world has depth and personality -- terrain elevation gives geographic context, and three distinct themes change the entire visual character
@@ -196,7 +196,7 @@ Phases execute in numeric order: 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 4. Airspace Volumes | v1.0 | 1/1 | Complete | 2026-02-07 |
 | 5. Metal Foundation + Ground Plane | v2.0 | 2/2 | Complete | 2026-02-08 |
 | 6. Data Pipeline + Aircraft Rendering | v2.0 | 2/2 | Complete | 2026-02-08 |
-| 7. Trails + Labels + Selection | v2.0 | 0/2 | Not started | - |
+| 7. Trails + Labels + Selection | v2.0 | 2/2 | Complete | 2026-02-08 |
 | 8. Terrain + Themes | v2.0 | 0/2 | Not started | - |
 | 9. UI Controls + Settings + Airports | v2.0 | 0/2 | Not started | - |
 | 10. Native macOS Integration + Distribution | v2.0 | 0/2 | Not started | - |
