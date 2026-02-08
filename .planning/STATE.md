@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-02-08)
 
 ## Current Position
 
-Phase: 7 of 10 (Trails + Labels + Selection) -- PLANNING
-Plan: 0 of 2 in current phase
-Status: Planning
-Last activity: 2026-02-08 -- Phase 6 verified and marked complete
+Phase: 7 of 10 (Trails + Labels + Selection) -- IN PROGRESS
+Plan: 1 of 2 in current phase
+Status: Executing
+Last activity: 2026-02-08 -- Completed 07-01 (trail rendering)
 
-Progress: [===========---] 85% (11/13 plans across all milestones)
+Progress: [============--] 88% (12/14 plans across all milestones)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 11 (7 v1.0 + 4 v2.0)
-- Average duration: ~4.8min (v2.0)
-- Total execution time: ~19min (v2.0)
+- Total plans completed: 12 (7 v1.0 + 5 v2.0)
+- Average duration: ~4.6min (v2.0)
+- Total execution time: ~23min (v2.0)
 
 **By Phase:**
 
@@ -33,12 +33,14 @@ Progress: [===========---] 85% (11/13 plans across all milestones)
 | 4 (v1.0) | 1 | -- | -- |
 | 5 (v2.0) | 2 | 9min | 4.5min |
 | 6 (v2.0) | 2 | 10min | 5min |
+| 7 (v2.0) | 1/2 | 4min | 4min |
 
 **Recent Trend:**
 - Phase 5 verified: 5/5 automated checks pass
 - Phase 6 verified: 8/8 automated checks pass
 - v2.0 plan 06-01 completed in 4 min
 - v2.0 plan 06-02 completed in 6 min
+- v2.0 plan 07-01 completed in 4 min
 
 *Updated after each plan completion*
 
@@ -60,6 +62,9 @@ Recent decisions affecting current work:
 - [06-02]: Category-sorted instanced batching: one draw call per non-empty category (max 8 total)
 - [06-02]: Persistent per-aircraft animation state (lightPhase, rotorAngle) keyed by hex for continuity
 - [06-02]: Additive glow blending with depth-read/no-write stencil state
+- [07-01]: TrailVertex 112 bytes (not 64) due to simd_float3 16-byte alignment -- consistent CPU/GPU via shared header
+- [07-01]: Screen-space polyline extrusion with triangle strip topology for configurable-width trails
+- [07-01]: Trail render order: after aircraft bodies + spinning parts, before glow sprites
 
 ### Pending Todos
 
@@ -74,5 +79,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Phase 6 complete, proceeding to Phase 7 planning
+Stopped at: Completed 07-01-PLAN.md (trail rendering)
 Resume file: None
