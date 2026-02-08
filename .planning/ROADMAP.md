@@ -36,7 +36,7 @@
 - Integer phases (5, 6, 7...): Planned milestone work
 - Decimal phases (e.g., 6.1): Urgent insertions (marked with INSERTED)
 
-- [ ] **Phase 5: Metal Foundation + Ground Plane** - MTKView rendering surface, orbital camera with trackpad gestures, and map tile ground plane
+- [x] **Phase 5: Metal Foundation + Ground Plane** - MTKView rendering surface, orbital camera with trackpad gestures, and map tile ground plane ✅
 - [ ] **Phase 6: Data Pipeline + Aircraft Rendering** - Live aircraft from network APIs with instanced Metal rendering and smooth interpolation
 - [ ] **Phase 7: Trails + Labels + Selection** - Flight trails, billboard text labels, aircraft selection with detail panel, and follow mode
 - [ ] **Phase 8: Terrain + Themes** - Elevation mesh, three visual themes, and airport ground labels
@@ -58,8 +58,8 @@
 **Plans:** 2 plans
 
 Plans:
-- [ ] 05-01-PLAN.md -- Xcode project, MTKView + SwiftUI shell, triple-buffered renderer, and orbital camera
-- [ ] 05-02-PLAN.md -- Map tile ground plane with async tile loading and coordinate system
+- [x] 05-01-PLAN.md -- Xcode project, MTKView + SwiftUI shell, triple-buffered renderer, and orbital camera
+- [x] 05-02-PLAN.md -- Map tile ground plane with async tile loading and coordinate system
 
 ### Phase 6: Data Pipeline + Aircraft Rendering
 **Goal**: User sees live aircraft appearing on the map from real ADS-B data sources, rendered as distinct 3D models with smooth 60fps movement
@@ -70,11 +70,11 @@ Plans:
   2. User can switch between local and global data modes, and when a global API fails, the app silently falls back to the next provider with no visible interruption
   3. User sees 6 distinct aircraft model categories (jet, widebody, helicopter, small prop, military, regional) rendered via instanced Metal draw calls at 60fps with 200+ aircraft
   4. User sees aircraft move smoothly between data updates (no teleporting), with altitude-based color gradient, glow sprites, blinking position lights, and spinning rotors/propellers
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 06-01: Flight data actor, network polling, provider fallback, and data normalization
-- [ ] 06-02: Instanced aircraft rendering with 6 model categories, interpolation, and visual effects
+- [ ] 06-01-PLAN.md -- Flight data actor, network polling, provider fallback, and data normalization
+- [ ] 06-02-PLAN.md -- Instanced aircraft rendering with 6 model categories, interpolation, and visual effects
 
 ### Phase 7: Trails + Labels + Selection
 **Goal**: User can identify aircraft by their labels, trace their flight paths, select aircraft for details, and follow them with the camera
@@ -194,7 +194,7 @@ Phases execute in numeric order: 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 2. Airport Search and Labels | v1.0 | 2/2 | Complete | 2026-02-07 |
 | 3. Terrain Elevation | v1.0 | 2/2 | Complete | 2026-02-07 |
 | 4. Airspace Volumes | v1.0 | 1/1 | Complete | 2026-02-07 |
-| 5. Metal Foundation + Ground Plane | v2.0 | 0/2 | Planning complete | - |
+| 5. Metal Foundation + Ground Plane | v2.0 | 2/2 | Complete | 2026-02-08 |
 | 6. Data Pipeline + Aircraft Rendering | v2.0 | 0/2 | Not started | - |
 | 7. Trails + Labels + Selection | v2.0 | 0/2 | Not started | - |
 | 8. Terrain + Themes | v2.0 | 0/2 | Not started | - |
