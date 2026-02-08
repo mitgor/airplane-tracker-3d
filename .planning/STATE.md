@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-02-08)
 
 ## Current Position
 
-Phase: 6 of 10 (Data Pipeline + Aircraft Rendering) -- PLANNING
-Plan: 0 of 2 in current phase
-Status: Planning
-Last activity: 2026-02-08 -- Phase 5 verified and marked complete
+Phase: 6 of 10 (Data Pipeline + Aircraft Rendering) -- IN PROGRESS
+Plan: 1 of 2 in current phase
+Status: Executing
+Last activity: 2026-02-08 -- Completed 06-01 (data pipeline)
 
-Progress: [=========-----] 69% (9/13 plans across all milestones)
+Progress: [==========----] 77% (10/13 plans across all milestones)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 9 (7 v1.0 + 2 v2.0)
-- Average duration: --
-- Total execution time: --
+- Total plans completed: 10 (7 v1.0 + 3 v2.0)
+- Average duration: ~4.3min (v2.0)
+- Total execution time: ~13min (v2.0)
 
 **By Phase:**
 
@@ -32,12 +32,14 @@ Progress: [=========-----] 69% (9/13 plans across all milestones)
 | 3 (v1.0) | 2 | -- | -- |
 | 4 (v1.0) | 1 | -- | -- |
 | 5 (v2.0) | 2 | 9min | 4.5min |
+| 6 (v2.0) | 1/2 | 4min | 4min |
 
 **Recent Trend:**
 - v1.0 completed all 7 plans
 - v2.0 plan 05-01 completed in 5 min
 - v2.0 plan 05-02 completed in 4 min
 - Phase 5 verified: 5/5 automated checks pass
+- v2.0 plan 06-01 completed in 4 min (2 tasks, 5 files)
 
 *Updated after each plan completion*
 
@@ -61,6 +63,9 @@ Recent decisions affecting current work:
 - [05-02]: Serial DispatchQueue for thread-safe tile cache (not actor)
 - [05-02]: Reusable unit quad with per-tile model matrix for efficiency
 - [05-02]: URLSession with 200MB disk + 50MB memory cache for tile data
+- [06-01]: FlightDataManager @MainActor pattern for synchronous render-loop access
+- [06-01]: Buffer snapshot approach: actor stores raw data, manager copies for render-thread interpolation
+- [06-01]: Altitude scale 0.001 (35000ft = 35 world units) with worldScale=500
 
 ### Pending Todos
 
@@ -74,5 +79,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Phase 5 complete, proceeding to Phase 6 planning
+Stopped at: Completed 06-01-PLAN.md, ready for 06-02
 Resume file: None
