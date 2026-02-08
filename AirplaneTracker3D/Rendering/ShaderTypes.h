@@ -9,7 +9,8 @@ typedef enum {
     BufferIndexVertices = 1,
     BufferIndexModelMatrix = 2,
     BufferIndexInstances = 3,
-    BufferIndexGlowInstances = 4
+    BufferIndexGlowInstances = 4,
+    BufferIndexTrailVertices = 5
 } BufferIndex;
 
 // Texture indices
@@ -62,5 +63,17 @@ typedef struct {
     float _pad1;                 // 4 bytes: padding
     float _pad2;                 // 4 bytes: padding
 } GlowInstanceData;
+
+// Per-vertex data for trail polyline rendering (64 bytes, GPU-aligned)
+typedef struct {
+    simd_float3 position;       // World position (12 bytes)
+    float direction;            // +1 or -1 (which side of the strip) (4 bytes)
+    simd_float4 color;          // Altitude-based color per-vertex (16 bytes)
+    simd_float3 prevPosition;   // Previous point for direction calc (12 bytes)
+    float _pad0;                // Padding (4 bytes)
+    simd_float3 nextPosition;   // Next point for direction calc (12 bytes)
+    float _pad1;                // Padding (4 bytes)
+} TrailVertex;
+// Total: 64 bytes, naturally aligned
 
 #endif /* ShaderTypes_h */
