@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-08)
 ## Current Position
 
 Phase: 5 of 10 (Metal Foundation + Ground Plane)
-Plan: 0 of 2 in current phase
-Status: Ready to plan
-Last activity: 2026-02-08 -- Roadmap created for v2.0 milestone (Phases 5-10)
+Plan: 1 of 2 in current phase
+Status: Executing
+Last activity: 2026-02-08 -- Completed 05-01-PLAN.md (Metal foundation + camera)
 
-Progress: [=======-------] 54% (7/13 plans across all milestones)
+Progress: [========------] 62% (8/13 plans across all milestones)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7 (v1.0)
+- Total plans completed: 8 (7 v1.0 + 1 v2.0)
 - Average duration: --
 - Total execution time: --
 
@@ -31,10 +31,11 @@ Progress: [=======-------] 54% (7/13 plans across all milestones)
 | 2 (v1.0) | 2 | -- | -- |
 | 3 (v1.0) | 2 | -- | -- |
 | 4 (v1.0) | 1 | -- | -- |
+| 5 (v2.0) | 1 | 5min | 5min |
 
 **Recent Trend:**
 - v1.0 completed all 7 plans
-- Trend: Starting fresh milestone
+- v2.0 plan 05-01 completed in 5 min
 
 *Updated after each plan completion*
 
@@ -50,6 +51,10 @@ Recent decisions affecting current work:
 - [v2.0]: Core features first, terrain/airports/airspace later in phased delivery
 - [v2.0]: Zero external dependencies -- URLSession, simd, UserDefaults cover all needs
 - [v2.0]: Triple buffering from day 1 -- non-negotiable for CPU/GPU sync
+- [05-01]: Manual Xcode project creation for precise build setting control
+- [05-01]: Custom MTKView subclass for input handling (scroll wheel, key events)
+- [05-01]: Bridging header for shared CPU/GPU types (ShaderTypes.h)
+- [05-01]: Metal NDC depth [0,1] projection matrix built from scratch
 
 ### Pending Todos
 
@@ -63,5 +68,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Roadmap created for v2.0 milestone
+Stopped at: Completed 05-01-PLAN.md
 Resume file: None
