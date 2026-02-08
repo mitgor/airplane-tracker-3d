@@ -32,6 +32,12 @@ final class Renderer: NSObject {
     private let lineWidthBuffer: MTLBuffer
     private let resolutionBuffer: MTLBuffer
 
+    // MARK: - Terrain Pipeline States
+
+    let terrainTileManager: TerrainTileManager
+    let terrainPipeline: MTLRenderPipelineState
+    let terrainPlaceholderPipeline: MTLRenderPipelineState
+
     // MARK: - Label & Altitude Line Pipeline States
 
     let labelPipeline: MTLRenderPipelineState
@@ -380,6 +386,56 @@ final class Renderer: NSObject {
             fatalError("Failed to create altitude line pipeline: \(error)")
         }
 
+        // --- Terrain Tile Manager ---
+        terrainTileManager = TerrainTileManager(device: device)
+
+        // --- Terrain Vertex Descriptor ---
+        // TerrainVertex layout: position(float3) at 0, texCoord(float2) at 16, normal(float3) at 32
+        // Total stride: 48 bytes (simd_float3 has 16-byte alignment on Apple platforms)
+        let terrainVertexDesc = MTLVertexDescriptor()
+        terrainVertexDesc.attributes[0].format = .float3
+        terrainVertexDesc.attributes[0].offset = 0
+        terrainVertexDesc.attributes[0].bufferIndex = Int(BufferIndexVertices.rawValue)
+        terrainVertexDesc.attributes[1].format = .float2
+        terrainVertexDesc.attributes[1].offset = 16  // after simd_float3 (padded to 16)
+        terrainVertexDesc.attributes[1].bufferIndex = Int(BufferIndexVertices.rawValue)
+        terrainVertexDesc.attributes[2].format = .float3
+        terrainVertexDesc.attributes[2].offset = 32  // after 16 + simd_float2(8) = 24, padded to 32 for simd_float3 alignment
+        terrainVertexDesc.attributes[2].bufferIndex = Int(BufferIndexVertices.rawValue)
+        terrainVertexDesc.layouts[Int(BufferIndexVertices.rawValue)].stride = MemoryLayout<TerrainVertex>.stride
+        terrainVertexDesc.layouts[Int(BufferIndexVertices.rawValue)].stepRate = 1
+        terrainVertexDesc.layouts[Int(BufferIndexVertices.rawValue)].stepFunction = .perVertex
+
+        // --- Terrain Pipeline State (textured terrain with lighting) ---
+        let terrainPipelineDesc = MTLRenderPipelineDescriptor()
+        terrainPipelineDesc.vertexFunction = library.makeFunction(name: "terrain_vertex")
+        terrainPipelineDesc.fragmentFunction = library.makeFunction(name: "terrain_fragment")
+        terrainPipelineDesc.vertexDescriptor = terrainVertexDesc
+        terrainPipelineDesc.colorAttachments[0].pixelFormat = metalView.colorPixelFormat
+        terrainPipelineDesc.depthAttachmentPixelFormat = metalView.depthStencilPixelFormat
+        terrainPipelineDesc.rasterSampleCount = metalView.sampleCount
+
+        do {
+            terrainPipeline = try device.makeRenderPipelineState(descriptor: terrainPipelineDesc)
+        } catch {
+            fatalError("Failed to create terrain pipeline: \(error)")
+        }
+
+        // --- Terrain Placeholder Pipeline State (untextured terrain with lighting) ---
+        let terrainPlaceholderPipelineDesc = MTLRenderPipelineDescriptor()
+        terrainPlaceholderPipelineDesc.vertexFunction = library.makeFunction(name: "terrain_vertex")
+        terrainPlaceholderPipelineDesc.fragmentFunction = library.makeFunction(name: "terrain_fragment_placeholder")
+        terrainPlaceholderPipelineDesc.vertexDescriptor = terrainVertexDesc
+        terrainPlaceholderPipelineDesc.colorAttachments[0].pixelFormat = metalView.colorPixelFormat
+        terrainPlaceholderPipelineDesc.depthAttachmentPixelFormat = metalView.depthStencilPixelFormat
+        terrainPlaceholderPipelineDesc.rasterSampleCount = metalView.sampleCount
+
+        do {
+            terrainPlaceholderPipeline = try device.makeRenderPipelineState(descriptor: terrainPlaceholderPipelineDesc)
+        } catch {
+            fatalError("Failed to create terrain placeholder pipeline: \(error)")
+        }
+
         super.init()
     }
 
@@ -678,30 +734,54 @@ extension Renderer: MTKViewDelegate {
             encoder.setFrontFacing(.clockwise)
             encoder.setCullMode(.none) // Render both sides for robustness
 
-            // Bind shared buffers for textured tiles
+            // Bind shared uniforms
             encoder.setVertexBuffer(uniformBuffer, offset: 0, index: Int(BufferIndexUniforms.rawValue))
-            encoder.setVertexBuffer(tileQuadVertexBuffer, offset: 0, index: Int(BufferIndexVertices.rawValue))
 
-            // Draw each visible tile
+            // Draw each visible tile -- terrain mesh with elevation, or flat fallback
             let modelMatrixPtr = modelMatrixBuffer.contents().bindMemory(to: simd_float4x4.self, capacity: 1)
 
             for tile in visibleTiles {
-                // Compute model matrix for this tile
-                let modelMatrix = tileModelMatrix(for: tile)
-                modelMatrixPtr.pointee = modelMatrix
-                encoder.setVertexBuffer(modelMatrixBuffer, offset: 0, index: Int(BufferIndexModelMatrix.rawValue))
+                let mapTexture = tileManager.texture(for: tile)
+                let terrainMesh = terrainTileManager.terrainMesh(for: tile)
 
-                // Check for cached texture
-                if let texture = tileManager.texture(for: tile) {
-                    // Textured tile
-                    encoder.setRenderPipelineState(texturedPipelineState)
-                    encoder.setFragmentTexture(texture, index: Int(TextureIndexColor.rawValue))
+                if let mesh = terrainMesh {
+                    // Terrain mesh available -- render with elevation
+                    encoder.setVertexBuffer(mesh.vertexBuffer, offset: 0, index: Int(BufferIndexVertices.rawValue))
+                    encoder.setVertexBuffer(uniformBuffer, offset: 0, index: Int(BufferIndexUniforms.rawValue))
+
+                    if let texture = mapTexture {
+                        // Textured terrain with lighting
+                        encoder.setRenderPipelineState(terrainPipeline)
+                        encoder.setFragmentTexture(texture, index: Int(TextureIndexColor.rawValue))
+                    } else {
+                        // Placeholder terrain (shows elevation shape while texture loads)
+                        encoder.setRenderPipelineState(terrainPlaceholderPipeline)
+                    }
+
+                    encoder.drawIndexedPrimitives(
+                        type: .triangle,
+                        indexCount: mesh.indexCount,
+                        indexType: .uint32,
+                        indexBuffer: mesh.indexBuffer,
+                        indexBufferOffset: 0
+                    )
                 } else {
-                    // Placeholder (gray) while loading
-                    encoder.setRenderPipelineState(placeholderPipelineState)
-                }
+                    // No terrain mesh yet -- fall back to flat tile quad
+                    encoder.setVertexBuffer(tileQuadVertexBuffer, offset: 0, index: Int(BufferIndexVertices.rawValue))
 
-                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: tileQuadVertexCount)
+                    let modelMatrix = tileModelMatrix(for: tile)
+                    modelMatrixPtr.pointee = modelMatrix
+                    encoder.setVertexBuffer(modelMatrixBuffer, offset: 0, index: Int(BufferIndexModelMatrix.rawValue))
+
+                    if let texture = mapTexture {
+                        encoder.setRenderPipelineState(texturedPipelineState)
+                        encoder.setFragmentTexture(texture, index: Int(TextureIndexColor.rawValue))
+                    } else {
+                        encoder.setRenderPipelineState(placeholderPipelineState)
+                    }
+
+                    encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: tileQuadVertexCount)
+                }
             }
 
             // --- Aircraft Rendering ---
