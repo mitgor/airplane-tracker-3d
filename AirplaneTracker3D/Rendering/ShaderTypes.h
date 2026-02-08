@@ -98,4 +98,11 @@ typedef struct {
 } AltLineVertex;
 // Total: 16 bytes
 
+// Per-vertex data for terrain mesh (position + texCoord + normal)
+typedef struct {
+    simd_float3 position;   // XYZ with Y = displaced elevation
+    simd_float2 texCoord;   // UV for map tile texture sampling
+    simd_float3 normal;     // Computed surface normal for lighting
+} TerrainVertex;
+
 #endif /* ShaderTypes_h */
