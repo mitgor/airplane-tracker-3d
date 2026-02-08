@@ -13,6 +13,9 @@
 		A10001000000000000000004 /* Renderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000004 /* Renderer.swift */; };
 		A10001000000000000000005 /* Shaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000005 /* Shaders.metal */; };
 		A10001000000000000000006 /* OrbitCamera.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000006 /* OrbitCamera.swift */; };
+		A10001000000000000000007 /* MapCoordinateSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000009 /* MapCoordinateSystem.swift */; };
+		A10001000000000000000008 /* TileCoordinate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000010 /* TileCoordinate.swift */; };
+		A10001000000000000000009 /* MapTileManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000011 /* MapTileManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -24,6 +27,9 @@
 		A10002000000000000000006 /* OrbitCamera.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbitCamera.swift; sourceTree = "<group>"; };
 		A10002000000000000000007 /* ShaderTypes.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ShaderTypes.h; sourceTree = "<group>"; };
 		A10002000000000000000008 /* AirplaneTracker3D-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "AirplaneTracker3D-Bridging-Header.h"; sourceTree = "<group>"; };
+		A10002000000000000000009 /* MapCoordinateSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapCoordinateSystem.swift; sourceTree = "<group>"; };
+		A10002000000000000000010 /* TileCoordinate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TileCoordinate.swift; sourceTree = "<group>"; };
+		A10002000000000000000011 /* MapTileManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapTileManager.swift; sourceTree = "<group>"; };
 		A10003000000000000000001 /* AirplaneTracker3D.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AirplaneTracker3D.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -54,6 +60,7 @@
 				A10002000000000000000008 /* AirplaneTracker3D-Bridging-Header.h */,
 				A10005000000000000000003 /* Rendering */,
 				A10005000000000000000004 /* Camera */,
+				A10005000000000000000006 /* Map */,
 			);
 			path = AirplaneTracker3D;
 			sourceTree = "<group>";
@@ -75,6 +82,16 @@
 				A10002000000000000000006 /* OrbitCamera.swift */,
 			);
 			path = Camera;
+			sourceTree = "<group>";
+		};
+		A10005000000000000000006 /* Map */ = {
+			isa = PBXGroup;
+			children = (
+				A10002000000000000000009 /* MapCoordinateSystem.swift */,
+				A10002000000000000000010 /* TileCoordinate.swift */,
+				A10002000000000000000011 /* MapTileManager.swift */,
+			);
+			path = Map;
 			sourceTree = "<group>";
 		};
 		A10005000000000000000005 /* Products */ = {
@@ -148,6 +165,9 @@
 				A10001000000000000000004 /* Renderer.swift in Sources */,
 				A10001000000000000000005 /* Shaders.metal in Sources */,
 				A10001000000000000000006 /* OrbitCamera.swift in Sources */,
+				A10001000000000000000007 /* MapCoordinateSystem.swift in Sources */,
+				A10001000000000000000008 /* TileCoordinate.swift in Sources */,
+				A10001000000000000000009 /* MapTileManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
