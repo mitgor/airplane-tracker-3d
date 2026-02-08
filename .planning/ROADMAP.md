@@ -86,11 +86,11 @@ Plans:
   3. User can click an aircraft to select it and see a SwiftUI detail panel with callsign, altitude, speed, heading, squawk, position, plus enrichment data (registration, type, operator, route) from hexdb.io and adsbdb.com
   4. User sees dashed altitude reference lines from each aircraft down to the ground plane
   5. User can follow a selected aircraft and the camera smoothly tracks it as it moves
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 07-01: GPU polyline trail rendering with altitude coloring
-- [ ] 07-02: Billboard labels, altitude lines, ray-cast selection, detail panel, enrichment, and follow camera
+- [ ] 07-01-PLAN.md -- GPU polyline trail rendering with screen-space extrusion and altitude color gradient
+- [ ] 07-02-PLAN.md -- Billboard labels, altitude lines, ray-cast selection, detail panel, enrichment, and follow camera
 
 ### Phase 8: Terrain + Themes
 **Goal**: The world has depth and personality -- terrain elevation gives geographic context, and three distinct themes change the entire visual character
