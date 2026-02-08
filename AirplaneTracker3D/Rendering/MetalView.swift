@@ -33,6 +33,21 @@ struct MetalView: NSViewRepresentable {
         mtkView.delegate = context.coordinator
         mtkView.coordinator = context.coordinator
 
+        // Gesture recognizers for camera control
+        let magnificationGesture = NSMagnificationGestureRecognizer(
+            target: context.coordinator, action: #selector(Coordinator.handleMagnification(_:)))
+        mtkView.addGestureRecognizer(magnificationGesture)
+
+        let rotationGesture = NSRotationGestureRecognizer(
+            target: context.coordinator, action: #selector(Coordinator.handleRotation(_:)))
+        mtkView.addGestureRecognizer(rotationGesture)
+
+        let panGesture = NSPanGestureRecognizer(
+            target: context.coordinator, action: #selector(Coordinator.handlePan(_:)))
+        panGesture.buttonMask = 0 // trackpad
+        panGesture.numberOfTouchesRequired = 2
+        mtkView.addGestureRecognizer(panGesture)
+
         return mtkView
     }
 
@@ -51,6 +66,29 @@ struct MetalView: NSViewRepresentable {
 
         func draw(in view: MTKView) {
             renderer?.draw(in: view)
+        }
+
+        // MARK: - Gesture Handlers
+
+        @objc func handleMagnification(_ gesture: NSMagnificationGestureRecognizer) {
+            guard let camera = renderer?.camera else { return }
+            camera.zoom(delta: Float(gesture.magnification) * 5.0)
+            if gesture.state == .ended || gesture.state == .cancelled {
+                gesture.magnification = 0
+            }
+        }
+
+        @objc func handleRotation(_ gesture: NSRotationGestureRecognizer) {
+            guard let camera = renderer?.camera else { return }
+            camera.orbit(deltaAzimuth: -Float(gesture.rotation), deltaElevation: 0)
+            gesture.rotation = 0
+        }
+
+        @objc func handlePan(_ gesture: NSPanGestureRecognizer) {
+            guard let camera = renderer?.camera else { return }
+            let translation = gesture.translation(in: gesture.view)
+            camera.pan(deltaX: Float(translation.x) * 0.5, deltaY: Float(translation.y) * 0.5)
+            gesture.setTranslation(.zero, in: gesture.view)
         }
     }
 }
