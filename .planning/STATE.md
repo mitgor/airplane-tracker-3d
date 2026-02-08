@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-08)
 
 ## Current Position
 
-Phase: 8 of 10 (Terrain + Themes) -- PLANNING
-Plan: 0 of 2 in current phase
-Status: Planning
-Last activity: 2026-02-08 -- Phase 7 verified (6/6 pass) and marked complete
+Phase: 8 of 10 (Terrain + Themes) -- IN PROGRESS
+Plan: 1 of 2 in current phase
+Status: Executing
+Last activity: 2026-02-08 -- Plan 08-01 (terrain elevation) complete
 
-Progress: [=============-] 93% (13/14 plans across all milestones)
+Progress: [==============-] 94% (14/15 plans across all milestones)
 
 ## Performance Metrics
 
@@ -34,6 +34,7 @@ Progress: [=============-] 93% (13/14 plans across all milestones)
 | 5 (v2.0) | 2 | 9min | 4.5min |
 | 6 (v2.0) | 2 | 10min | 5min |
 | 7 (v2.0) | 2 | 11min | 5.5min |
+| 8 (v2.0) | 1* | 3min | 3min |
 
 **Recent Trend:**
 - Phase 5 verified: 5/5 automated checks pass
@@ -41,6 +42,7 @@ Progress: [=============-] 93% (13/14 plans across all milestones)
 - Phase 7 verified: 6/6 must-haves pass
 - v2.0 plan 07-01 completed in 4 min
 - v2.0 plan 07-02 completed in 7 min
+- v2.0 plan 08-01 completed in 3 min
 
 *Updated after each plan completion*
 
@@ -59,6 +61,8 @@ Recent decisions affecting current work:
 - [07-02]: CoreText atlas 2048x2048 for labels, ray-sphere picking radius 3.0
 - [07-02]: NotificationCenter for SwiftUI-Metal communication
 - [07-02]: EnrichmentService actor with caching
+- [08-01]: Terrain scale factor 0.003, 32x32 mesh subdivision, CPU-side vertex displacement
+- [08-01]: Terrarium elevation decoding from AWS S3, UInt32 indices for future LOD
 
 ### Pending Todos
 
@@ -72,5 +76,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Phase 7 complete, proceeding to Phase 8 planning
+Stopped at: Completed 08-01-PLAN.md (terrain elevation), proceeding to 08-02
 Resume file: None
