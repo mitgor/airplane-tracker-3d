@@ -1,0 +1,62 @@
+# Requirements: Airplane Tracker 3D
+
+**Defined:** 2026-02-09
+**Core Value:** Real-time 3D flight visualization that works both as a personal ADS-B receiver dashboard and as a global flight explorer with airport discovery.
+
+## v2.2 Requirements
+
+Requirements for v2.2 Core Fixes & Data Sources. Each maps to roadmap phases.
+
+### Data Sources
+
+- [ ] **DATA-01**: User can enter a remote dump1090 IP:port in Settings to poll aircraft from a network receiver
+- [ ] **DATA-02**: Global API query center follows the camera position so aircraft load for the area being viewed
+- [ ] **DATA-03**: User can switch between Global, Local, and Remote data sources in Settings
+- [ ] **DATA-04**: Data source switch takes effect immediately without restarting the app
+
+### Airports
+
+- [ ] **ARPT-01**: Airport database contains ~500 major worldwide airports with scheduled commercial service
+- [ ] **ARPT-02**: User can search for Berlin (and other major world airports) by name, IATA, or ICAO and get correct results
+- [ ] **ARPT-03**: Airport labels render for all airports in the expanded database (with existing distance culling)
+
+### Rendering
+
+- [ ] **RNDR-01**: Aircraft are visible on the 3D map when the global API returns data for the camera area
+
+## Future Requirements
+
+None identified — milestone is focused on fixes and data source flexibility.
+
+## Out of Scope
+
+| Feature | Reason |
+|---------|--------|
+| Dynamic API radius adjustment | Fixed 250nm radius is sufficient for now |
+| Airport runway rendering | Not needed for search/label functionality |
+| Multiple simultaneous data sources | One source at a time is sufficient |
+| Offline airport search | Network-based search not needed; local JSON is fast enough |
+
+## Traceability
+
+Which phases cover which requirements. Updated during roadmap creation.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| DATA-01 | — | Pending |
+| DATA-02 | — | Pending |
+| DATA-03 | — | Pending |
+| DATA-04 | — | Pending |
+| ARPT-01 | — | Pending |
+| ARPT-02 | — | Pending |
+| ARPT-03 | — | Pending |
+| RNDR-01 | — | Pending |
+
+**Coverage:**
+- v2.2 requirements: 8 total
+- Mapped to phases: 0
+- Unmapped: 8 ⚠️
+
+---
+*Requirements defined: 2026-02-09*
+*Last updated: 2026-02-09 after initial definition*
