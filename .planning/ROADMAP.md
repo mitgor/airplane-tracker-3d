@@ -48,7 +48,7 @@
 
 - [x] **Phase 16: Camera-Following API & Aircraft Visibility** - Global API queries follow the camera so aircraft actually appear
 - [x] **Phase 17: Expanded Airport Database** - 489 airports with correct search and labels
-- [ ] **Phase 18: Remote Data Sources** - Configurable remote dump1090 and unified source switching
+- [x] **Phase 18: Remote Data Sources** - Configurable remote dump1090 and unified source switching
 
 ## Phase Details
 
@@ -91,7 +91,7 @@ Plans:
 **Plans:** 1 plan
 
 Plans:
-- [ ] 18-01-PLAN.md — Add remote DataMode, Settings UI for IP/port, and immediate source switching
+- [x] 18-01-PLAN.md — Add remote DataMode, Settings UI for IP/port, and immediate source switching
 
 ## Progress
 
@@ -117,4 +117,4 @@ Phases execute in numeric order: 16 -> 17 -> 18
 | 15. Visual Polish | v2.1 | 2/2 | Complete | 2026-02-09 |
 | 16. Camera-Following API & Aircraft Visibility | v2.2 | 1/1 | Complete | 2026-02-09 |
 | 17. Expanded Airport Database | v2.2 | 1/1 | Complete | 2026-02-09 |
-| 18. Remote Data Sources | v2.2 | 0/1 | Not started | - |
+| 18. Remote Data Sources | v2.2 | 1/1 | Complete | 2026-02-09 |
