@@ -60,11 +60,10 @@
   1. User pans the camera to a new geographic area and aircraft begin loading for that area within one polling cycle
   2. Aircraft icons are visible and correctly positioned on the 3D globe when the global API returns data
   3. Moving the camera to different continents loads aircraft for each new area (not stuck on a fixed coordinate)
-**Plans**: TBD
+**Plans:** 1 plan
 
 Plans:
-- [ ] 16-01: TBD
-- [ ] 16-02: TBD
+- [ ] 16-01-PLAN.md — Dynamic polling center + camera-to-actor wiring
 
 ### Phase 17: Expanded Airport Database
 **Goal**: Users can discover and search for any major commercial airport worldwide, with correct search results and visible 3D labels
@@ -118,6 +117,6 @@ Phases execute in numeric order: 16 -> 17 -> 18
 | 13. Airspace Volume Rendering | v2.1 | 2/2 | Complete | 2026-02-09 |
 | 14. Coverage Heatmap | v2.1 | 2/2 | Complete | 2026-02-09 |
 | 15. Visual Polish | v2.1 | 2/2 | Complete | 2026-02-09 |
-| 16. Camera-Following API & Aircraft Visibility | v2.2 | 0/TBD | Not started | - |
+| 16. Camera-Following API & Aircraft Visibility | v2.2 | 0/1 | Not started | - |
 | 17. Expanded Airport Database | v2.2 | 0/TBD | Not started | - |
 | 18. Remote Data Sources | v2.2 | 0/TBD | Not started | - |
