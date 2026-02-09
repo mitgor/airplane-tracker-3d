@@ -131,11 +131,11 @@ Plans:
   2. User receives macOS notifications for configurable aircraft alerts (specific callsigns, emergency squawks, altitude/distance thresholds)
   3. User can use native macOS menus (File, Edit, View, Window) with standard shortcuts (Cmd+W, Cmd+Q, Cmd+,)
   4. User can download and install the app as a notarized DMG that passes Gatekeeper on a clean Mac without developer tools
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 10-01: Menu bar status item, dock badge, and notification system
-- [ ] 10-02: Native macOS menus, code signing, notarization, and DMG distribution
+- [ ] 10-01-PLAN.md -- Menu bar status item, dock badge, and notification system with alert conditions
+- [ ] 10-02-PLAN.md -- Standard macOS menus via CommandGroup, entitlements, and DMG build/distribution script
 
 ## Requirement Coverage
 
