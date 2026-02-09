@@ -11,6 +11,12 @@ struct ContentView: View {
     /// Current theme label for the toggle button
     @State private var themeLabel: String = "DAY"
 
+    /// Whether the airport search panel is visible
+    @State private var showSearchPanel: Bool = false
+
+    /// Current camera target for nearby airport distance computation
+    @State private var cameraTarget: SIMD3<Float> = .zero
+
     var body: some View {
         ZStack(alignment: .trailing) {
             MetalView(
@@ -23,9 +29,9 @@ struct ContentView: View {
             )
             .ignoresSafeArea()
 
-            // Theme toggle button (top-left corner)
+            // Top-left controls: theme button + search button
             VStack {
-                HStack {
+                HStack(spacing: 6) {
                     Button(action: {
                         NotificationCenter.default.post(name: .cycleTheme, object: nil)
                     }) {
@@ -38,11 +44,38 @@ struct ContentView: View {
                             .cornerRadius(6)
                     }
                     .buttonStyle(.plain)
-                    .padding(.leading, 12)
-                    .padding(.top, 12)
+
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showSearchPanel.toggle()
+                        }
+                    }) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .background(Color.black.opacity(0.5))
+                            .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
 
                     Spacer()
                 }
+                .padding(.leading, 12)
+                .padding(.top, 12)
+
+                // Airport search panel (below buttons, top-left area)
+                if showSearchPanel {
+                    HStack {
+                        AirportSearchPanel(cameraTarget: cameraTarget)
+                            .padding(.leading, 12)
+                            .padding(.top, 4)
+                            .transition(.move(edge: .leading).combined(with: .opacity))
+                        Spacer()
+                    }
+                }
+
                 Spacer()
             }
 
@@ -83,6 +116,16 @@ struct ContentView: View {
                 case .night: themeLabel = "NIGHT"
                 case .retro: themeLabel = "RETRO"
                 }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleSearch)) { _ in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showSearchPanel.toggle()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .cameraTargetUpdated)) { notification in
+            if let pos = notification.userInfo?["target"] as? [Float], pos.count >= 3 {
+                cameraTarget = SIMD3<Float>(pos[0], pos[1], pos[2])
             }
         }
     }

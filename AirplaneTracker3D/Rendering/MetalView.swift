@@ -39,6 +39,7 @@ struct MetalView: NSViewRepresentable {
         // Create renderer and set delegate
         let renderer = Renderer(metalView: mtkView)
         renderer.flightDataManager = flightDataManager
+        renderer.flyToAnimator = context.coordinator.flyToAnimator
         context.coordinator.renderer = renderer
         context.coordinator.onAircraftSelected = onAircraftSelected
         mtkView.delegate = context.coordinator
@@ -77,6 +78,9 @@ struct MetalView: NSViewRepresentable {
         var renderer: Renderer?
         var onAircraftSelected: ((SelectedAircraftInfo?) -> Void)?
 
+        /// Fly-to camera animator (shared with Renderer via reference)
+        let flyToAnimator = FlyToAnimator()
+
         override init() {
             super.init()
             NotificationCenter.default.addObserver(
@@ -90,6 +94,10 @@ struct MetalView: NSViewRepresentable {
             NotificationCenter.default.addObserver(
                 self, selector: #selector(handleCycleTheme),
                 name: .cycleTheme, object: nil
+            )
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(handleFlyToAirport(_:)),
+                name: .flyToAirport, object: nil
             )
         }
 
@@ -110,6 +118,21 @@ struct MetalView: NSViewRepresentable {
             renderer.selectionManager.selectedHex = nil
             renderer.selectionManager.isFollowing = false
             renderer.camera.followTarget = nil
+        }
+
+        @objc private func handleFlyToAirport(_ notification: Notification) {
+            guard let renderer = renderer,
+                  let posArray = notification.userInfo?["position"] as? [Float],
+                  posArray.count >= 3 else { return }
+
+            let worldPosition = SIMD3<Float>(posArray[0], posArray[1], posArray[2])
+
+            // Disengage follow mode before fly-to
+            renderer.selectionManager.isFollowing = false
+            renderer.camera.followTarget = nil
+
+            // Start the fly-to animation
+            flyToAnimator.startFlyTo(from: renderer.camera, to: worldPosition)
         }
 
         func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
@@ -209,6 +232,8 @@ class MetalMTKView: MTKView {
             camera.isAutoRotating.toggle()
         case "t":
             NotificationCenter.default.post(name: .cycleTheme, object: nil)
+        case "f":
+            NotificationCenter.default.post(name: .toggleSearch, object: nil)
         default:
             super.keyDown(with: event)
         }

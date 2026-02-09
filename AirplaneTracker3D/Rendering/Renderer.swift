@@ -62,6 +62,12 @@ final class Renderer: NSObject {
     /// Flight data manager set externally after init (from ContentView/MetalView)
     var flightDataManager: FlightDataManager?
 
+    /// Fly-to camera animator set externally from MetalView Coordinator
+    var flyToAnimator: FlyToAnimator?
+
+    /// Frame counter for throttling camera target broadcasts
+    private var frameCounter: Int = 0
+
     // MARK: - Triple Buffering
 
     static let maxFramesInFlight = 3
@@ -801,6 +807,21 @@ extension Renderer: MTKViewDelegate {
 
             // Update camera
             camera.update(deltaTime: deltaTime)
+
+            // Update fly-to animation (after camera update, before rendering)
+            flyToAnimator?.update(camera: camera, deltaTime: deltaTime)
+
+            // Broadcast camera target periodically for nearby airports (every ~30 frames)
+            frameCounter += 1
+            if frameCounter % 30 == 0 {
+                let target = camera.target
+                let targetArray: [Float] = [target.x, target.y, target.z]
+                NotificationCenter.default.post(
+                    name: .cameraTargetUpdated,
+                    object: nil,
+                    userInfo: ["target": targetArray]
+                )
+            }
 
             // Update aspect ratio
             let drawableSize = view.drawableSize
