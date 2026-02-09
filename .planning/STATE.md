@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-09)
 
 **Core value:** Real-time 3D flight visualization that works both as a personal ADS-B receiver dashboard and as a global flight explorer with airport discovery.
-**Current focus:** v2.1 Phase 13 complete -- ready for Phase 14
+**Current focus:** v2.1 Phase 14 -- Coverage Heatmap (plan 1 of 2 complete)
 
 ## Current Position
 
-Phase: 13 of 15 (Airspace Volume Rendering) -- COMPLETE
-Plan: 2 of 2 in current phase
-Status: Phase 13 complete (all plans finished)
-Last activity: 2026-02-09 -- Completed 13-02-PLAN.md (renderer integration, theme colors, settings toggles)
+Phase: 14 of 15 (Coverage Heatmap)
+Plan: 1 of 2 in current phase
+Status: Plan 14-01 complete (heatmap data pipeline), plan 14-02 pending (renderer integration)
+Last activity: 2026-02-09 -- Completed 14-01-PLAN.md (HeatmapManager, HeatmapShaders, ShaderTypes.h)
 
-Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [#####.....] 60%
+Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [######....] 70%
 
 ## Performance Metrics
 
@@ -24,9 +24,9 @@ Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [#####.....] 60
 - Total execution time: ~47min
 
 **v2.1 Velocity:**
-- Plans completed: 5
-- Average duration: ~2.6min
-- Total execution time: ~13min
+- Plans completed: 6
+- Average duration: ~2.8min
+- Total execution time: ~17min
 
 ## Accumulated Context
 
@@ -48,6 +48,8 @@ Recent decisions affecting current work:
 - v2.1: Edge mesh with .line primitive type for clean airspace wireframe outlines
 - v2.1: Theme-aware color override per frame in AirspaceManager.update() for instant theme switching
 - v2.1: UserDefaults.register() for boolean defaults (airspace toggles default to true)
+- v2.1: Managed storage mode for heatmap MTLTexture (supports replace() on macOS discrete GPUs)
+- v2.1: 50% bounds shift threshold for heatmap grid reset (freshness vs. stability)
 
 ### Known Issues (v2.1 scope)
 
@@ -55,7 +57,7 @@ Recent decisions affecting current work:
 - ~~Propeller rotation matrix incorrectly composed~~ FIXED: mesh at origin + noseOffset translation (11-01)
 - ~~Native detail panel missing: lat/lon, aircraft photo, external links~~ FIXED: links, photo, lat/lon verified (12-01)
 - ~~Airspace volumes data pipeline built, pending Renderer integration (13-02)~~ FIXED: fully integrated (13-02)
-- Coverage heatmaps not yet ported from web
+- Coverage heatmap data pipeline built (14-01), pending Renderer integration (14-02)
 
 ### Pending Todos
 
@@ -68,5 +70,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: Completed 13-02-PLAN.md (renderer integration: pipeline states, draw loop, theme colors, settings toggles). Phase 13 complete.
+Stopped at: Completed 14-01-PLAN.md (HeatmapManager data pipeline: 32x32 grid, theme-aware texture, ground quad shaders). Ready for 14-02.
 Resume file: None
