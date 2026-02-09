@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-08)
 
 **Core value:** Real-time 3D flight visualization that works both as a personal ADS-B receiver dashboard and as a global flight explorer with airport discovery.
-**Current focus:** Phase 8 -- Terrain + Themes
+**Current focus:** Phase 9 -- UI Controls, Settings, Airports
 
 ## Current Position
 
-Phase: 8 of 10 (Terrain + Themes) -- COMPLETE
-Plan: 2 of 2 in current phase
-Status: Phase complete
-Last activity: 2026-02-09 -- Plan 08-02 (themes + airport labels) complete
+Phase: 9 of 10 (UI Controls, Settings, Airports) -- IN PROGRESS
+Plan: 1 of 2 in current phase (09-01 complete)
+Status: Executing phase
+Last activity: 2026-02-09 -- Plan 09-01 (airport search, fly-to, nearby) complete
 
-Progress: [===============] 100% (15/15 plans across all milestones)
+Progress: [===============] 100% (16/17 plans across all milestones)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 15 (7 v1.0 + 8 v2.0)
-- Average duration: ~4.9min (v2.0)
-- Total execution time: ~37min (v2.0)
+- Total plans completed: 16 (7 v1.0 + 9 v2.0)
+- Average duration: ~4.8min (v2.0)
+- Total execution time: ~41min (v2.0)
 
 **By Phase:**
 
@@ -35,6 +35,7 @@ Progress: [===============] 100% (15/15 plans across all milestones)
 | 6 (v2.0) | 2 | 10min | 5min |
 | 7 (v2.0) | 2 | 11min | 5.5min |
 | 8 (v2.0) | 2 | 10min | 5min |
+| 9 (v2.0) | 1/2 | 4min | 4min |
 
 **Recent Trend:**
 - Phase 5 verified: 5/5 automated checks pass
@@ -44,6 +45,7 @@ Progress: [===============] 100% (15/15 plans across all milestones)
 - v2.0 plan 07-02 completed in 7 min
 - v2.0 plan 08-01 completed in 3 min
 - v2.0 plan 08-02 completed in 7 min
+- v2.0 plan 09-01 completed in 4 min
 
 *Updated after each plan completion*
 
@@ -68,6 +70,9 @@ Recent decisions affecting current work:
 - [08-02]: ThemeConfig pure-data struct, NotificationCenter-driven theme switching
 - [08-02]: AltLineVertex extended to 32 bytes with color for theme-aware altitude lines
 - [08-02]: Retro wireframe via setTriangleFillMode(.lines) for terrain+aircraft, .fill for labels/trails
+- [09-01]: FlyToAnimator smoothstep camera animation, frame-loop update pattern
+- [09-01]: ViewModels directory for SwiftUI ObservableObject view models
+- [09-01]: Notification userInfo [Float] arrays for SIMD3 cross-boundary transport
 
 ### Pending Todos
 
@@ -81,5 +86,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: Completed 08-02-PLAN.md (themes + airport labels), Phase 8 complete
+Stopped at: Completed 09-01-PLAN.md (airport search, fly-to, nearby browsing)
 Resume file: None
