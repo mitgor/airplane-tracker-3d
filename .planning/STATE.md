@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-08)
 ## Current Position
 
 Phase: 10 of 10 (Native macOS Integration)
-Plan: 1 of 2 in current phase (10-01 complete)
-Status: In progress
-Last activity: 2026-02-09 -- Plan 10-01 (menu bar, dock badge, notifications) complete
+Plan: 2 of 2 in current phase (10-02 complete)
+Status: Complete
+Last activity: 2026-02-09 -- Plan 10-02 (standard menus, entitlements, DMG distribution) complete
 
-Progress: [================] 100% (18/19 plans across all milestones)
+Progress: [================] 100% (19/19 plans across all milestones)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 17 (7 v1.0 + 10 v2.0)
-- Average duration: ~4.7min (v2.0)
-- Total execution time: ~45min (v2.0)
+- Total plans completed: 19 (7 v1.0 + 12 v2.0)
+- Average duration: ~4.4min (v2.0)
+- Total execution time: ~47min (v2.0)
 
 **By Phase:**
 
@@ -36,7 +36,7 @@ Progress: [================] 100% (18/19 plans across all milestones)
 | 7 (v2.0) | 2 | 11min | 5.5min |
 | 8 (v2.0) | 2 | 10min | 5min |
 | 9 (v2.0) | 2/2 | 8min | 4min |
-| 10 (v2.0) | 1/2 | 4min | 4min |
+| 10 (v2.0) | 2/2 | 6min | 3min |
 
 **Recent Trend:**
 - Phase 5 verified: 5/5 automated checks pass
@@ -49,6 +49,7 @@ Progress: [================] 100% (18/19 plans across all milestones)
 - v2.0 plan 09-01 completed in 4 min
 - v2.0 plan 09-02 completed in 4 min
 - v2.0 plan 10-01 completed in 4 min
+- v2.0 plan 10-02 completed in 2 min
 
 *Updated after each plan completion*
 
@@ -83,6 +84,9 @@ Recent decisions affecting current work:
 - [10-01]: Aircraft states broadcast via existing NotificationCenter for zero-overhead alert evaluation
 - [10-01]: NotificationManager singleton with @AppStorage, 5-min cooldown deduplication per aircraft per condition
 - [10-01]: Services/ directory for app-level managers, UNUserNotificationCenterDelegate for foreground delivery
+- [10-02]: CommandGroup placements before CommandMenu for standard menu integration without disturbing Tracker menu
+- [10-02]: View menu items without shortcuts to avoid Tracker menu duplicates, Window Reset Camera uses Cmd+0
+- [10-02]: Build script defaults to unsigned DMG, --signed flag for Apple Developer Program members
 
 ### Pending Todos
 
@@ -96,5 +100,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: Completed 10-01-PLAN.md (menu bar status item, dock badge, notifications)
+Stopped at: Completed 10-02-PLAN.md (standard menus, entitlements, DMG distribution) -- ALL PHASES COMPLETE
 Resume file: None
