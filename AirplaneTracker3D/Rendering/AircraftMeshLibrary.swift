@@ -273,9 +273,10 @@ class AircraftMeshLibrary {
         appendCone(vertices: &vertices, indices: &indices,
                    radius: 0.4, height: 1.2,
                    offset: SIMD3<Float>(0, 0, 2.0))
-        // Wings
+        // Wings -- swept back: offset aft (negative Z) to suggest sweep
         appendBox(vertices: &vertices, indices: &indices,
-                  size: SIMD3<Float>(5, 0.15, 1.5))
+                  size: SIMD3<Float>(5, 0.15, 1.5),
+                  offset: SIMD3<Float>(0, 0, -0.2))
         // Vertical tail
         appendBox(vertices: &vertices, indices: &indices,
                   size: SIMD3<Float>(0.15, 1.2, 1.0),
@@ -300,16 +301,24 @@ class AircraftMeshLibrary {
         var vertices: [AircraftVertex] = []
         var indices: [UInt16] = []
 
-        // Larger fuselage
+        // Fatter fuselage (r=0.8 for obviously wide body)
         appendCylinder(vertices: &vertices, indices: &indices,
-                       radius: 0.7, height: 5.5)
+                       radius: 0.8, height: 5.5)
         // Nose cone
         appendCone(vertices: &vertices, indices: &indices,
-                   radius: 0.7, height: 1.5,
+                   radius: 0.8, height: 1.5,
                    offset: SIMD3<Float>(0, 0, 2.75))
-        // Wider wings
+        // Dramatically wider wings (span 9.0)
         appendBox(vertices: &vertices, indices: &indices,
-                  size: SIMD3<Float>(8, 0.2, 2.2))
+                  size: SIMD3<Float>(9.0, 0.2, 2.2))
+        // Left winglet (vertical box at wing tip)
+        appendBox(vertices: &vertices, indices: &indices,
+                  size: SIMD3<Float>(0.06, 0.5, 0.15),
+                  offset: SIMD3<Float>(-4.5, 0.25, 0))
+        // Right winglet
+        appendBox(vertices: &vertices, indices: &indices,
+                  size: SIMD3<Float>(0.06, 0.5, 0.15),
+                  offset: SIMD3<Float>(4.5, 0.25, 0))
         // Vertical tail
         appendBox(vertices: &vertices, indices: &indices,
                   size: SIMD3<Float>(0.15, 1.5, 1.2),
@@ -339,6 +348,14 @@ class AircraftMeshLibrary {
         appendCylinder(vertices: &vertices, indices: &indices,
                        radius: 0.15, height: 2.5,
                        offset: SIMD3<Float>(0, 0, -1.5))
+        // Rotor mast: thin cylinder from cabin top to disc
+        appendCylinder(vertices: &vertices, indices: &indices,
+                       radius: 0.06, height: 0.3,
+                       offset: SIMD3<Float>(0, 0.55, 0))
+        // Rotor disc: very flat box visible even when blades not spinning
+        appendBox(vertices: &vertices, indices: &indices,
+                  size: SIMD3<Float>(5.5, 0.02, 5.5),
+                  offset: SIMD3<Float>(0, 0.7, 0))
         // Left skid
         appendBox(vertices: &vertices, indices: &indices,
                   size: SIMD3<Float>(0.08, 0.08, 2.0),
@@ -362,9 +379,10 @@ class AircraftMeshLibrary {
         appendCone(vertices: &vertices, indices: &indices,
                    radius: 0.3, height: 0.6,
                    offset: SIMD3<Float>(0, 0, 1.25))
-        // Wings
+        // Wings -- high-mounted (Y=0.25) and STRAIGHT (no Z offset), wide span (5.0), thinner chord (0.6)
         appendBox(vertices: &vertices, indices: &indices,
-                  size: SIMD3<Float>(4, 0.08, 0.8))
+                  size: SIMD3<Float>(5.0, 0.08, 0.6),
+                  offset: SIMD3<Float>(0, 0.25, 0))
         // Tail
         appendBox(vertices: &vertices, indices: &indices,
                   size: SIMD3<Float>(0.1, 0.8, 0.6),
@@ -388,9 +406,21 @@ class AircraftMeshLibrary {
         appendCone(vertices: &vertices, indices: &indices,
                    radius: 0.35, height: 1.2,
                    offset: SIMD3<Float>(0, 0, 2.25))
-        // Delta wings (thin wide box approximation)
+        // Delta wings -- root section: wide chord box near fuselage
         appendBox(vertices: &vertices, indices: &indices,
-                  size: SIMD3<Float>(6, 0.1, 3.0))
+                  size: SIMD3<Float>(2.0, 0.1, 3.0))
+        // Delta wings -- left outer wing: narrower chord, shifted aft for taper
+        appendBox(vertices: &vertices, indices: &indices,
+                  size: SIMD3<Float>(2.5, 0.1, 1.5),
+                  offset: SIMD3<Float>(-2.0, 0, -0.5))
+        // Delta wings -- right outer wing: mirror
+        appendBox(vertices: &vertices, indices: &indices,
+                  size: SIMD3<Float>(2.5, 0.1, 1.5),
+                  offset: SIMD3<Float>(2.0, 0, -0.5))
+        // Canard foreplanes (forward of cockpit)
+        appendBox(vertices: &vertices, indices: &indices,
+                  size: SIMD3<Float>(1.5, 0.06, 0.4),
+                  offset: SIMD3<Float>(0, 0.1, 1.8))
         // Left angled tail
         appendBox(vertices: &vertices, indices: &indices,
                   size: SIMD3<Float>(0.1, 1.0, 0.8),
@@ -404,37 +434,35 @@ class AircraftMeshLibrary {
     }
 
     private func buildRegional(device: MTLDevice) -> AircraftMesh {
-        // Same as jet but 0.8x scale
         var vertices: [AircraftVertex] = []
         var indices: [UInt16] = []
 
-        let s: Float = 0.8
-        // Fuselage
+        // Fuselage: slightly smaller than jet (r=0.35, h=3.5)
         appendCylinder(vertices: &vertices, indices: &indices,
-                       radius: 0.4 * s, height: 4.0 * s)
-        // Nose cone
+                       radius: 0.35, height: 3.5)
+        // Nose cone (proportional)
         appendCone(vertices: &vertices, indices: &indices,
-                   radius: 0.4 * s, height: 1.2 * s,
-                   offset: SIMD3<Float>(0, 0, 2.0 * s))
-        // Wings
+                   radius: 0.35, height: 0.9,
+                   offset: SIMD3<Float>(0, 0, 1.75))
+        // Wings: straight, moderate span (no aft offset -- straighter than jets)
         appendBox(vertices: &vertices, indices: &indices,
-                  size: SIMD3<Float>(5 * s, 0.15 * s, 1.5 * s))
-        // Vertical tail
+                  size: SIMD3<Float>(4.5, 0.12, 1.2))
+        // T-tail: tall vertical stabilizer
         appendBox(vertices: &vertices, indices: &indices,
-                  size: SIMD3<Float>(0.15 * s, 1.2 * s, 1.0 * s),
-                  offset: SIMD3<Float>(0, 0.6 * s, -1.5 * s))
-        // Horizontal stabilizer
+                  size: SIMD3<Float>(0.12, 1.4, 0.9),
+                  offset: SIMD3<Float>(0, 0.7, -1.3))
+        // T-tail: horizontal stabilizer at TOP of vertical tail (high Y = T-tail)
         appendBox(vertices: &vertices, indices: &indices,
-                  size: SIMD3<Float>(2.0 * s, 0.1 * s, 0.6 * s),
-                  offset: SIMD3<Float>(0, 0.6 * s, -1.8 * s))
-        // Left engine
+                  size: SIMD3<Float>(2.2, 0.08, 0.5),
+                  offset: SIMD3<Float>(0, 1.4, -1.5))
+        // Left engine: mounted ON wing (turboprop style, above wing line)
         appendCylinder(vertices: &vertices, indices: &indices,
-                       radius: 0.25 * s, height: 0.8 * s,
-                       offset: SIMD3<Float>(-1.5 * s, -0.3 * s, 0.5 * s))
-        // Right engine
+                       radius: 0.2, height: 0.7,
+                       offset: SIMD3<Float>(-1.2, 0.1, 0.2))
+        // Right engine: mounted ON wing
         appendCylinder(vertices: &vertices, indices: &indices,
-                       radius: 0.25 * s, height: 0.8 * s,
-                       offset: SIMD3<Float>(1.5 * s, -0.3 * s, 0.5 * s))
+                       radius: 0.2, height: 0.7,
+                       offset: SIMD3<Float>(1.2, 0.1, 0.2))
 
         return createMesh(device: device, vertices: vertices, indices: indices)
     }
@@ -464,10 +492,14 @@ class AircraftMeshLibrary {
         var vertices: [AircraftVertex] = []
         var indices: [UInt16] = []
 
-        // Single blade pair at the nose
+        // Blade 1: vertical (centered at origin for clean rotationZ spin)
         appendBox(vertices: &vertices, indices: &indices,
                   size: SIMD3<Float>(0.08, 1.2, 0.08),
-                  offset: SIMD3<Float>(0, 0, 1.55))
+                  offset: SIMD3<Float>(0, 0, 0))
+        // Blade 2: horizontal (perpendicular for visible cross-shaped spinning)
+        appendBox(vertices: &vertices, indices: &indices,
+                  size: SIMD3<Float>(1.2, 0.08, 0.08),
+                  offset: SIMD3<Float>(0, 0, 0))
 
         return createMesh(device: device, vertices: vertices, indices: indices)
     }
