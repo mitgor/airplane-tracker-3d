@@ -531,8 +531,8 @@ final class AirspaceManager {
     private func fillColorForClass(_ airClass: String) -> SIMD4<Float> {
         switch airClass {
         case "B": return SIMD4<Float>(0.27, 0.40, 1.0, 0.06)  // Blue
-        case "C": return SIMD4<Float>(0.60, 0.27, 1.0, 0.06)  // Purple
-        case "D": return SIMD4<Float>(0.27, 0.67, 1.0, 0.06)  // Cyan
+        case "C": return SIMD4<Float>(0.0, 0.8, 0.3, 0.06)    // Green
+        case "D": return SIMD4<Float>(0.8, 0.0, 0.8, 0.06)    // Magenta
         default:  return SIMD4<Float>(0.27, 0.53, 1.0, 0.06)  // Fallback blue
         }
     }
@@ -541,8 +541,8 @@ final class AirspaceManager {
     private func edgeColorForClass(_ airClass: String) -> SIMD4<Float> {
         switch airClass {
         case "B": return SIMD4<Float>(0.27, 0.40, 1.0, 0.3)
-        case "C": return SIMD4<Float>(0.60, 0.27, 1.0, 0.3)
-        case "D": return SIMD4<Float>(0.27, 0.67, 1.0, 0.3)
+        case "C": return SIMD4<Float>(0.0, 0.8, 0.3, 0.3)
+        case "D": return SIMD4<Float>(0.8, 0.0, 0.8, 0.3)
         default:  return SIMD4<Float>(0.27, 0.53, 1.0, 0.3)
         }
     }

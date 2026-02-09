@@ -87,8 +87,8 @@ final class ThemeManager {
             airportLabelColor: SIMD4<Float>(0.0, 0.4, 0.8, 1.0),
             altLineColor: SIMD4<Float>(0.5, 0.5, 0.5, 0.3),
             airspaceClassBColor: SIMD4<Float>(0.27, 0.40, 1.0, 0.06),
-            airspaceClassCColor: SIMD4<Float>(0.60, 0.27, 1.0, 0.06),
-            airspaceClassDColor: SIMD4<Float>(0.27, 0.67, 1.0, 0.06)
+            airspaceClassCColor: SIMD4<Float>(0.0, 0.8, 0.3, 0.06),
+            airspaceClassDColor: SIMD4<Float>(0.8, 0.0, 0.8, 0.06)
         ),
         .night: ThemeConfig(
             clearColor: (r: 0.039, g: 0.039, b: 0.102),
@@ -101,8 +101,8 @@ final class ThemeManager {
             airportLabelColor: SIMD4<Float>(0.4, 0.733, 1.0, 1.0),
             altLineColor: SIMD4<Float>(0.5, 0.5, 0.5, 0.3),
             airspaceClassBColor: SIMD4<Float>(0.33, 0.47, 1.0, 0.08),
-            airspaceClassCColor: SIMD4<Float>(0.67, 0.33, 1.0, 0.08),
-            airspaceClassDColor: SIMD4<Float>(0.33, 0.73, 1.0, 0.08)
+            airspaceClassCColor: SIMD4<Float>(0.0, 0.9, 0.4, 0.08),
+            airspaceClassDColor: SIMD4<Float>(0.9, 0.0, 0.9, 0.08)
         ),
         .retro: ThemeConfig(
             clearColor: (r: 0.0, g: 0.031, b: 0.0),
