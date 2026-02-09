@@ -60,26 +60,26 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FIX-01 | TBD | Pending |
-| FIX-02 | TBD | Pending |
-| FIX-03 | TBD | Pending |
-| INFO-01 | TBD | Pending |
-| INFO-02 | TBD | Pending |
-| INFO-03 | TBD | Pending |
-| AIR-01 | TBD | Pending |
-| AIR-02 | TBD | Pending |
-| AIR-03 | TBD | Pending |
-| HEAT-01 | TBD | Pending |
-| HEAT-02 | TBD | Pending |
-| VIS-01 | TBD | Pending |
-| VIS-02 | TBD | Pending |
-| VIS-03 | TBD | Pending |
+| FIX-01 | Phase 11 | Pending |
+| FIX-02 | Phase 11 | Pending |
+| FIX-03 | Phase 11 | Pending |
+| INFO-01 | Phase 12 | Pending |
+| INFO-02 | Phase 12 | Pending |
+| INFO-03 | Phase 12 | Pending |
+| AIR-01 | Phase 13 | Pending |
+| AIR-02 | Phase 13 | Pending |
+| AIR-03 | Phase 13 | Pending |
+| HEAT-01 | Phase 14 | Pending |
+| HEAT-02 | Phase 14 | Pending |
+| VIS-01 | Phase 15 | Pending |
+| VIS-02 | Phase 15 | Pending |
+| VIS-03 | Phase 15 | Pending |
 
 **Coverage:**
 - v2.1 requirements: 14 total
-- Mapped to phases: 0
-- Unmapped: 14 (pending roadmap creation)
+- Mapped to phases: 14
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-09*
-*Last updated: 2026-02-09 after initial definition*
+*Last updated: 2026-02-09 after roadmap creation*
