@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-09)
 
 **Core value:** Real-time 3D flight visualization that works both as a personal ADS-B receiver dashboard and as a global flight explorer with airport discovery.
-**Current focus:** v2.2 Core Fixes & Data Sources
+**Current focus:** Phase 16 - Camera-Following API & Aircraft Visibility
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-02-09 — Milestone v2.2 started
+Phase: 16 of 18 (Camera-Following API & Aircraft Visibility)
+Plan: 0 of TBD in current phase
+Status: Ready to plan
+Last activity: 2026-02-09 — Roadmap created for v2.2
 
-Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 shipped (5 phases)
+Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 shipped (5 phases), v2.2 [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -28,7 +28,7 @@ Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 shipped (5 phas
 - Total execution time: ~47min
 
 **v2.1 Velocity:**
-- Plans completed: 9 (formerly 10, corrected)
+- Plans completed: 9
 - Average duration: ~2.8min
 - Total execution time: ~28min
 
@@ -40,7 +40,9 @@ All decisions archived in PROJECT.md Key Decisions table.
 
 ### Known Issues
 
-None.
+- Global API queries use a fixed center coordinate, so aircraft only load for one area regardless of camera position
+- Airport search returns wrong results for some queries (e.g., "Berlin")
+- Airport database limited to 99 airports
 
 ### Pending Todos
 
@@ -53,5 +55,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: v2.1 milestone archived. Between milestones.
+Stopped at: v2.2 roadmap created. Ready to plan Phase 16.
 Resume file: None

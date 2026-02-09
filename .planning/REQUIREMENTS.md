@@ -43,20 +43,20 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DATA-01 | — | Pending |
-| DATA-02 | — | Pending |
-| DATA-03 | — | Pending |
-| DATA-04 | — | Pending |
-| ARPT-01 | — | Pending |
-| ARPT-02 | — | Pending |
-| ARPT-03 | — | Pending |
-| RNDR-01 | — | Pending |
+| DATA-01 | Phase 18 | Pending |
+| DATA-02 | Phase 16 | Pending |
+| DATA-03 | Phase 18 | Pending |
+| DATA-04 | Phase 18 | Pending |
+| ARPT-01 | Phase 17 | Pending |
+| ARPT-02 | Phase 17 | Pending |
+| ARPT-03 | Phase 17 | Pending |
+| RNDR-01 | Phase 16 | Pending |
 
 **Coverage:**
 - v2.2 requirements: 8 total
-- Mapped to phases: 0
-- Unmapped: 8 ⚠️
+- Mapped to phases: 8
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-09*
-*Last updated: 2026-02-09 after initial definition*
+*Last updated: 2026-02-09 after roadmap creation*
