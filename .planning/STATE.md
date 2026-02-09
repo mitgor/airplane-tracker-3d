@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-09)
 
 **Core value:** Real-time 3D flight visualization that works both as a personal ADS-B receiver dashboard and as a global flight explorer with airport discovery.
-**Current focus:** v2.2 milestone complete
+**Current focus:** Between milestones — v2.2 shipped, planning next milestone
 
 ## Current Position
 
-Phase: 18 of 18 (Remote Data Sources)
-Plan: 1 of 1 in current phase
-Status: Complete
-Last activity: 2026-02-09 — Phase 18 complete (remote data sources)
+Phase: None (between milestones)
+Plan: N/A
+Status: v2.2 milestone archived. Ready for next milestone.
+Last activity: 2026-02-09 — Archived v2.2 milestone
 
-Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 shipped (5 phases), v2.2 [██████████] 100%
+Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 shipped (5 phases), v2.2 shipped (3 phases)
 
 ## Performance Metrics
 
@@ -45,12 +45,6 @@ Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 shipped (5 phas
 ### Decisions
 
 All decisions archived in PROJECT.md Key Decisions table.
-- Polling loop reads actor-isolated currentCenter each cycle via await (no closure capture)
-- switchDataSource uses current camera position instead of hardcoded Seattle
-- 489 airports (within 480-520 target) balanced across 7 world regions
-- Atlas scaled to 2048x1024 (8MB VRAM) for 512 slots
-- Remote mode uses 1s polling interval and local buffer/stale thresholds (same as local dump1090)
-- Port defaults to 8080 with guard for unset UserDefaults integer key
 
 ### Known Issues
 
@@ -67,5 +61,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: Completed 18-01-PLAN.md. Phase 18 done. v2.2 milestone complete.
+Stopped at: v2.2 milestone archived. Between milestones.
 Resume file: None

@@ -64,18 +64,15 @@ Real-time 3D flight visualization that works both as a personal ADS-B receiver d
 - ✓ Terrain LOD: 3-ring multi-zoom tile selection (near/mid/far zoom levels) — v2.1
 - ✓ Spring-animated panel transitions replacing easeInOut — v2.1
 - ✓ Airspace labels at volume centroids with texture atlas and distance culling — v2.1
+- ✓ Camera-following global API center — aircraft load for the area being viewed — v2.2
+- ✓ Expanded airport database from 99 to 489 worldwide airports with balanced global coverage — v2.2
+- ✓ Configurable remote dump1090 data source with IP:port entry in Settings — v2.2
+- ✓ Three-way data source switching (Local/Remote/Global) with immediate effect — v2.2
+- ✓ Airport search returns correct results for all 489 airports (Berlin, Frankfurt, etc.) — v2.2
 
 ### Active
 
-## Current Milestone: v2.2 Core Fixes & Data Sources
-
-**Goal:** Fix broken aircraft/airport visibility, expand airport database, and add configurable remote dump1090 data source.
-
-**Target features:**
-- Camera-following global API center (aircraft load wherever you're looking)
-- Expanded airport database (~500 major worldwide airports)
-- Configurable remote dump1090 IP:port in Settings
-- Fix airport search to return correct results
+(No active requirements — planning next milestone)
 
 ### Out of Scope
 
@@ -88,15 +85,15 @@ Real-time 3D flight visualization that works both as a personal ADS-B receiver d
 
 ## Context
 
-**v2.1 shipped.** The native macOS app is feature-complete with all v1.0 web capabilities ported plus native macOS integration. ~8,985 LOC across Swift/Metal/C header files. The web version (~5,600 lines, single HTML file) remains available as the cross-platform option.
+**v2.2 shipped.** The native macOS app has camera-following API queries, 489 worldwide airports, and configurable remote dump1090 support. ~9,096 LOC across Swift/Metal/C header files. The web version (~5,600 lines, single HTML file) remains available as the cross-platform option.
 
-v2.1 fixed rendering bugs (map tiles, propeller rotation), restored the info panel (photos, external links, lat/lon), ported airspace volumes and coverage heatmaps to Metal, and added visual polish (terrain LOD, spring animations, airspace labels).
+v2.2 fixed aircraft visibility (API center follows camera instead of being stuck on Seattle), expanded the airport database from 99 to 489 worldwide airports, and added remote dump1090 support with configurable IP:port in Settings.
 
 **Tech stack:** Swift, Metal 3, SwiftUI, macOS 14 Sonoma minimum, zero external dependencies.
 
 Inspiration: [Air Loom](http://objectiveunclear.com/airloom.html)
 
-Airport data: embedded 99-airport JSON dataset (OurAirports-derived).
+Airport data: embedded 489-airport JSON dataset (OurAirports-derived, balanced global coverage).
 
 ## Constraints
 
@@ -133,6 +130,9 @@ Airport data: embedded 99-airport JSON dataset (OurAirports-derived).
 | planespotters.net + hexdb.io photo fallback | No API key required; AsyncImage handles 404 gracefully | ✓ Good — v2.1 |
 | UserDefaults.register() for boolean defaults | Ensures toggles default to true without sentinel values | ✓ Good — v2.1 |
 | 3-ring terrain LOD (near/mid/far zoom) | Higher resolution near camera without increasing total tile count significantly | ✓ Good — v2.1 |
+| Actor-isolated mutable currentCenter for polling | Polling loop reads camera-derived center each cycle via await; no closure capture | ✓ Good — v2.2 |
+| 489 airports with 2048x1024 atlas (512 slots) | Balanced global coverage within Metal texture limits; 8MB VRAM | ✓ Good — v2.2 |
+| DataMode.remote(host:port:) with local-like timing | Remote dump1090 uses same 1s poll / 5s buffer as local; identical protocol | ✓ Good — v2.2 |
 
 ---
-*Last updated: 2026-02-09 after v2.2 milestone started*
+*Last updated: 2026-02-09 after v2.2 milestone complete*

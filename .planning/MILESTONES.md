@@ -54,3 +54,19 @@
 
 ---
 
+
+## v2.2 Core Fixes & Data Sources (Shipped: 2026-02-09)
+
+**Phases completed:** 3 phases (16-18), 3 plans, 6 tasks
+**Source:** ~9,096 LOC total (~111 lines added to Swift, ~447 to airport data)
+**Timeline:** 2026-02-09 (~12 min execution time)
+
+**Key accomplishments:**
+- Camera-following global API center — aircraft load for whatever area the user is viewing, not just Seattle
+- Expanded airport database from 99 to 489 worldwide airports with balanced global coverage (Berlin, Frankfurt, all major hubs included)
+- Configurable remote dump1090 data source — enter IP:port in Settings to poll a network ADS-B receiver
+- Three-way data source switching (Local/Remote/Global) with immediate effect, no restart needed
+- Label atlas scaled to 2048x1024 (512 slots) for expanded airport database
+
+---
+
