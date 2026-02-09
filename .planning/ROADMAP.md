@@ -40,7 +40,7 @@
 - [x] **Phase 6: Data Pipeline + Aircraft Rendering** - Live aircraft from network APIs with instanced Metal rendering and smooth interpolation ✅
 - [x] **Phase 7: Trails + Labels + Selection** - Flight trails, billboard text labels, aircraft selection with detail panel, and follow mode ✅
 - [x] **Phase 8: Terrain + Themes** - Elevation mesh, three visual themes, and airport ground labels ✅
-- [ ] **Phase 9: UI Controls + Settings + Airports** - SwiftUI controls, airport search, statistics, keyboard shortcuts, and settings persistence
+- [x] **Phase 9: UI Controls + Settings + Airports** - SwiftUI controls, airport search, statistics, keyboard shortcuts, and settings persistence ✅
 - [ ] **Phase 10: Native macOS Integration + Distribution** - Menu bar status item, dock badge, notifications, native menus, and notarized DMG
 
 ## Phase Details
@@ -119,8 +119,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 09-01-PLAN.md -- Airport search with autocomplete, fly-to camera animation, and nearby airports browsing
-- [ ] 09-02-PLAN.md -- SwiftUI Settings window, info panel, statistics charts, keyboard shortcuts with menu bar, and persistence
+- [x] 09-01-PLAN.md -- Airport search with autocomplete, fly-to camera animation, and nearby airports browsing
+- [x] 09-02-PLAN.md -- SwiftUI Settings window, info panel, statistics charts, keyboard shortcuts with menu bar, and persistence
 
 ### Phase 10: Native macOS Integration + Distribution
 **Goal**: The app feels like a first-class macOS citizen -- menu bar status, dock badge, smart notifications, native menus -- and ships as a signed, notarized DMG
@@ -198,5 +198,5 @@ Phases execute in numeric order: 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 6. Data Pipeline + Aircraft Rendering | v2.0 | 2/2 | Complete | 2026-02-08 |
 | 7. Trails + Labels + Selection | v2.0 | 2/2 | Complete | 2026-02-08 |
 | 8. Terrain + Themes | v2.0 | 2/2 | Complete | 2026-02-09 |
-| 9. UI Controls + Settings + Airports | v2.0 | 0/2 | Not started | - |
+| 9. UI Controls + Settings + Airports | v2.0 | 2/2 | Complete | 2026-02-09 |
 | 10. Native macOS Integration + Distribution | v2.0 | 0/2 | Not started | - |
