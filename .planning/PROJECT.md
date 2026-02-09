@@ -55,24 +55,19 @@ Real-time 3D flight visualization that works both as a personal ADS-B receiver d
 - ✓ Configurable aircraft alert notifications — v2.0 native
 - ✓ Standard macOS menus (File/Edit/View/Window) — v2.0 native
 - ✓ DMG build/distribution script with entitlements — v2.0 native
+- ✓ Fixed map tile display (removed @2x retina suffix from CartoDB URL) — v2.1
+- ✓ Fixed propeller rotation (mesh at origin + noseOffset translation) — v2.1
+- ✓ Reshaped 6 aircraft categories for distinct silhouettes (swept wings, T-tails, rotors) — v2.1
+- ✓ Info panel restoration: lat/lon, external links (FlightAware, ADS-B Exchange, planespotters.net), aircraft photos — v2.1
+- ✓ Translucent 3D FAA airspace volumes (Class B/C/D) with ear-clip triangulation and per-class toggles — v2.1
+- ✓ Coverage heatmap: 32x32 density grid with theme-aware color ramp and Metal texture overlay — v2.1
+- ✓ Terrain LOD: 3-ring multi-zoom tile selection (near/mid/far zoom levels) — v2.1
+- ✓ Spring-animated panel transitions replacing easeInOut — v2.1
+- ✓ Airspace labels at volume centroids with texture atlas and distance culling — v2.1
 
 ### Active
 
-#### v2.1 — Polish & Bug Fixes
-
-**Bug Fixes:**
-- [ ] Fix aircraft model rendering (propeller rotation, model quality)
-- [ ] Fix map tiles not displaying on ground plane surface
-- [ ] Restore missing info panel features from web version (position, photo, external links)
-
-**Missing Features (port from web):**
-- [ ] Airspace volume rendering (Class B/C/D translucent 3D volumes)
-- [ ] Coverage heatmap visualization
-
-**Visual Polish:**
-- [ ] Improved 3D aircraft model silhouettes (more recognizable shapes)
-- [ ] Higher-quality terrain rendering (LOD, detail)
-- [ ] UI refinement (panel layouts, transitions, label quality)
+(No active requirements — planning next milestone)
 
 ### Out of Scope
 
@@ -85,9 +80,9 @@ Real-time 3D flight visualization that works both as a personal ADS-B receiver d
 
 ## Context
 
-**v2.0 shipped.** The native macOS app is a complete rewrite of the web version using Swift, Metal 3, and SwiftUI. 42 source files, 7,043 LOC. The web version (~5,600 lines, single HTML file) remains available as the cross-platform option.
+**v2.1 shipped.** The native macOS app is feature-complete with all v1.0 web capabilities ported plus native macOS integration. ~8,985 LOC across Swift/Metal/C header files. The web version (~5,600 lines, single HTML file) remains available as the cross-platform option.
 
-The native app includes all core visualization features from v1.0 web plus native macOS integration (menu bar, dock badge, notifications, standard menus). The only v1.0 web features not ported to native are: airspace volumes and coverage heatmaps.
+v2.1 fixed rendering bugs (map tiles, propeller rotation), restored the info panel (photos, external links, lat/lon), ported airspace volumes and coverage heatmaps to Metal, and added visual polish (terrain LOD, spring animations, airspace labels).
 
 **Tech stack:** Swift, Metal 3, SwiftUI, macOS 14 Sonoma minimum, zero external dependencies.
 
@@ -124,6 +119,12 @@ Airport data: embedded 99-airport JSON dataset (OurAirports-derived).
 | Unsigned DMG default, signed as opt-in | Works without Apple Developer Program membership | ✓ Good — v2.0 |
 | Zero external Swift dependencies | URLSession, simd, UserDefaults only — no SPM packages | ✓ Good — v2.0 |
 | Direct download distribution | No App Store sandboxing, faster iteration, full system access | ✓ Good — v2.0 |
+| Pure Swift ear-clipping for polygon triangulation | No LibTessSwift dependency; O(n^2) fine for FAA polygons <50 vertices | ✓ Good — v2.1 |
+| CPU-side heatmap grid with texture upload | No compute shader needed for 32x32 grid; simple MTLTexture.replace() | ✓ Good — v2.1 |
+| Flat alpha for airspace fill (no Fresnel) | Web app uses flat 0.06 opacity and looks fine; simpler shaders | ✓ Good — v2.1 |
+| planespotters.net + hexdb.io photo fallback | No API key required; AsyncImage handles 404 gracefully | ✓ Good — v2.1 |
+| UserDefaults.register() for boolean defaults | Ensures toggles default to true without sentinel values | ✓ Good — v2.1 |
+| 3-ring terrain LOD (near/mid/far zoom) | Higher resolution near camera without increasing total tile count significantly | ✓ Good — v2.1 |
 
 ---
-*Last updated: 2026-02-09 after v2.1 milestone started*
+*Last updated: 2026-02-09 after v2.1 milestone complete*

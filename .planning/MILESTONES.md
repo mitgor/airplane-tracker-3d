@@ -37,3 +37,20 @@
 
 ---
 
+
+## v2.1 Polish & Bug Fixes (Shipped: 2026-02-09)
+
+**Phases completed:** 5 phases (11-15), 9 plans
+**Source:** ~8,985 LOC total (~1,971 lines added)
+**Timeline:** 2026-02-09 (~28 min execution time)
+
+**Key accomplishments:**
+- Fixed map tile display (removed @2x retina suffix), propeller rotation (mesh at origin + noseOffset), and reshaped 6 aircraft category silhouettes
+- Restored info panel: lat/lon coordinates, external links (FlightAware, ADS-B Exchange, planespotters.net), aircraft photos with fallback
+- Translucent 3D FAA airspace volumes (Class B/C/D) with ear-clip triangulation, per-class toggles, and airspace labels at volume centroids
+- Coverage heatmap: 32x32 density grid with theme-aware color ramp and Metal texture overlay
+- Terrain LOD: 3-ring multi-zoom tile selection (near/mid/far zoom levels)
+- Spring-animated panel transitions and airspace labels with distance culling
+
+---
+
