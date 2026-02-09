@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // MARK: - AircraftDetailPanel
 
@@ -14,6 +15,7 @@ struct AircraftDetailPanel: View {
     @State private var enrichedAircraft: AircraftEnrichment?
     @State private var routeInfo: RouteEnrichment?
     @State private var isLoadingEnrichment = true
+    @State private var photoURL: String?
 
     @AppStorage("unitSystem") private var unitSystem: String = "imperial"
 
@@ -107,6 +109,41 @@ struct AircraftDetailPanel: View {
                 }
             }
 
+            // External links section
+            Divider().background(Color.gray)
+            sectionHeader("Links")
+            HStack(spacing: 12) {
+                if !aircraft.callsign.isEmpty {
+                    linkButton("FlightAware", url: "https://flightaware.com/live/flight/\(aircraft.callsign.trimmingCharacters(in: .whitespaces))")
+                }
+                linkButton("ADS-B Exchange", url: "https://globe.adsbexchange.com/?icao=\(aircraft.hex)")
+                linkButton("Planespotters", url: "https://www.planespotters.net/hex/\(aircraft.hex)")
+            }
+
+            // Aircraft photo section
+            if let urlStr = photoURL, let url = URL(string: urlStr) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(maxWidth: .infinity, maxHeight: 120)
+                            .clipped()
+                            .cornerRadius(8)
+                    case .failure:
+                        EmptyView()
+                    case .empty:
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.gray.opacity(0.2))
+                            .frame(maxWidth: .infinity, maxHeight: 120)
+                            .overlay(ProgressView().tint(.gray))
+                    @unknown default:
+                        EmptyView()
+                    }
+                }
+            }
+
             Spacer()
 
             // Follow button
@@ -131,8 +168,10 @@ struct AircraftDetailPanel: View {
         .task {
             async let acInfo = enrichmentService.fetchAircraftInfo(hex: aircraft.hex)
             async let rtInfo = enrichmentService.fetchRouteInfo(callsign: aircraft.callsign)
+            async let photoInfo = enrichmentService.fetchPhotoURL(hex: aircraft.hex)
             enrichedAircraft = await acInfo
             routeInfo = await rtInfo
+            photoURL = await photoInfo
             isLoadingEnrichment = false
         }
     }
@@ -144,6 +183,20 @@ struct AircraftDetailPanel: View {
             .font(.caption.bold())
             .foregroundColor(.gray)
             .textCase(.uppercase)
+    }
+
+    private func linkButton(_ title: String, url: String) -> some View {
+        Button(action: {
+            if let url = URL(string: url) {
+                NSWorkspace.shared.open(url)
+            }
+        }) {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.blue)
+                .underline()
+        }
+        .buttonStyle(.plain)
     }
 
     private func dataRow(_ label: String, _ value: String) -> some View {
