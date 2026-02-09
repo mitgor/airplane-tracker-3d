@@ -99,6 +99,18 @@ struct MetalView: NSViewRepresentable {
                 self, selector: #selector(handleFlyToAirport(_:)),
                 name: .flyToAirport, object: nil
             )
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(handleResetCamera),
+                name: .resetCamera, object: nil
+            )
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(handleToggleAutoRotate),
+                name: .toggleAutoRotate, object: nil
+            )
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(handleSetTheme(_:)),
+                name: .setTheme, object: nil
+            )
         }
 
         deinit {
@@ -118,6 +130,20 @@ struct MetalView: NSViewRepresentable {
             renderer.selectionManager.selectedHex = nil
             renderer.selectionManager.isFollowing = false
             renderer.camera.followTarget = nil
+        }
+
+        @objc private func handleResetCamera() {
+            renderer?.camera.reset()
+        }
+
+        @objc private func handleToggleAutoRotate() {
+            renderer?.camera.isAutoRotating.toggle()
+        }
+
+        @objc private func handleSetTheme(_ notification: Notification) {
+            guard let themeString = notification.userInfo?["theme"] as? String,
+                  let theme = Theme(rawValue: themeString) else { return }
+            renderer?.themeManager.current = theme
         }
 
         @objc private func handleFlyToAirport(_ notification: Notification) {

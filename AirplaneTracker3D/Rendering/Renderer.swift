@@ -805,6 +805,16 @@ extension Renderer: MTKViewDelegate {
             }
             lastFrameTime = now
 
+            // Read configurable settings from UserDefaults (written by SettingsView @AppStorage)
+            let settingsTrailLength = UserDefaults.standard.integer(forKey: "trailLength")
+            if settingsTrailLength > 0 {
+                trailManager.maxTrailLength = settingsTrailLength
+            }
+            let settingsTrailWidth = UserDefaults.standard.double(forKey: "trailWidth")
+            if settingsTrailWidth > 0 {
+                trailManager.lineWidth = Float(settingsTrailWidth)
+            }
+
             // Update camera
             camera.update(deltaTime: deltaTime)
 
@@ -942,7 +952,25 @@ extension Renderer: MTKViewDelegate {
             }
 
             // --- Aircraft Rendering ---
-            let states = flightDataManager?.interpolatedStates(at: now) ?? []
+            let rawStates = flightDataManager?.interpolatedStates(at: now) ?? []
+
+            // Apply altitude exaggeration from settings
+            let altExag = Float(UserDefaults.standard.double(forKey: "altitudeExaggeration"))
+            let states: [InterpolatedAircraftState]
+            if altExag > 0 && altExag != 1.0 {
+                states = rawStates.map { var s = $0; s.position.y *= altExag; return s }
+            } else {
+                states = rawStates
+            }
+
+            // Post aircraft count periodically (~1 second at 60fps)
+            if frameCounter % 60 == 0 {
+                NotificationCenter.default.post(
+                    name: .aircraftCountUpdated,
+                    object: nil,
+                    userInfo: ["count": states.count, "time": Date()]
+                )
+            }
 
             // Update airport labels every frame (distance-culled)
             airportLabelManager.update(bufferIndex: currentBufferIndex,

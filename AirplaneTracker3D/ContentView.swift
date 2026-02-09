@@ -17,6 +17,27 @@ struct ContentView: View {
     /// Current camera target for nearby airport distance computation
     @State private var cameraTarget: SIMD3<Float> = .zero
 
+    /// Whether the info panel is visible (on by default)
+    @State private var showInfoPanel: Bool = true
+
+    /// Whether the statistics panel is visible
+    @State private var showStatsPanel: Bool = false
+
+    /// Statistics collector for time-series charting
+    @StateObject private var statisticsCollector = StatisticsCollector()
+
+    /// Live aircraft count from the renderer
+    @State private var aircraftCount: Int = 0
+
+    /// Last time the aircraft count was updated
+    @State private var lastUpdateTime: Date = Date()
+
+    /// Camera center latitude (for info panel display)
+    @State private var centerLat: Double = 47.6
+
+    /// Camera center longitude (for info panel display)
+    @State private var centerLon: Double = -122.3
+
     var body: some View {
         ZStack(alignment: .trailing) {
             MetalView(
@@ -77,6 +98,29 @@ struct ContentView: View {
                 }
 
                 Spacer()
+
+                // Bottom row: info panel (left) and stats panel (right)
+                HStack(alignment: .bottom) {
+                    if showInfoPanel {
+                        InfoPanel(
+                            aircraftCount: aircraftCount,
+                            lastUpdateTime: lastUpdateTime,
+                            centerLat: centerLat,
+                            centerLon: centerLon
+                        )
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                    }
+
+                    Spacer()
+
+                    if showStatsPanel {
+                        StatisticsPanel(collector: statisticsCollector)
+                            .transition(.move(edge: .bottom))
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
             }
 
             if let aircraft = selectedAircraft {
@@ -108,6 +152,15 @@ struct ContentView: View {
             let center = (lat: MapCoordinateSystem.shared.centerLat,
                           lon: MapCoordinateSystem.shared.centerLon)
             flightDataManager.startPolling(mode: .global, center: center)
+
+            // Configure statistics collector
+            statisticsCollector.aircraftCountProvider = { [self] in
+                aircraftCount
+            }
+            statisticsCollector.start()
+        }
+        .onDisappear {
+            statisticsCollector.stop()
         }
         .onReceive(NotificationCenter.default.publisher(for: .themeChanged)) { notification in
             if let theme = notification.object as? Theme {
@@ -126,6 +179,27 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .cameraTargetUpdated)) { notification in
             if let pos = notification.userInfo?["target"] as? [Float], pos.count >= 3 {
                 cameraTarget = SIMD3<Float>(pos[0], pos[1], pos[2])
+                // Update center coordinates for info panel
+                centerLat = MapCoordinateSystem.shared.zToLat(pos[2])
+                centerLon = MapCoordinateSystem.shared.xToLon(pos[0])
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleInfoPanel)) { _ in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showInfoPanel.toggle()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleStats)) { _ in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showStatsPanel.toggle()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .aircraftCountUpdated)) { notification in
+            if let count = notification.userInfo?["count"] as? Int {
+                aircraftCount = count
+            }
+            if let time = notification.userInfo?["time"] as? Date {
+                lastUpdateTime = time
             }
         }
     }
