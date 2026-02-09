@@ -10,10 +10,11 @@ actor FlightDataActor {
 
     // MARK: - Types
 
-    /// Data source mode: local dump1090 receiver or global API providers.
+    /// Data source mode: local dump1090 receiver, remote dump1090 over network, or global API providers.
     enum DataMode: Sendable {
         case local
         case global
+        case remote(host: String, port: Int)
     }
 
     /// An API provider with URL builder and failure tracking.
@@ -103,7 +104,13 @@ actor FlightDataActor {
 
         return AsyncStream { continuation in
             let task = Task { [weak self] in
-                let interval: Duration = mode == .local ? .seconds(1) : .seconds(5)
+                let interval: Duration
+                switch mode {
+                case .local, .remote:
+                    interval = .seconds(1)
+                case .global:
+                    interval = .seconds(5)
+                }
                 while !Task.isCancelled {
                     guard let self = self else { break }
                     let center = await self.currentCenter
@@ -139,8 +146,13 @@ actor FlightDataActor {
 
     /// Fetch aircraft with provider fallback.
     private func fetchWithFallback(mode: DataMode, center: (lat: Double, lon: Double)) async -> [AircraftModel] {
-        if mode == .local {
+        switch mode {
+        case .local:
             return await fetchLocal()
+        case .remote(let host, let port):
+            return await fetchRemote(host: host, port: port)
+        case .global:
+            break
         }
         // Global: try each provider in sequence
         for i in providers.indices {
@@ -169,14 +181,33 @@ actor FlightDataActor {
         }
     }
 
+    /// Fetch from a remote dump1090 receiver at the given host and port.
+    private func fetchRemote(host: String, port: Int) async -> [AircraftModel] {
+        guard let url = URL(string: "http://\(host):\(port)/data/aircraft.json") else {
+            return []
+        }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let response = try JSONDecoder().decode(Dump1090Response.self, from: data)
+            return DataNormalizer.normalizeDump1090(response)
+        } catch {
+            return [] // Silent failure for network errors
+        }
+    }
+
     // MARK: - Buffer Management
 
     /// Update the interpolation buffer with new aircraft data.
     /// Timestamps each entry, trims old entries, and removes stale aircraft.
     private func updateBuffer(_ aircraft: [AircraftModel]) {
         let now = CACurrentMediaTime()
-        let bufferWindow = currentMode == .local ? localBufferWindow : globalBufferWindow
-        let staleThreshold = currentMode == .local ? localStaleThreshold : globalStaleThreshold
+        let isLocalOrRemote: Bool
+        switch currentMode {
+        case .local, .remote: isLocalOrRemote = true
+        case .global: isLocalOrRemote = false
+        }
+        let bufferWindow = isLocalOrRemote ? localBufferWindow : globalBufferWindow
+        let staleThreshold = isLocalOrRemote ? localStaleThreshold : globalStaleThreshold
 
         // Add new data points
         for ac in aircraft {
