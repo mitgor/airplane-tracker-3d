@@ -62,6 +62,10 @@ final class Renderer: NSObject {
 
     let airportLabelManager: AirportLabelManager
 
+    // MARK: - Airspace Labels
+
+    let airspaceLabelManager: AirspaceLabelManager
+
     // MARK: - Theme
 
     let themeManager = ThemeManager()
@@ -584,6 +588,9 @@ final class Renderer: NSObject {
         // --- Airport Label Manager ---
         airportLabelManager = AirportLabelManager(device: device)
 
+        // --- Airspace Label Manager ---
+        airspaceLabelManager = AirspaceLabelManager(device: device)
+
         super.init()
 
         // Apply initial theme to label manager
@@ -610,6 +617,9 @@ final class Renderer: NSObject {
 
         // Re-rasterize airport labels
         airportLabelManager.updateTheme(config)
+
+        // Re-rasterize airspace labels
+        airspaceLabelManager.updateTheme(config)
     }
 
     /// Apply theme config to label manager text/bg colors.
@@ -872,6 +882,32 @@ final class Renderer: NSObject {
         )
     }
 
+    // MARK: - Airspace Label Rendering
+
+    /// Encode airspace name label sprites with alpha blending.
+    private func encodeAirspaceLabels(encoder: MTLRenderCommandEncoder, uniformBuffer: MTLBuffer) {
+        let count = airspaceLabelManager.labelCount(at: currentBufferIndex)
+        guard count > 0 else { return }
+
+        encoder.setRenderPipelineState(labelPipeline)
+        encoder.setDepthStencilState(glowDepthStencilState) // depth-read, no-write
+
+        encoder.setVertexBuffer(uniformBuffer, offset: 0, index: Int(BufferIndexUniforms.rawValue))
+        encoder.setVertexBuffer(airspaceLabelManager.labelBuffer(at: currentBufferIndex), offset: 0,
+                                 index: Int(BufferIndexLabelInstances.rawValue))
+
+        if let atlas = airspaceLabelManager.textureAtlas {
+            encoder.setFragmentTexture(atlas, index: 0)
+        }
+
+        encoder.drawPrimitives(
+            type: .triangle,
+            vertexStart: 0,
+            vertexCount: 6,
+            instanceCount: count
+        )
+    }
+
     // MARK: - Glow Rendering
 
     /// Encode glow billboard sprites with additive blending.
@@ -1042,6 +1078,17 @@ extension Renderer: MTKViewDelegate {
             airspaceManager.showClassC = showClassC
             airspaceManager.showClassD = showClassD
             airspaceManager.update(bufferIndex: currentBufferIndex, themeConfig: config)
+
+            // Update airspace labels with filtered features
+            airspaceLabelManager.update(
+                features: airspaceManager.visibleFeatures,
+                showClassB: showClassB,
+                showClassC: showClassC,
+                showClassD: showClassD,
+                bufferIndex: currentBufferIndex,
+                cameraPosition: camera.position,
+                themeConfig: config
+            )
 
             // Update heatmap buffers (texture + quad geometry)
             heatmapManager.update(bufferIndex: currentBufferIndex, themeConfig: config)
@@ -1251,6 +1298,7 @@ extension Renderer: MTKViewDelegate {
                 // Encode airspace volumes (translucent, depth-read no-write)
                 if showAirspace {
                     encodeAirspaceVolumes(encoder: encoder, uniformBuffer: uniformBuffer)
+                    encodeAirspaceLabels(encoder: encoder, uniformBuffer: uniformBuffer)
                 }
 
                 // Encode trail polylines (after aircraft, before glow)
@@ -1273,6 +1321,7 @@ extension Renderer: MTKViewDelegate {
                 // Render airspace volumes even when no aircraft visible
                 if showAirspace {
                     encodeAirspaceVolumes(encoder: encoder, uniformBuffer: uniformBuffer)
+                    encodeAirspaceLabels(encoder: encoder, uniformBuffer: uniformBuffer)
                 }
 
                 // Still render airport labels when no aircraft visible
