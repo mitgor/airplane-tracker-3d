@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-09)
 
 **Core value:** Real-time 3D flight visualization that works both as a personal ADS-B receiver dashboard and as a global flight explorer with airport discovery.
-**Current focus:** v2.1 Phase 13 -- Airspace Volume Rendering
+**Current focus:** v2.1 Phase 13 complete -- ready for Phase 14
 
 ## Current Position
 
-Phase: 13 of 15 (Airspace Volume Rendering)
-Plan: 1 of 2 in current phase
-Status: Plan 13-01 complete
-Last activity: 2026-02-09 -- Completed 13-01-PLAN.md (airspace data pipeline and Metal rendering primitives)
+Phase: 13 of 15 (Airspace Volume Rendering) -- COMPLETE
+Plan: 2 of 2 in current phase
+Status: Phase 13 complete (all plans finished)
+Last activity: 2026-02-09 -- Completed 13-02-PLAN.md (renderer integration, theme colors, settings toggles)
 
-Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [####......] 50%
+Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [#####.....] 60%
 
 ## Performance Metrics
 
@@ -24,9 +24,9 @@ Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [####......] 50
 - Total execution time: ~47min
 
 **v2.1 Velocity:**
-- Plans completed: 4
-- Average duration: ~2.5min
-- Total execution time: ~10min
+- Plans completed: 5
+- Average duration: ~2.6min
+- Total execution time: ~13min
 
 ## Accumulated Context
 
@@ -46,13 +46,15 @@ Recent decisions affecting current work:
 - v2.1: planespotters.net as primary photo source with hexdb.io fallback (no API key, AsyncImage handles 404)
 - v2.1: Flat alpha for airspace fill (skip Fresnel), Uniforms.cameraPosition for future polish
 - v2.1: Edge mesh with .line primitive type for clean airspace wireframe outlines
+- v2.1: Theme-aware color override per frame in AirspaceManager.update() for instant theme switching
+- v2.1: UserDefaults.register() for boolean defaults (airspace toggles default to true)
 
 ### Known Issues (v2.1 scope)
 
 - ~~Map tile ground plane not displaying~~ FIXED: @2x URL removed, diagnostic logging added (11-01)
 - ~~Propeller rotation matrix incorrectly composed~~ FIXED: mesh at origin + noseOffset translation (11-01)
 - ~~Native detail panel missing: lat/lon, aircraft photo, external links~~ FIXED: links, photo, lat/lon verified (12-01)
-- Airspace volumes data pipeline built, pending Renderer integration (13-02)
+- ~~Airspace volumes data pipeline built, pending Renderer integration (13-02)~~ FIXED: fully integrated (13-02)
 - Coverage heatmaps not yet ported from web
 
 ### Pending Todos
@@ -61,10 +63,10 @@ None.
 
 ### Blockers/Concerns
 
-- FAA ArcGIS URL integrated (services6.arcgis.com) -- verify at runtime in Plan 13-02
+None.
 
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: Completed 13-01-PLAN.md (airspace data pipeline: ShaderTypes, EarClipTriangulator, AirspaceShaders, AirspaceManager). Plan 02 next.
+Stopped at: Completed 13-02-PLAN.md (renderer integration: pipeline states, draw loop, theme colors, settings toggles). Phase 13 complete.
 Resume file: None
