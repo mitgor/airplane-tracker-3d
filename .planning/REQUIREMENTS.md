@@ -9,20 +9,20 @@ Requirements for v2.2 Core Fixes & Data Sources. Each maps to roadmap phases.
 
 ### Data Sources
 
-- [ ] **DATA-01**: User can enter a remote dump1090 IP:port in Settings to poll aircraft from a network receiver
-- [ ] **DATA-02**: Global API query center follows the camera position so aircraft load for the area being viewed
-- [ ] **DATA-03**: User can switch between Global, Local, and Remote data sources in Settings
-- [ ] **DATA-04**: Data source switch takes effect immediately without restarting the app
+- [x] **DATA-01**: User can enter a remote dump1090 IP:port in Settings to poll aircraft from a network receiver
+- [x] **DATA-02**: Global API query center follows the camera position so aircraft load for the area being viewed
+- [x] **DATA-03**: User can switch between Global, Local, and Remote data sources in Settings
+- [x] **DATA-04**: Data source switch takes effect immediately without restarting the app
 
 ### Airports
 
-- [ ] **ARPT-01**: Airport database contains ~500 major worldwide airports with scheduled commercial service
-- [ ] **ARPT-02**: User can search for Berlin (and other major world airports) by name, IATA, or ICAO and get correct results
-- [ ] **ARPT-03**: Airport labels render for all airports in the expanded database (with existing distance culling)
+- [x] **ARPT-01**: Airport database contains ~500 major worldwide airports with scheduled commercial service
+- [x] **ARPT-02**: User can search for Berlin (and other major world airports) by name, IATA, or ICAO and get correct results
+- [x] **ARPT-03**: Airport labels render for all airports in the expanded database (with existing distance culling)
 
 ### Rendering
 
-- [ ] **RNDR-01**: Aircraft are visible on the 3D map when the global API returns data for the camera area
+- [x] **RNDR-01**: Aircraft are visible on the 3D map when the global API returns data for the camera area
 
 ## Future Requirements
 
@@ -43,14 +43,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DATA-01 | Phase 18 | Pending |
-| DATA-02 | Phase 16 | Pending |
-| DATA-03 | Phase 18 | Pending |
-| DATA-04 | Phase 18 | Pending |
-| ARPT-01 | Phase 17 | Pending |
-| ARPT-02 | Phase 17 | Pending |
-| ARPT-03 | Phase 17 | Pending |
-| RNDR-01 | Phase 16 | Pending |
+| DATA-01 | Phase 18 | Complete |
+| DATA-02 | Phase 16 | Complete |
+| DATA-03 | Phase 18 | Complete |
+| DATA-04 | Phase 18 | Complete |
+| ARPT-01 | Phase 17 | Complete |
+| ARPT-02 | Phase 17 | Complete |
+| ARPT-03 | Phase 17 | Complete |
+| RNDR-01 | Phase 16 | Complete |
 
 **Coverage:**
 - v2.2 requirements: 8 total
@@ -59,4 +59,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-09*
-*Last updated: 2026-02-09 after roadmap creation*
+*Last updated: 2026-02-09 after v2.2 milestone complete*
