@@ -94,6 +94,9 @@ final class AirspaceManager {
 
     // MARK: - Public API
 
+    /// Read-only access to cached airspace features for label positioning.
+    var visibleFeatures: [AirspaceFeature] { return features }
+
     /// Load airspace data for the given geographic bounds.
     /// Only re-fetches if camera has shifted significantly (>20%).
     func loadAirspace(west: Double, south: Double, east: Double, north: Double) async {
