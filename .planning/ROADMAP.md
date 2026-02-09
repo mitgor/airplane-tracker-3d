@@ -74,11 +74,10 @@ Plans:
   2. User can search for "Berlin" and get Berlin Brandenburg (BER) as a result, not unrelated airports
   3. User can search by name, IATA code, or ICAO code and get correct matches for all 500 airports
   4. Airport labels render on the 3D map for all airports in the expanded database (respecting existing distance culling)
-**Plans**: TBD
+**Plans:** 1 plan
 
 Plans:
-- [ ] 17-01: TBD
-- [ ] 17-02: TBD
+- [ ] 17-01-PLAN.md — Expand airports.json to ~500 airports and resize label atlas
 
 ### Phase 18: Remote Data Sources
 **Goal**: Users can connect to a remote dump1090 receiver over the network and seamlessly switch between Local, Remote, and Global data sources
@@ -118,5 +117,5 @@ Phases execute in numeric order: 16 -> 17 -> 18
 | 14. Coverage Heatmap | v2.1 | 2/2 | Complete | 2026-02-09 |
 | 15. Visual Polish | v2.1 | 2/2 | Complete | 2026-02-09 |
 | 16. Camera-Following API & Aircraft Visibility | v2.2 | 0/1 | Not started | - |
-| 17. Expanded Airport Database | v2.2 | 0/TBD | Not started | - |
+| 17. Expanded Airport Database | v2.2 | 0/1 | Not started | - |
 | 18. Remote Data Sources | v2.2 | 0/TBD | Not started | - |
