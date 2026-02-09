@@ -25,7 +25,7 @@ final class TerrainTileManager {
     /// Ordered list for LRU eviction (most recently used at the end)
     private var cacheOrder: [TileCoordinate] = []
     /// Maximum number of cached terrain meshes
-    private let maxCacheSize: Int = 150
+    private let maxCacheSize: Int = 250
 
     /// Tiles currently being downloaded (prevents duplicate requests)
     private var pendingRequests: Set<TileCoordinate> = []

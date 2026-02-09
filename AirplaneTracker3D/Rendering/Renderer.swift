@@ -660,6 +660,42 @@ final class Renderer: NSObject {
         }
     }
 
+    /// Compute tiles at multiple zoom levels for distance-based level of detail.
+    /// Near camera: higher zoom (more detail), mid-range: base zoom, far: lower zoom (less detail).
+    private func lodTiles(centerLat: Double, centerLon: Double, baseZoom: Int) -> [TileCoordinate] {
+        // Near ring: highest detail, small radius
+        let nearZoom = min(baseZoom + 1, 12)
+        let nearTiles = TileCoordinate.visibleTiles(
+            centerLat: centerLat, centerLon: centerLon,
+            zoom: nearZoom, radius: 1
+        )
+
+        // Mid ring: standard detail, normal radius
+        let midRadius = tileRadius(forZoom: baseZoom)
+        let midTiles = TileCoordinate.visibleTiles(
+            centerLat: centerLat, centerLon: centerLon,
+            zoom: baseZoom, radius: midRadius
+        )
+
+        // Far ring: lower detail, small radius
+        let farZoom = max(baseZoom - 1, 6)
+        let farTiles = TileCoordinate.visibleTiles(
+            centerLat: centerLat, centerLon: centerLon,
+            zoom: farZoom, radius: 2
+        )
+
+        // Combine all three sets -- tiles at different zoom levels don't overlap
+        // because they have different zoom values in TileCoordinate (which is Hashable).
+        // The renderer draws each tile at its own geographic extent, so different zoom
+        // tiles naturally cover different areas without conflict.
+        var allTiles: [TileCoordinate] = []
+        allTiles.reserveCapacity(nearTiles.count + midTiles.count + farTiles.count)
+        allTiles.append(contentsOf: nearTiles)
+        allTiles.append(contentsOf: midTiles)
+        allTiles.append(contentsOf: farTiles)
+        return allTiles
+    }
+
     // MARK: - Aircraft Rendering
 
     /// Encode instanced aircraft body draw calls (one per category with non-zero count).
@@ -1024,16 +1060,14 @@ extension Renderer: MTKViewDelegate {
             uniforms.pointee.projectionMatrix = camera.projectionMatrix
             uniforms.pointee.cameraPosition = camera.position
 
-            // Determine tile zoom level and visible tiles
+            // Determine tile zoom level and visible tiles (multi-zoom LOD)
             currentZoom = tileManager.zoomLevel(forCameraDistance: camera.distance)
             let centerLat = coordSystem.zToLat(camera.target.z)
             let centerLon = coordSystem.xToLon(camera.target.x)
-            let radius = tileRadius(forZoom: currentZoom)
-            let visibleTiles = TileCoordinate.visibleTiles(
+            let visibleTiles = lodTiles(
                 centerLat: centerLat,
                 centerLon: centerLon,
-                zoom: currentZoom,
-                radius: radius
+                baseZoom: currentZoom
             )
 
             // Command buffer
