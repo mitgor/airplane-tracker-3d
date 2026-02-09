@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 ## Current Position
 
 Phase: 11 of 15 (Bug Fixes & Rendering Foundation)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-02-09 -- Roadmap created for v2.1 milestone
+Plan: 2 of 2 in current phase
+Status: Phase 11 complete
+Last activity: 2026-02-09 -- Completed 11-02-PLAN.md (aircraft silhouette geometry)
 
-Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [..........] 0%
+Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [##........] 20%
 
 ## Performance Metrics
 
@@ -23,7 +23,10 @@ Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [..........] 0%
 - Average duration: ~4.4min
 - Total execution time: ~47min
 
-**v2.1:** No plans executed yet.
+**v2.1 Velocity:**
+- Plans completed: 2
+- Average duration: ~2min
+- Total execution time: ~4min
 
 ## Accumulated Context
 
@@ -36,6 +39,8 @@ Recent decisions affecting current work:
 - v2.0: Zero external Swift dependencies (URLSession, simd, UserDefaults only)
 - v2.1: Pure Swift ear-clipping for polygon triangulation (no LibTessSwift dependency)
 - v2.1: CPU-side heatmap grid with texture upload (no compute shader needed for 32x32 grid)
+- v2.1: Single aft-offset wing box for jet sweep (simpler than per-side segments, still visually distinct)
+- v2.1: T-tail + wing-mounted engines for regional jet distinction (not just scaled-down jet)
 
 ### Known Issues (v2.1 scope)
 
@@ -55,5 +60,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: Roadmap created for v2.1 milestone, ready to plan Phase 11
+Stopped at: Completed 11-02-PLAN.md (aircraft silhouette geometry). Phase 11 complete. Pending: user visual verification of silhouettes.
 Resume file: None
