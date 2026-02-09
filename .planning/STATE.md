@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-09)
 
 **Core value:** Real-time 3D flight visualization that works both as a personal ADS-B receiver dashboard and as a global flight explorer with airport discovery.
-**Current focus:** v2.1 Phase 12 -- Info Panel Restoration
+**Current focus:** v2.1 Phase 13 -- Airspace Volume Rendering
 
 ## Current Position
 
-Phase: 12 of 15 (Info Panel Restoration)
-Plan: 1 of 1 in current phase
-Status: Phase 12 complete
-Last activity: 2026-02-09 -- Completed 12-01-PLAN.md (external links, aircraft photo, lat/lon verification)
+Phase: 13 of 15 (Airspace Volume Rendering)
+Plan: 1 of 2 in current phase
+Status: Plan 13-01 complete
+Last activity: 2026-02-09 -- Completed 13-01-PLAN.md (airspace data pipeline and Metal rendering primitives)
 
-Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [###.......] 40%
+Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [####......] 50%
 
 ## Performance Metrics
 
@@ -24,9 +24,9 @@ Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [###.......] 40
 - Total execution time: ~47min
 
 **v2.1 Velocity:**
-- Plans completed: 3
-- Average duration: ~2min
-- Total execution time: ~6min
+- Plans completed: 4
+- Average duration: ~2.5min
+- Total execution time: ~10min
 
 ## Accumulated Context
 
@@ -44,13 +44,16 @@ Recent decisions affecting current work:
 - v2.1: Removed @2x retina suffix from CartoDB day theme URL for reliable tile loading
 - v2.1: Propeller mesh at origin with noseOffset translation (clean matrix composition pattern)
 - v2.1: planespotters.net as primary photo source with hexdb.io fallback (no API key, AsyncImage handles 404)
+- v2.1: Flat alpha for airspace fill (skip Fresnel), Uniforms.cameraPosition for future polish
+- v2.1: Edge mesh with .line primitive type for clean airspace wireframe outlines
 
 ### Known Issues (v2.1 scope)
 
 - ~~Map tile ground plane not displaying~~ FIXED: @2x URL removed, diagnostic logging added (11-01)
 - ~~Propeller rotation matrix incorrectly composed~~ FIXED: mesh at origin + noseOffset translation (11-01)
 - ~~Native detail panel missing: lat/lon, aircraft photo, external links~~ FIXED: links, photo, lat/lon verified (12-01)
-- Airspace volumes and coverage heatmaps not yet ported from web
+- Airspace volumes data pipeline built, pending Renderer integration (13-02)
+- Coverage heatmaps not yet ported from web
 
 ### Pending Todos
 
@@ -58,10 +61,10 @@ None.
 
 ### Blockers/Concerns
 
-- Medium confidence on FAA ArcGIS URL stability (verify at Phase 13 implementation time)
+- FAA ArcGIS URL integrated (services6.arcgis.com) -- verify at runtime in Plan 13-02
 
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: Completed 12-01-PLAN.md (info panel restoration: external links, aircraft photo, lat/lon). Phase 12 complete.
+Stopped at: Completed 13-01-PLAN.md (airspace data pipeline: ShaderTypes, EarClipTriangulator, AirspaceShaders, AirspaceManager). Plan 02 next.
 Resume file: None
