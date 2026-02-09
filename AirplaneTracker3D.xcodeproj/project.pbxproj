@@ -52,6 +52,7 @@
 		A10001000000000000000045 /* AirspaceShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000045 /* AirspaceShaders.metal */; };
 		A10001000000000000000046 /* AirspaceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000046 /* AirspaceManager.swift */; };
 		A10001000000000000000047 /* HeatmapShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000047 /* HeatmapShaders.metal */; };
+		A10001000000000000000048 /* HeatmapManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000048 /* HeatmapManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -102,6 +103,7 @@
 		A10002000000000000000045 /* AirspaceShaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = AirspaceShaders.metal; sourceTree = "<group>"; };
 		A10002000000000000000046 /* AirspaceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirspaceManager.swift; sourceTree = "<group>"; };
 		A10002000000000000000047 /* HeatmapShaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = HeatmapShaders.metal; sourceTree = "<group>"; };
+		A10002000000000000000048 /* HeatmapManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeatmapManager.swift; sourceTree = "<group>"; };
 		A10003000000000000000001 /* AirplaneTracker3D.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AirplaneTracker3D.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -168,6 +170,7 @@
 				A10002000000000000000045 /* AirspaceShaders.metal */,
 				A10002000000000000000046 /* AirspaceManager.swift */,
 				A10002000000000000000047 /* HeatmapShaders.metal */,
+				A10002000000000000000048 /* HeatmapManager.swift */,
 			);
 			path = Rendering;
 			sourceTree = "<group>";
@@ -371,6 +374,7 @@
 				A10001000000000000000045 /* AirspaceShaders.metal in Sources */,
 				A10001000000000000000046 /* AirspaceManager.swift in Sources */,
 				A10001000000000000000047 /* HeatmapShaders.metal in Sources */,
+				A10001000000000000000048 /* HeatmapManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
