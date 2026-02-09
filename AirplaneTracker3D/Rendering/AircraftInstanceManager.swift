@@ -190,7 +190,7 @@ class AircraftInstanceManager {
             } else if state.category == .small {
                 // Propeller: at nose, rotating around Z axis
                 let propRotation = rotationZ(rotorAngle)
-                let noseOffset = translationMatrix(SIMD3<Float>(0, 0, 0)) // propeller mesh has built-in nose offset
+                let noseOffset = translationMatrix(SIMD3<Float>(0, 0, 1.55)) // translate propeller to nose position
                 let spinMatrix = translation * rotation * noseOffset * propRotation
                 spinPtr[spinIndex] = AircraftInstanceData(
                     modelMatrix: spinMatrix,
