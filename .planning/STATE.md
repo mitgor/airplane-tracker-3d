@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-09)
 
 **Core value:** Real-time 3D flight visualization that works both as a personal ADS-B receiver dashboard and as a global flight explorer with airport discovery.
-**Current focus:** None -- v2.0 milestone complete, no active milestone
+**Current focus:** v2.1 — Polish & Bug Fixes
 
 ## Current Position
 
-Phase: None active
-Plan: None active
-Status: Between milestones
-Last activity: 2026-02-09 -- v2.0 Native macOS App milestone archived
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-09 — Milestone v2.1 started
 
-Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), 19 total plans
+Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases)
 
 ## Performance Metrics
 
@@ -29,6 +29,13 @@ Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), 19 total plans
 
 All decisions archived in PROJECT.md Key Decisions table.
 
+### Known Issues (v2.1 scope)
+
+- Aircraft propeller rotation matrix incorrectly composed — spins at wrong angle when heading ≠ 0
+- Map tile ground plane not displaying — async loading pipeline issues
+- Native detail panel missing: lat/lon, aircraft photo, external links (FlightAware, FR24, ADSB-X)
+- Airspace volumes and coverage heatmaps not yet ported from web
+
 ### Pending Todos
 
 None.
@@ -40,5 +47,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: v2.0 milestone archived
+Stopped at: Defining v2.1 requirements
 Resume file: None

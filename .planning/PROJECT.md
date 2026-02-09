@@ -58,7 +58,21 @@ Real-time 3D flight visualization that works both as a personal ADS-B receiver d
 
 ### Active
 
-(None — define in next milestone)
+#### v2.1 — Polish & Bug Fixes
+
+**Bug Fixes:**
+- [ ] Fix aircraft model rendering (propeller rotation, model quality)
+- [ ] Fix map tiles not displaying on ground plane surface
+- [ ] Restore missing info panel features from web version (position, photo, external links)
+
+**Missing Features (port from web):**
+- [ ] Airspace volume rendering (Class B/C/D translucent 3D volumes)
+- [ ] Coverage heatmap visualization
+
+**Visual Polish:**
+- [ ] Improved 3D aircraft model silhouettes (more recognizable shapes)
+- [ ] Higher-quality terrain rendering (LOD, detail)
+- [ ] UI refinement (panel layouts, transitions, label quality)
 
 ### Out of Scope
 
@@ -112,4 +126,4 @@ Airport data: embedded 99-airport JSON dataset (OurAirports-derived).
 | Direct download distribution | No App Store sandboxing, faster iteration, full system access | ✓ Good — v2.0 |
 
 ---
-*Last updated: 2026-02-09 after v2.0 milestone complete*
+*Last updated: 2026-02-09 after v2.1 milestone started*
