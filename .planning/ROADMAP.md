@@ -46,7 +46,7 @@
 
 **Milestone Goal:** Fix broken aircraft/airport visibility, expand airport database, and add configurable remote dump1090 data source.
 
-- [ ] **Phase 16: Camera-Following API & Aircraft Visibility** - Global API queries follow the camera so aircraft actually appear
+- [x] **Phase 16: Camera-Following API & Aircraft Visibility** - Global API queries follow the camera so aircraft actually appear
 - [ ] **Phase 17: Expanded Airport Database** - 500 airports with correct search and labels
 - [ ] **Phase 18: Remote Data Sources** - Configurable remote dump1090 and unified source switching
 
@@ -63,7 +63,7 @@
 **Plans:** 1 plan
 
 Plans:
-- [ ] 16-01-PLAN.md — Dynamic polling center + camera-to-actor wiring
+- [x] 16-01-PLAN.md — Dynamic polling center + camera-to-actor wiring
 
 ### Phase 17: Expanded Airport Database
 **Goal**: Users can discover and search for any major commercial airport worldwide, with correct search results and visible 3D labels
@@ -116,6 +116,6 @@ Phases execute in numeric order: 16 -> 17 -> 18
 | 13. Airspace Volume Rendering | v2.1 | 2/2 | Complete | 2026-02-09 |
 | 14. Coverage Heatmap | v2.1 | 2/2 | Complete | 2026-02-09 |
 | 15. Visual Polish | v2.1 | 2/2 | Complete | 2026-02-09 |
-| 16. Camera-Following API & Aircraft Visibility | v2.2 | 0/1 | Not started | - |
+| 16. Camera-Following API & Aircraft Visibility | v2.2 | 1/1 | Complete | 2026-02-09 |
 | 17. Expanded Airport Database | v2.2 | 0/1 | Not started | - |
 | 18. Remote Data Sources | v2.2 | 0/TBD | Not started | - |
