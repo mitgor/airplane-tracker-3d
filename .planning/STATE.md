@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-09)
 
 **Core value:** Real-time 3D flight visualization that works both as a personal ADS-B receiver dashboard and as a global flight explorer with airport discovery.
-**Current focus:** Between milestones — v2.1 shipped, planning next milestone
+**Current focus:** v2.2 Core Fixes & Data Sources
 
 ## Current Position
 
-Phase: None (between milestones)
-Plan: N/A
-Status: v2.1 milestone archived. Ready for next milestone.
-Last activity: 2026-02-09 -- Archived v2.1 milestone
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-09 — Milestone v2.2 started
 
 Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 shipped (5 phases)
 

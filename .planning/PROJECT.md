@@ -67,7 +67,15 @@ Real-time 3D flight visualization that works both as a personal ADS-B receiver d
 
 ### Active
 
-(No active requirements — planning next milestone)
+## Current Milestone: v2.2 Core Fixes & Data Sources
+
+**Goal:** Fix broken aircraft/airport visibility, expand airport database, and add configurable remote dump1090 data source.
+
+**Target features:**
+- Camera-following global API center (aircraft load wherever you're looking)
+- Expanded airport database (~500 major worldwide airports)
+- Configurable remote dump1090 IP:port in Settings
+- Fix airport search to return correct results
 
 ### Out of Scope
 
@@ -127,4 +135,4 @@ Airport data: embedded 99-airport JSON dataset (OurAirports-derived).
 | 3-ring terrain LOD (near/mid/far zoom) | Higher resolution near camera without increasing total tile count significantly | ✓ Good — v2.1 |
 
 ---
-*Last updated: 2026-02-09 after v2.1 milestone complete*
+*Last updated: 2026-02-09 after v2.2 milestone started*
