@@ -47,7 +47,7 @@
 **Milestone Goal:** Fix broken aircraft/airport visibility, expand airport database, and add configurable remote dump1090 data source.
 
 - [x] **Phase 16: Camera-Following API & Aircraft Visibility** - Global API queries follow the camera so aircraft actually appear
-- [ ] **Phase 17: Expanded Airport Database** - 500 airports with correct search and labels
+- [x] **Phase 17: Expanded Airport Database** - 489 airports with correct search and labels
 - [ ] **Phase 18: Remote Data Sources** - Configurable remote dump1090 and unified source switching
 
 ## Phase Details
@@ -77,7 +77,7 @@ Plans:
 **Plans:** 1 plan
 
 Plans:
-- [ ] 17-01-PLAN.md — Expand airports.json to ~500 airports and resize label atlas
+- [x] 17-01-PLAN.md — Expand airports.json to ~500 airports and resize label atlas
 
 ### Phase 18: Remote Data Sources
 **Goal**: Users can connect to a remote dump1090 receiver over the network and seamlessly switch between Local, Remote, and Global data sources
@@ -117,5 +117,5 @@ Phases execute in numeric order: 16 -> 17 -> 18
 | 14. Coverage Heatmap | v2.1 | 2/2 | Complete | 2026-02-09 |
 | 15. Visual Polish | v2.1 | 2/2 | Complete | 2026-02-09 |
 | 16. Camera-Following API & Aircraft Visibility | v2.2 | 1/1 | Complete | 2026-02-09 |
-| 17. Expanded Airport Database | v2.2 | 0/1 | Not started | - |
+| 17. Expanded Airport Database | v2.2 | 1/1 | Complete | 2026-02-09 |
 | 18. Remote Data Sources | v2.2 | 0/TBD | Not started | - |

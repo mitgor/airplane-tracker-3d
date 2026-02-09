@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-09)
 
 **Core value:** Real-time 3D flight visualization that works both as a personal ADS-B receiver dashboard and as a global flight explorer with airport discovery.
-**Current focus:** Phase 17 - Expanded Airport Database
+**Current focus:** Phase 18 - Remote Data Sources
 
 ## Current Position
 
-Phase: 17 of 18 (Expanded Airport Database)
-Plan: 0 of 1 in current phase
-Status: Ready to execute
-Last activity: 2026-02-09 — Phase 16 complete (camera-following API)
+Phase: 18 of 18 (Remote Data Sources)
+Plan: 0 of TBD in current phase
+Status: Ready to plan
+Last activity: 2026-02-09 — Phase 17 complete (expanded airport database)
 
-Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 shipped (5 phases), v2.2 [███░░░░░░░] 33%
+Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 shipped (5 phases), v2.2 [██████░░░░] 67%
 
 ## Performance Metrics
 
@@ -37,6 +37,7 @@ Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 shipped (5 phas
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
 | 16 | 01 | 1min | 2 | 2 |
+| 17 | 01 | 9min | 2 | 2 |
 
 ## Accumulated Context
 
@@ -45,11 +46,12 @@ Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 shipped (5 phas
 All decisions archived in PROJECT.md Key Decisions table.
 - Polling loop reads actor-isolated currentCenter each cycle via await (no closure capture)
 - switchDataSource uses current camera position instead of hardcoded Seattle
+- 489 airports (within 480-520 target) balanced across 7 world regions
+- Atlas scaled to 2048x1024 (8MB VRAM) for 512 slots
 
 ### Known Issues
 
-- Airport search returns wrong results for some queries (e.g., "Berlin")
-- Airport database limited to 99 airports
+None.
 
 ### Pending Todos
 
@@ -62,5 +64,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: Completed 16-01-PLAN.md. Phase 16 done. Ready for Phase 17.
+Stopped at: Completed 17-01-PLAN.md. Phase 17 done. Ready for Phase 18.
 Resume file: None
