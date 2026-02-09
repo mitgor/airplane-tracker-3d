@@ -132,9 +132,17 @@ final class AirspaceManager {
     }
 
     /// Update GPU buffers for the current frame (called each frame from Renderer).
-    /// Filters features by class toggles and writes to the appropriate buffer index.
-    func update(bufferIndex: Int) {
-        let stride = MemoryLayout<AirspaceVertex>.stride
+    /// Filters features by class toggles and applies theme-appropriate colors.
+    func update(bufferIndex: Int, themeConfig: ThemeConfig) {
+        // Theme-aware fill colors per class
+        let fillColorB = themeConfig.airspaceClassBColor
+        let fillColorC = themeConfig.airspaceClassCColor
+        let fillColorD = themeConfig.airspaceClassDColor
+
+        // Edge colors: same hue but higher alpha for visibility
+        let edgeColorB = SIMD4<Float>(fillColorB.x, fillColorB.y, fillColorB.z, min(fillColorB.w * 5.0, 0.4))
+        let edgeColorC = SIMD4<Float>(fillColorC.x, fillColorC.y, fillColorC.z, min(fillColorC.w * 5.0, 0.4))
+        let edgeColorD = SIMD4<Float>(fillColorD.x, fillColorD.y, fillColorD.z, min(fillColorD.w * 5.0, 0.4))
 
         // Filter features by class visibility
         let visibleFeatures = features.filter { feature in
@@ -153,29 +161,47 @@ final class AirspaceManager {
             return orderA < orderB
         }
 
-        // Write fill vertices
+        // Write fill vertices with theme-appropriate colors
         var fillCount = 0
         let fillPtr = fillBuffers[bufferIndex].contents().bindMemory(to: AirspaceVertex.self,
                                                                       capacity: maxFillVertices)
         for feature in sorted {
             let needed = feature.fillVertices.count
             guard fillCount + needed <= maxFillVertices else { break }
+            let themeFillColor: SIMD4<Float>
+            switch feature.airspaceClass {
+            case "B": themeFillColor = fillColorB
+            case "C": themeFillColor = fillColorC
+            case "D": themeFillColor = fillColorD
+            default:  themeFillColor = fillColorB
+            }
             for v in feature.fillVertices {
-                fillPtr[fillCount] = v
+                var tv = v
+                tv.color = themeFillColor
+                fillPtr[fillCount] = tv
                 fillCount += 1
             }
         }
         fillVertexCounts[bufferIndex] = fillCount
 
-        // Write edge vertices
+        // Write edge vertices with theme-appropriate colors
         var edgeCount = 0
         let edgePtr = edgeBuffers[bufferIndex].contents().bindMemory(to: AirspaceVertex.self,
                                                                       capacity: maxEdgeVertices)
         for feature in sorted {
             let needed = feature.edgeVertices.count
             guard edgeCount + needed <= maxEdgeVertices else { break }
+            let themeEdgeColor: SIMD4<Float>
+            switch feature.airspaceClass {
+            case "B": themeEdgeColor = edgeColorB
+            case "C": themeEdgeColor = edgeColorC
+            case "D": themeEdgeColor = edgeColorD
+            default:  themeEdgeColor = edgeColorB
+            }
             for v in feature.edgeVertices {
-                edgePtr[edgeCount] = v
+                var tv = v
+                tv.color = themeEdgeColor
+                edgePtr[edgeCount] = tv
                 edgeCount += 1
             }
         }

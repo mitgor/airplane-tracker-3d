@@ -13,6 +13,10 @@ struct SettingsView: View {
     // MARK: - Rendering Settings
 
     @AppStorage("trailLength") private var trailLength: Double = 500.0
+    @AppStorage("showAirspace") private var showAirspace: Bool = true
+    @AppStorage("showAirspaceClassB") private var showAirspaceClassB: Bool = true
+    @AppStorage("showAirspaceClassC") private var showAirspaceClassC: Bool = true
+    @AppStorage("showAirspaceClassD") private var showAirspaceClassD: Bool = true
     @AppStorage("trailWidth") private var trailWidth: Double = 3.0
     @AppStorage("altitudeExaggeration") private var altitudeExaggeration: Double = 1.0
 
@@ -45,7 +49,7 @@ struct SettingsView: View {
                     Label("Notifications", systemImage: "bell")
                 }
         }
-        .frame(width: 400, height: 350)
+        .frame(width: 400, height: 450)
         .onChange(of: selectedTheme) { _, newTheme in
             NotificationCenter.default.post(
                 name: .setTheme,
@@ -106,6 +110,18 @@ struct SettingsView: View {
                 Text("Altitude Exaggeration: \(String(format: "%.1f", altitudeExaggeration))x")
                     .font(.caption)
                 Slider(value: $altitudeExaggeration, in: 0.5...5.0, step: 0.5)
+            }
+
+            Section("Airspace Volumes") {
+                Toggle("Show Airspace", isOn: $showAirspace)
+                if showAirspace {
+                    Toggle("Class B", isOn: $showAirspaceClassB)
+                        .foregroundColor(.blue)
+                    Toggle("Class C", isOn: $showAirspaceClassC)
+                        .foregroundColor(.purple)
+                    Toggle("Class D", isOn: $showAirspaceClassD)
+                        .foregroundColor(.cyan)
+                }
             }
         }
         .padding()

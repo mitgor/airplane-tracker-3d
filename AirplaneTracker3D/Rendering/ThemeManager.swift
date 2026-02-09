@@ -22,6 +22,9 @@ struct ThemeConfig {
     let labelBgColor: NSColor
     let airportLabelColor: SIMD4<Float>
     let altLineColor: SIMD4<Float>
+    let airspaceClassBColor: SIMD4<Float>
+    let airspaceClassCColor: SIMD4<Float>
+    let airspaceClassDColor: SIMD4<Float>
 }
 
 // MARK: - ThemeManager
@@ -82,7 +85,10 @@ final class ThemeManager {
             labelTextColor: .white,
             labelBgColor: NSColor(red: 0, green: 0, blue: 0, alpha: 0.6),
             airportLabelColor: SIMD4<Float>(0.0, 0.4, 0.8, 1.0),
-            altLineColor: SIMD4<Float>(0.5, 0.5, 0.5, 0.3)
+            altLineColor: SIMD4<Float>(0.5, 0.5, 0.5, 0.3),
+            airspaceClassBColor: SIMD4<Float>(0.27, 0.40, 1.0, 0.06),
+            airspaceClassCColor: SIMD4<Float>(0.60, 0.27, 1.0, 0.06),
+            airspaceClassDColor: SIMD4<Float>(0.27, 0.67, 1.0, 0.06)
         ),
         .night: ThemeConfig(
             clearColor: (r: 0.039, g: 0.039, b: 0.102),
@@ -93,7 +99,10 @@ final class ThemeManager {
             labelTextColor: NSColor(red: 0, green: 1, blue: 1, alpha: 1),
             labelBgColor: NSColor(red: 0, green: 0, blue: 0.2, alpha: 0.7),
             airportLabelColor: SIMD4<Float>(0.4, 0.733, 1.0, 1.0),
-            altLineColor: SIMD4<Float>(0.5, 0.5, 0.5, 0.3)
+            altLineColor: SIMD4<Float>(0.5, 0.5, 0.5, 0.3),
+            airspaceClassBColor: SIMD4<Float>(0.33, 0.47, 1.0, 0.08),
+            airspaceClassCColor: SIMD4<Float>(0.67, 0.33, 1.0, 0.08),
+            airspaceClassDColor: SIMD4<Float>(0.33, 0.73, 1.0, 0.08)
         ),
         .retro: ThemeConfig(
             clearColor: (r: 0.0, g: 0.031, b: 0.0),
@@ -104,7 +113,10 @@ final class ThemeManager {
             labelTextColor: NSColor(red: 0, green: 1, blue: 0, alpha: 1),
             labelBgColor: NSColor(red: 0, green: 0.1, blue: 0, alpha: 0.6),
             airportLabelColor: SIMD4<Float>(0, 1, 0, 1),
-            altLineColor: SIMD4<Float>(0, 1, 0, 0.3)
+            altLineColor: SIMD4<Float>(0, 1, 0, 0.3),
+            airspaceClassBColor: SIMD4<Float>(0.0, 1.0, 0.0, 0.03),
+            airspaceClassCColor: SIMD4<Float>(0.0, 1.0, 0.0, 0.03),
+            airspaceClassDColor: SIMD4<Float>(0.0, 1.0, 0.0, 0.03)
         ),
     ]
 

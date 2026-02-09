@@ -33,6 +33,12 @@ final class Renderer: NSObject {
     private let lineWidthBuffer: MTLBuffer
     private let resolutionBuffer: MTLBuffer
 
+    // MARK: - Airspace Rendering Pipeline States
+
+    let airspaceFillPipeline: MTLRenderPipelineState
+    let airspaceEdgePipeline: MTLRenderPipelineState
+    let airspaceManager: AirspaceManager
+
     // MARK: - Terrain Pipeline States
 
     let terrainTileManager: TerrainTileManager
@@ -358,6 +364,53 @@ final class Renderer: NSObject {
         } catch {
             fatalError("Failed to create trail pipeline: \(error)")
         }
+
+        // --- Airspace Fill Pipeline State (alpha blending for translucent volumes) ---
+        let airspaceFillDesc = MTLRenderPipelineDescriptor()
+        airspaceFillDesc.vertexFunction = library.makeFunction(name: "airspace_vertex")
+        airspaceFillDesc.fragmentFunction = library.makeFunction(name: "airspace_fill_fragment")
+        airspaceFillDesc.colorAttachments[0].pixelFormat = metalView.colorPixelFormat
+        airspaceFillDesc.colorAttachments[0].isBlendingEnabled = true
+        airspaceFillDesc.colorAttachments[0].rgbBlendOperation = .add
+        airspaceFillDesc.colorAttachments[0].alphaBlendOperation = .add
+        airspaceFillDesc.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+        airspaceFillDesc.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+        airspaceFillDesc.colorAttachments[0].sourceAlphaBlendFactor = .sourceAlpha
+        airspaceFillDesc.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        airspaceFillDesc.depthAttachmentPixelFormat = metalView.depthStencilPixelFormat
+        airspaceFillDesc.rasterSampleCount = metalView.sampleCount
+        // No vertex descriptor needed -- reading raw buffer by vertexID
+
+        do {
+            airspaceFillPipeline = try device.makeRenderPipelineState(descriptor: airspaceFillDesc)
+        } catch {
+            fatalError("Failed to create airspace fill pipeline: \(error)")
+        }
+
+        // --- Airspace Edge Pipeline State (alpha blending for wireframe outlines) ---
+        let airspaceEdgeDesc = MTLRenderPipelineDescriptor()
+        airspaceEdgeDesc.vertexFunction = library.makeFunction(name: "airspace_vertex")
+        airspaceEdgeDesc.fragmentFunction = library.makeFunction(name: "airspace_edge_fragment")
+        airspaceEdgeDesc.colorAttachments[0].pixelFormat = metalView.colorPixelFormat
+        airspaceEdgeDesc.colorAttachments[0].isBlendingEnabled = true
+        airspaceEdgeDesc.colorAttachments[0].rgbBlendOperation = .add
+        airspaceEdgeDesc.colorAttachments[0].alphaBlendOperation = .add
+        airspaceEdgeDesc.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+        airspaceEdgeDesc.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+        airspaceEdgeDesc.colorAttachments[0].sourceAlphaBlendFactor = .sourceAlpha
+        airspaceEdgeDesc.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        airspaceEdgeDesc.depthAttachmentPixelFormat = metalView.depthStencilPixelFormat
+        airspaceEdgeDesc.rasterSampleCount = metalView.sampleCount
+        // No vertex descriptor needed -- reading raw buffer by vertexID
+
+        do {
+            airspaceEdgePipeline = try device.makeRenderPipelineState(descriptor: airspaceEdgeDesc)
+        } catch {
+            fatalError("Failed to create airspace edge pipeline: \(error)")
+        }
+
+        // --- Airspace Manager ---
+        airspaceManager = AirspaceManager(device: device)
 
         // --- Trail auxiliary buffers ---
         guard let lwb = device.makeBuffer(length: MemoryLayout<Float>.stride, options: .storageModeShared) else {
@@ -776,6 +829,53 @@ final class Renderer: NSObject {
         // Restore original depth stencil state for subsequent passes
         encoder.setDepthStencilState(depthStencilState)
     }
+
+    // MARK: - Airspace Volume Rendering
+
+    /// Encode airspace volume rendering (translucent fill + wireframe edge passes).
+    private func encodeAirspaceVolumes(encoder: MTLRenderCommandEncoder, uniformBuffer: MTLBuffer) {
+        // Fill pass
+        let fillCount = airspaceManager.fillVertexCount(at: currentBufferIndex)
+        if fillCount > 0 {
+            encoder.setRenderPipelineState(airspaceFillPipeline)
+            encoder.setDepthStencilState(glowDepthStencilState)  // depth read, no write
+            encoder.setCullMode(.none)  // render both faces for transparency
+            encoder.setVertexBuffer(uniformBuffer, offset: 0, index: Int(BufferIndexUniforms.rawValue))
+            encoder.setVertexBuffer(airspaceManager.fillBuffer(at: currentBufferIndex), offset: 0,
+                                     index: Int(BufferIndexAirspaceVertices.rawValue))
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: fillCount)
+        }
+
+        // Edge pass
+        let edgeCount = airspaceManager.edgeVertexCount(at: currentBufferIndex)
+        if edgeCount > 0 {
+            encoder.setRenderPipelineState(airspaceEdgePipeline)
+            encoder.setDepthStencilState(glowDepthStencilState)
+            encoder.setCullMode(.none)
+            encoder.setVertexBuffer(uniformBuffer, offset: 0, index: Int(BufferIndexUniforms.rawValue))
+            encoder.setVertexBuffer(airspaceManager.edgeBuffer(at: currentBufferIndex), offset: 0,
+                                     index: Int(BufferIndexAirspaceVertices.rawValue))
+            encoder.drawPrimitives(type: .line, vertexStart: 0, vertexCount: edgeCount)
+        }
+
+        // Restore cull mode
+        encoder.setCullMode(.none)
+    }
+
+    /// Compute geographic bounds of the visible area from current camera state.
+    private func computeVisibleBounds() -> (west: Double, south: Double, east: Double, north: Double) {
+        let halfExtent = camera.distance * 0.5
+        let centerX = camera.target.x
+        let centerZ = camera.target.z
+
+        let west = coordSystem.xToLon(centerX - halfExtent)
+        let east = coordSystem.xToLon(centerX + halfExtent)
+        // Note: larger Z = more south in this coordinate system
+        let north = coordSystem.zToLat(centerZ - halfExtent)
+        let south = coordSystem.zToLat(centerZ + halfExtent)
+
+        return (west: west, south: south, east: east, north: north)
+    }
 }
 
 // MARK: - MTKViewDelegate
@@ -815,6 +915,12 @@ extension Renderer: MTKViewDelegate {
                 trailManager.lineWidth = Float(settingsTrailWidth)
             }
 
+            // Read airspace visibility settings
+            let showAirspace = UserDefaults.standard.bool(forKey: "showAirspace")
+            let showClassB = UserDefaults.standard.bool(forKey: "showAirspaceClassB")
+            let showClassC = UserDefaults.standard.bool(forKey: "showAirspaceClassC")
+            let showClassD = UserDefaults.standard.bool(forKey: "showAirspaceClassD")
+
             // Update camera
             camera.update(deltaTime: deltaTime)
 
@@ -832,6 +938,23 @@ extension Renderer: MTKViewDelegate {
                     userInfo: ["target": targetArray]
                 )
             }
+
+            // Trigger airspace data loading based on camera bounds (every ~120 frames, ~2 seconds)
+            if frameCounter % 120 == 0 && showAirspace {
+                let bounds = computeVisibleBounds()
+                Task {
+                    await airspaceManager.loadAirspace(
+                        west: bounds.west, south: bounds.south,
+                        east: bounds.east, north: bounds.north
+                    )
+                }
+            }
+
+            // Update airspace manager with class filters
+            airspaceManager.showClassB = showClassB
+            airspaceManager.showClassC = showClassC
+            airspaceManager.showClassD = showClassD
+            airspaceManager.update(bufferIndex: currentBufferIndex, themeConfig: config)
 
             // Update aspect ratio
             let drawableSize = view.drawableSize
@@ -1017,6 +1140,11 @@ extension Renderer: MTKViewDelegate {
                     encoder.setTriangleFillMode(.fill)
                 }
 
+                // Encode airspace volumes (translucent, depth-read no-write)
+                if showAirspace {
+                    encodeAirspaceVolumes(encoder: encoder, uniformBuffer: uniformBuffer)
+                }
+
                 // Encode trail polylines (after aircraft, before glow)
                 encodeTrails(encoder: encoder, uniformBuffer: uniformBuffer, drawableSize: drawableSize)
 
@@ -1032,6 +1160,11 @@ extension Renderer: MTKViewDelegate {
                 // Restore fill mode even when no aircraft
                 if isRetro {
                     encoder.setTriangleFillMode(.fill)
+                }
+
+                // Render airspace volumes even when no aircraft visible
+                if showAirspace {
+                    encodeAirspaceVolumes(encoder: encoder, uniformBuffer: uniformBuffer)
                 }
 
                 // Still render airport labels when no aircraft visible

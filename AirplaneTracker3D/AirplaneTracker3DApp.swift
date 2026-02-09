@@ -4,6 +4,16 @@ import SwiftUI
 struct AirplaneTracker3DApp: App {
     @StateObject private var menuBarManager = MenuBarManager()
 
+    init() {
+        // Register UserDefaults so bool(forKey:) returns correct defaults
+        UserDefaults.standard.register(defaults: [
+            "showAirspace": true,
+            "showAirspaceClassB": true,
+            "showAirspaceClassC": true,
+            "showAirspaceClassD": true,
+        ])
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
