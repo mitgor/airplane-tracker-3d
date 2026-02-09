@@ -23,14 +23,14 @@ final class AirportLabelManager {
 
     // MARK: - Atlas Constants
 
-    /// Atlas: 1024x512, slots 128x32 => 8 columns x 16 rows = 128 slots
-    private let atlasWidth = 1024
-    private let atlasHeight = 512
+    /// Atlas: 2048x1024, slots 128x32 => 16 columns x 32 rows = 512 slots
+    private let atlasWidth = 2048
+    private let atlasHeight = 1024
     private let slotWidth = 128
     private let slotHeight = 32
-    private let columnsPerRow = 8   // 1024 / 128
-    private let rowCount = 16       // 512 / 32
-    private var maxSlots: Int { columnsPerRow * rowCount }  // 128
+    private let columnsPerRow = 16  // 2048 / 128
+    private let rowCount = 32       // 1024 / 32
+    private var maxSlots: Int { columnsPerRow * rowCount }  // 512
 
     // MARK: - Properties
 
