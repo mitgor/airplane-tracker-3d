@@ -45,6 +45,20 @@ actor EnrichmentService {
         }
     }
 
+    /// planespotters.net API response
+    private struct PlanespottersResponse: Codable {
+        let photos: [PlanespottersPhoto]?
+    }
+
+    private struct PlanespottersPhoto: Codable {
+        let thumbnail_large: PhotoSize?
+        let thumbnail: PhotoSize?
+    }
+
+    private struct PhotoSize: Codable {
+        let src: String?
+    }
+
     /// adsbdb.com response structure
     private struct ADSBDBResponse: Codable {
         let response: ADSBDBInner?
@@ -77,6 +91,9 @@ actor EnrichmentService {
 
     /// Cache for route info (nil value = negative cache / lookup failed)
     private var routeCache: [String: RouteEnrichment?] = [:]
+
+    /// Cache for photo URLs (nil value = negative cache / no photo found)
+    private var photoCache: [String: String?] = [:]
 
     /// Shared URLSession with short timeout
     private let session: URLSession = {
@@ -160,5 +177,38 @@ actor EnrichmentService {
             routeCache[clean] = nil
             return nil
         }
+    }
+
+    // MARK: - Photo URL (planespotters.net + hexdb.io fallback)
+
+    /// Fetch an aircraft photo URL from planespotters.net, falling back to hexdb.io.
+    func fetchPhotoURL(hex: String) async -> String? {
+        // Check cache (including negative results)
+        if let cached = photoCache[hex] {
+            return cached
+        }
+
+        // Try planespotters.net first
+        do {
+            let urlString = "https://api.planespotters.net/pub/photos/hex/\(hex)"
+            if let url = URL(string: urlString) {
+                let (data, _) = try await session.data(from: url)
+                let response = try JSONDecoder().decode(PlanespottersResponse.self, from: data)
+
+                if let photos = response.photos, let first = photos.first {
+                    if let src = first.thumbnail_large?.src ?? first.thumbnail?.src {
+                        photoCache[hex] = src
+                        return src
+                    }
+                }
+            }
+        } catch {
+            // Planespotters failed, fall through to hexdb fallback
+        }
+
+        // Fallback: hexdb.io image endpoint (may 404 — AsyncImage handles gracefully)
+        let fallbackURL = "https://hexdb.io/hex-image?hex=\(hex)"
+        photoCache[hex] = fallbackURL
+        return fallbackURL
     }
 }
