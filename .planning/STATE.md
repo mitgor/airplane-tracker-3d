@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-09)
 
 **Core value:** Real-time 3D flight visualization that works both as a personal ADS-B receiver dashboard and as a global flight explorer with airport discovery.
-**Current focus:** v2.1 Phase 14 complete -- Coverage Heatmap fully integrated
+**Current focus:** v2.1 Phase 15 in progress -- Visual Polish (LOD + spring animations done)
 
 ## Current Position
 
-Phase: 14 of 15 (Coverage Heatmap) -- COMPLETE
-Plan: 2 of 2 in current phase (all plans complete)
-Status: Phase 14 complete. Coverage heatmap fully integrated into renderer with settings toggle.
-Last activity: 2026-02-09 -- Completed 14-02-PLAN.md (Renderer integration, Settings toggle, ThemeConfig color ramp)
+Phase: 15 of 15 (Visual Polish)
+Plan: 1 of 2 in current phase (plan 01 complete)
+Status: Plan 01 complete. Multi-zoom terrain LOD and spring-animated panel transitions shipped.
+Last activity: 2026-02-09 -- Completed 15-01-PLAN.md (Terrain LOD, spring animations)
 
-Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [########..] 80%
+Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [#########.] 90%
 
 ## Performance Metrics
 
@@ -24,9 +24,9 @@ Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [########..] 80
 - Total execution time: ~47min
 
 **v2.1 Velocity:**
-- Plans completed: 8
-- Average duration: ~2.9min
-- Total execution time: ~23min
+- Plans completed: 9
+- Average duration: ~2.8min
+- Total execution time: ~25min
 
 ## Accumulated Context
 
@@ -53,6 +53,9 @@ Recent decisions affecting current work:
 - v2.1: Heatmap renders once after tiles before both branches (persists without aircraft)
 - v2.1: Temporary fill-mode restore in retro theme for heatmap ground overlay
 - v2.1: ThemeConfig heatmapColorRamp provides explicit low/high gradient per theme
+- v2.1: Three-ring LOD: near(baseZoom+1, r=1), mid(baseZoom, standard), far(baseZoom-1, r=2)
+- v2.1: Spring response 0.35/damping 0.8 for detail panel, 0.3/0.85 for utility panels
+- v2.1: Terrain cache increased from 150 to 250 for multi-zoom tile sets
 
 ### Known Issues (v2.1 scope)
 
@@ -73,5 +76,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: Completed 14-02-PLAN.md (Renderer integration: heatmap pipeline, draw loop wiring, Settings toggle). Phase 14 complete. Ready for Phase 15.
+Stopped at: Completed 15-01-PLAN.md (Terrain LOD with lodTiles() multi-zoom, spring panel animations). Ready for 15-02-PLAN.md.
 Resume file: None
