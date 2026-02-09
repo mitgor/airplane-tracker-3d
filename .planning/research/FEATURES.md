@@ -1,401 +1,336 @@
 # Feature Landscape
 
-**Domain:** Real-time 3D flight visualization -- native macOS Metal app (rewrite from web)
-**Researched:** 2026-02-08
-**Confidence:** HIGH (existing web app source fully analyzed, Metal/macOS APIs verified against Apple official docs, competitor apps verified via App Store listings)
+**Domain:** v2.1 polish, bug fixes, airspace volumes, and coverage heatmap for native macOS Metal 3D flight tracker
+**Researched:** 2026-02-09
+**Confidence:** HIGH (existing codebase fully analyzed, web reference implementation reviewed line-by-line, FAA API verified, Metal rendering patterns verified against Apple docs)
 
 ---
 
 ## Context
 
-This document maps the feature landscape for rewriting the existing web-based THREE.js flight tracker (5735-line single HTML file) as a native macOS application using Swift, Metal, and SwiftUI. The focus is on:
+This document maps the feature landscape for v2.1 of the native macOS app. The v2.0 app shipped with 42 files and 7,043 LOC. It includes all core visualization features from the web version except two: **airspace volume rendering** and **coverage heatmaps**. Additionally, several bugs need fixing and visual polish is needed.
 
-1. Which existing web features translate to native and at what complexity
-2. What native-only features become possible and justify the rewrite
-3. What to explicitly avoid building
+The v2.1 scope from PROJECT.md:
+- **Bug Fixes:** aircraft model rendering (propeller rotation, model quality), map tiles not displaying, restore missing info panel features (position, photo, external links)
+- **Missing Features (port from web):** airspace volume rendering (Class B/C/D), coverage heatmap visualization
+- **Visual Polish:** improved 3D aircraft model silhouettes, higher-quality terrain rendering (LOD, detail), UI refinement (panel layouts, transitions, label quality)
 
-The existing web app has these proven features: 6 aircraft model categories (jet, widebody, helicopter, small prop, military, regional), wireframe + solid rendering modes, 3 themes (day/night/retro), Line2 fat-line trails with per-vertex altitude coloring, map tile ground plane (10x10 grid, zoom 6-12), terrain elevation (Mapbox terrain-RGB), airspace volumes (FAA Class B/C/D), airport database (78K+ from OurAirports CSV), 3D text airport labels, aircraft enrichment (hexdb.io/adsbdb.com), follow mode, statistics with IndexedDB, coverage heatmap, smooth interpolation (2s delayed lerp at 30fps), dual data sources (local dump1090 + global APIs with fallback).
+The existing Metal rendering pipeline has 10+ pipeline states (textured tiles, aircraft, glow, trails, labels, altitude lines, terrain), triple-buffered uniforms, and instanced rendering. New features must integrate into this architecture without disrupting the 60fps budget.
 
 ---
 
 ## Table Stakes
 
-Features users expect. Missing any of these = product feels like a downgrade from the web version.
+Features that v2.1 must deliver. These are either bugs (regressions from expectations) or parity gaps with the web version.
 
-### Core 3D Rendering
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|-------------|------------|-------|
-| Metal 3D aircraft rendering with 6 model categories | Web version already differentiates helicopters, small props, jets, widebodies, military, and regional aircraft with distinct geometry. Regression is unacceptable. | Med | Use instanced rendering: one shared vertex buffer per aircraft type, one draw call per type. Instance buffer carries per-aircraft position (float3), rotation (float), color (float4), scale (float). Metal handles 10K+ instances trivially. |
-| Wireframe + solid rendering modes | Retro theme uses wireframe (LineSegments in THREE.js), day/night use solid Phong-shaded meshes. Both modes are essential to the app's identity. | Med | Two render pipeline states: one with fill mode `.lines`, one with `.fill`. Retro theme selects wireframe pipeline. Alternatively, use geometry with edge extraction for wireframe. |
-| Altitude-based coloring per aircraft | Aircraft change color by altitude (retro: green gradient, day/night: green-yellow-orange-pink ramp). Visual cue users rely on. | Low | Per-instance color in instance buffer. Compute color on CPU during interpolation update, write to instance buffer. |
-| Glow sprites on aircraft | Each aircraft has a pulsing glow sprite (retro: green, day/night: altitude-colored). Provides visibility at distance. | Low | Render billboarded quads with additive blending. One draw call for all glow sprites using instancing. |
-| Position light animation | Blinking nav lights on aircraft with randomized phase. Adds life to the scene. | Low | Sin-wave brightness in fragment shader using per-instance phase offset. No CPU work per frame. |
-| Rotor/propeller animation | Helicopter main/tail rotors and prop plane propellers spin. Web version uses 0.7 rotations/second. | Low | Per-instance rotation angle updated each frame. Compound transform in vertex shader. |
-
-### Flight Trails
+### Bug Fixes (Highest Priority)
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|-------------|------------|-------|
-| Flight trails with per-vertex altitude color | Signature visual feature. Trails up to 4000 points with blue-to-red altitude gradient (day/night) or green gradient (retro). | Med-High | GPU polyline rendering: expand line segments into camera-facing quads in vertex shader. Metal has no native wide-line support, so this must be implemented as triangle strips. Per-vertex color stored in trail vertex buffer. |
-| Configurable trail length and width | Web version has slider for 50-4000 points and 1-5px width. | Low | Trail length caps the ring buffer. Width is a uniform passed to the polyline vertex shader. |
-| Trail LOD by camera distance | Web version reduces rendered trail points for distant aircraft (40/100/300 point limits by distance tier). | Low | Compute visible point count per aircraft based on distance. Set draw range per trail. |
-| Trail persistence across data updates | Trails accumulate over time, not just between single API responses. Web version stores trail points in IndexedDB for restoration. | Med | Store trail history in SQLite (SwiftData). Restore trails when aircraft reappears. Ring buffer per aircraft. |
+| Fix map tiles not displaying on ground plane | Users see a blank/placeholder ground plane instead of map imagery. Likely a tile URL or texture upload issue. Without map context, the 3D view is unusable. | Low | Debug tile fetching path in `MapTileManager`. Check URLSession responses, texture creation from PNG data, and texture binding in the render pass. The `tileModelMatrix(for:)` and textured pipeline are in place -- this is a data flow bug, not an architecture gap. |
+| Fix aircraft propeller rotation | Propellers on small aircraft spin incorrectly or not at all. The `buildPropeller` mesh creates a single blade pair at nose offset (0, 0, 1.55), and `AircraftInstanceManager` applies `rotationZ(rotorAngle)` -- but the compound matrix `translation * rotation * noseOffset * propRotation` has a no-op `noseOffset` (translates by zero). The propeller mesh's built-in Z-offset means the rotation axis is wrong for visible spinning. | Low | Fix the compound transform so the propeller rotates around its local Z axis at the nose position. The `rotorSpeed` for small props is 0.6 rev/sec (2.4 rad/s) -- may need to be faster for visible blur-like motion. Also verify the propeller geometry is large enough to be visible. |
+| Fix aircraft model quality/recognizability | Current procedural models use basic primitives (cylinders, cones, boxes). The jet model at line 265-296 of AircraftMeshLibrary has a cylindrical fuselage (r=0.4, h=4) with box wings (5x0.15x1.5). At typical viewing distances these look like generic blobs. | Med | Improve silhouettes: swept wings (tapered boxes or triangular prisms), tapered fuselages, T-tails for regional jets, distinctive delta wings for military. Keep the primitive-composition approach (no loaded meshes) but refine proportions and add distinguishing features per category. |
+| Restore info panel: position, external links | Web version's detail panel shows lat/lon position, links to FlightAware/ADS-B Exchange/planespotters.net. The native `AircraftDetailPanel` already shows lat/lon position but is missing external links. | Low | Add clickable links in AircraftDetailPanel that open in default browser via `NSWorkspace.shared.open(url)`. URLs: `https://flightaware.com/live/flight/{callsign}`, `https://globe.adsbexchange.com/?icao={hex}`, `https://www.planespotters.net/hex/{hex}`. |
+| Restore info panel: aircraft photo | Web version fetches aircraft photos from planespotters.net. The native panel shows enrichment data (registration, type, operator, route) but no photo. | Med | Fetch photo URL from planespotters.net API or use hexdb.io photo endpoint. Display as async `AsyncImage` in SwiftUI detail panel. Cache with URLCache. Consider fallback placeholder if no photo available. |
 
-### Map & Terrain
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|-------------|------------|-------|
-| Map tile ground plane | Aircraft positions are meaningless without geographic context. Web version renders 10x10 grid of OSM/CartoDB tiles. | Med | Download tiles via URLSession, create Metal textures asynchronously. Render as textured quads on Y=0 plane. Use Metal's MTLIOCommandQueue for fast async texture upload on Apple Silicon. Tile cache with LRU eviction (300 tile limit in web version). |
-| Map zoom (level 6-12) | Users need to zoom out for overview and zoom in for local detail. | Low | Recompute tile grid on zoom change. Smooth zoom transition with easeInOutCubic (web version uses 300ms). |
-| Map pan (arrow keys + drag) | Navigate to different geographic regions. | Low | Translate center coordinates, reload tile grid. Smooth pan transitions. |
-| Terrain elevation mesh | Mapbox Terrain-RGB tile decoding with vertex displacement. Mountains visible, valleys lower. | Med | Decode terrain-RGB PNGs: elevation = (R*256 + G + B/256) - 32768 meters. Generate displaced mesh per tile. LOD: more vertices near camera, fewer distant. Web version uses TERRAIN_SCALE_FACTOR with altitude-synchronized scaling. |
-| Terrain scale linked to altitude exaggeration | Web version scales terrain Z proportionally to altitude multiplier so terrain and aircraft altitudes stay in sync. | Low | Single uniform controls both aircraft Y position and terrain displacement magnitude. |
-
-### Camera Controls
+### Feature Parity (Port from Web)
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|-------------|------------|-------|
-| Orbital camera (rotate, zoom, pan) | Standard 3D navigation. Web version uses mouse drag for orbit, scroll for zoom. | Low | Spherical coordinate camera: (angle, distance, height). Trackpad pinch = zoom (MagnifyGesture), two-finger rotate = orbit (RotateGesture), two-finger drag = pan (DragGesture). More intuitive than web version's mouse-only controls. |
-| Camera reset | Return to default view. Web version has 'R' key. | Low | Animate camera parameters back to defaults over 300ms. |
-| Auto-rotate | Slow orbit for ambient display mode. Web version increments angle by 0.002/frame. | Low | Toggle flag, increment camera angle each frame. |
-| Follow mode | Lock camera to selected aircraft. Camera tracks aircraft position. | Low | Each frame, if follow active, set camera target = selected aircraft world position. Smooth tracking with lerp. |
-
-### Data Layer
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|-------------|------------|-------|
-| Local dump1090 data polling | Core use case: users with their own ADS-B receiver. Polls /dump1090/data/aircraft.json at 1 second intervals. | Low | URLSession with Timer. Parse JSON with Codable. |
-| Global API data (airplanes.live + adsb.lol) | Users without local receivers need global coverage. 250nm radius queries. 5-second polling. Automatic failover between providers. | Med | DataSource protocol with provider chain. Try primary, fall back to secondary on failure. Normalize both API responses to common AircraftState struct. |
-| Smooth position interpolation (60fps) | Aircraft positions arrive every 1-5 seconds. Must animate smoothly between updates. Web version uses 2-second delayed lerp with angle interpolation for heading. | Med | Position buffer per aircraft: store 2+ timestamped samples. Each frame, lerp between samples based on current time minus delay. Use lerpAngle for heading (handles 359->1 degree wraparound). Critical for visual quality -- jerky movement kills the experience. |
-| Aircraft enrichment API | Registration, type, operator, route, photo from hexdb.io and adsbdb.com. | Med | Async URLSession calls triggered on aircraft selection. NSCache for results. Display in SwiftUI detail panel. Rate-limit to 1 request/second. |
-
-### User Interface (SwiftUI)
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|-------------|------------|-------|
-| Aircraft detail panel | Right panel showing callsign, altitude, speed, track, vert rate, squawk, position, enriched data (registration, type, operator, route), aircraft photo, external links. | Med | SwiftUI inspector panel (.inspector modifier) or NavigationSplitView detail column. Reactive updates via @Observable/@Published. |
-| Info panel (aircraft count, last update, center coords, map zoom) | Left panel with live statistics. Always visible. | Low | SwiftUI overlay on Metal view. Updates every frame or on data change. |
-| Controls bar | Bottom bar with data source selector, theme picker, unit selector, toggles (labels, trails, terrain, airspace, graphs, stats), trail length/width sliders, altitude exaggeration slider. | Med | SwiftUI toolbar or bottom sheet. Many controls -- organize into collapsible groups. |
-| Airport search bar | Top-center search field with autocomplete dropdown. Search by IATA, ICAO, name, municipality. | Med | SwiftUI searchable() modifier or custom TextField with results popover. Load OurAirports CSV at launch, index for fast filtering. |
-| Keyboard shortcuts overlay | '?' key shows shortcut reference. Web version has comprehensive list. | Low | SwiftUI sheet with shortcut grid. |
-| Settings persistence | Save all toggle/slider states, theme, units, data source, window position. | Low | @AppStorage for simple values. UserDefaults for complex objects. |
-| Unit switching (imperial/metric) | Feet/knots vs meters/km/h. | Low | Formatting helper functions. No rendering changes. |
-
-### Visualization Features
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|-------------|------------|-------|
-| Three themes (day, night, retro) | Visual identity of the app. Retro 80s wireframe is the default and most distinctive. | Med | Theme struct with: sky color, ground tint, aircraft pipeline (wireframe/solid), trail color function, glow color, UI accent colors. Apply via environment object. Shader uniforms change per theme. |
-| Aircraft labels (callsign + altitude) | Floating text above each aircraft. LOD: hidden beyond 700 units, scaled between 400-700. | Med | SDF (signed distance field) text for resolution-independent rendering. Or: render text to texture atlas via CoreText, billboard quad per aircraft. Instanced rendering for all labels. |
-| Airport 3D labels | Ground-standing text for nearby large/medium airports. Web version uses TextGeometry. | Med | Same text rendering system as aircraft labels but positioned on ground plane at airport coordinates. Show within configurable radius. |
-| Altitude line (dashed vertical) | Dashed line from aircraft to ground showing altitude reference. | Low | Two-vertex line per aircraft with dashed line shader. Update endpoints each frame. Can be instanced. |
-| Airspace volumes (Class B/C/D) | Semi-transparent extruded polygons for controlled airspace. FAA GeoJSON data. | High | Triangulate airspace boundary polygons (ear clipping or similar), extrude between floor and ceiling altitudes. Transparent material with depth-write disabled. Render order by airspace class. |
-| Coverage heatmap | 20x20 grid showing where aircraft have been detected. | Low | Small Metal texture (20x20) or SwiftUI Canvas. Accumulate aircraft positions into grid cells. |
-| Statistics graphs (message rate, aircraft count, signal level) | Time-series sparkline graphs with selectable periods (1h-48h). | Med | SwiftUI Charts framework. Store time-series data in SQLite/SwiftData. Much cleaner than web version's manual canvas rendering. |
-| Altitude distribution bars | Horizontal bar chart showing aircraft count in altitude bands. | Low | SwiftUI view with proportional bars. Updates every 2 seconds. |
-| Top airlines list | Ranked list of most common operators/callsign prefixes. | Low | SwiftUI List. Accumulate from observed callsigns. |
+| Airspace volume rendering (Class B/C/D) | The web version renders FAA-sourced airspace boundaries as semi-transparent extruded 3D volumes with wireframe edges. This is the single most-requested feature for understanding the context around aircraft. Without it, users cannot see why aircraft follow specific approach patterns. | High | Full implementation details in Architecture section below. Requires: (1) FAA ArcGIS API client, (2) GeoJSON polygon parsing, (3) polygon triangulation (ear clipping), (4) extruded mesh generation on CPU, (5) new transparent pipeline state with alpha blending and depth-write disabled, (6) new Metal shader pair, (7) per-class coloring, (8) integration into Renderer draw loop after terrain but before aircraft. |
+| Coverage heatmap visualization | The web version accumulates aircraft positions into a 20x20 grid and renders a 2D canvas heatmap showing where aircraft have been detected. For users with local ADS-B receivers, this shows antenna coverage patterns and dead zones. | Med | Two options: (A) 2D SwiftUI Canvas overlay -- simpler, matches web version's approach of a small overlay panel. (B) 3D ground-plane heatmap texture -- more visually integrated but requires a new render pass. Recommend option A for v2.1: SwiftUI Canvas with a 20x20 grid, theme-aware colors (blue/green gradient for day/night, green gradient for retro). Accumulate positions per frame in a `[Int]` array. |
 
 ---
 
 ## Differentiators
 
-Features that set the native app apart and justify the rewrite. Not expected for parity, but these make the native version clearly superior.
+Features that go beyond web version parity and add real value. Not strictly required for v2.1 but achievable within the polish scope.
 
-### Metal Rendering Advantages
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Single-draw-call instanced rendering | Web version creates individual THREE.Group per aircraft (5-8 child meshes each). At 500 aircraft = 2500-4000 draw calls. Metal version: 6 draw calls total (one per aircraft type). Handles 10K+ aircraft at 60fps. | Med | Core architectural advantage. Instance buffer (position, rotation, color, scale, phase) updated each frame. drawIndexedPrimitives with instanceCount. This is the primary performance justification for the rewrite. |
-| MSAA (4x multi-sample anti-aliasing) | Web version has aliased jagged edges. Metal MSAA on Apple Silicon is nearly free (tile-based deferred rendering resolves MSAA in on-chip memory). | Low | Set MTKView.sampleCount = 4. Single config change, dramatic visual improvement. Zero performance cost on Apple Silicon. |
-| GPU-driven frustum culling | Compute pass tests each aircraft against camera frustum before rendering. In dense airspaces (1000+ aircraft), this prevents wasted vertex/fragment work for off-screen aircraft. | Med | Compute shader: test bounding sphere against 6 frustum planes. Write visible indices to indirect argument buffer. Render pass uses executeIndirect. |
-| HDR/EDR glow effects | Extended Dynamic Range for vivid retro green glow and altitude colors. Apple Silicon displays natively support EDR values > 1.0. | Low-Med | MTKView with .rgba16Float pixel format, wantsExtendedDynamicRangeContent = true. Glow sprites render with values > 1.0 for bloom-like brightness without post-processing. |
-| Post-processing bloom | Soft glow around bright objects (position lights, retro glow). Web version fakes this with transparent sprites. | Med | Render scene to offscreen texture. Threshold bright pixels, gaussian blur, composite additively. Two compute passes + one render pass. Significantly enhances retro theme. |
-
-### Native macOS Integration
+### Visual Polish
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Menu bar status item | Always-visible aircraft count in menu bar. Quick-glance monitoring. Competitor ADS-B Radar uses this as their primary interface -- proves the concept works. | Low-Med | SwiftUI MenuBarExtra scene. Show aircraft count badge, mini sortable aircraft list with altitude/heading, quick actions (open main window, toggle data source, take screenshot). Can run independently of main window. |
-| macOS notifications for aircraft alerts | Background alerting when specific callsigns, emergency squawks (7500/7600/7700), altitude thresholds, or registration patterns appear. | Med | UNUserNotificationCenter with local notifications. Define alert rules in settings (callsign match, squawk code, altitude range, distance threshold). Background polling continues when app is minimized. ADS-B Radar already offers this -- competitive requirement. |
-| Dock icon badge with live count | Glanceable aircraft count on dock icon without opening the app. | Low | NSApp.dockTile.badgeLabel = String(count). One line of code, meaningful value. |
-| Native macOS menu bar (File, Edit, View, Window) | Proper macOS menus with Preferences (Cmd+,), View toggles, Window management. Feels like a real Mac app, not a web page. | Low | SwiftUI .commands() modifier with CommandGroup and CommandMenu. Map existing keyboard shortcuts to menu items. Standard expectations: Cmd+W closes window, Cmd+Q quits, Cmd+F searches. |
-| Trackpad gesture controls | Two-finger pinch zoom, two-finger rotate orbit, scroll pan. Natural macOS trackpad UX that web version cannot match. | Low | SwiftUI MagnifyGesture, RotateGesture, DragGesture mapped to camera parameters. Inertial scrolling for smooth pan deceleration. This alone justifies going native for trackpad users. |
-| Fullscreen + Split View | True macOS fullscreen with menu bar auto-hide. Split View with other apps (e.g., terminal showing dump1090 output alongside the tracker). | Low | Free from NSWindow/SwiftUI. Just ensure layout adapts to different aspect ratios. |
-| Multiple windows | Open several windows showing different geographic regions simultaneously. Each window has independent center coordinates and zoom but shares the same data feed. | Med | SwiftUI WindowGroup. Shared @Observable data layer. Each window has own camera state and map center. Useful for monitoring multiple airports. |
-| Share sheet integration | Share current view as screenshot or share flight details as formatted text. | Low | ShareLink in SwiftUI. Render Metal view to NSImage via drawable snapshot. Format flight details as rich text. |
-| Desktop Widgets (WidgetKit) | Small/medium/large desktop widgets showing: aircraft count, nearest aircraft info, coverage statistics, mini radar snapshot. | Med | WidgetKit timeline provider refreshing every 5-15 minutes. Static content (no live Metal rendering in widgets), but can include rendered mini-map images and formatted stats. |
-| Spotlight search integration | Search for active flights, airports, or aircraft registrations directly from macOS Spotlight. | Med | Core Spotlight: index active flights as CSSearchableItem with callsign, hex, type as searchable attributes. When user taps result, open app and select/fly-to that item. Useful for quick lookups without switching to the app. |
-| Shortcuts / App Intents | Siri and Shortcuts automation: "How many aircraft are tracked?" "Show flights near JFK." "Take a screenshot of the tracker." | Med-High | App Intents framework. Define: GetAircraftCount, SearchFlights(query), FlyToAirport(code), CaptureScreenshot, GetFlightDetails(callsign). Apple is pushing App Intents heavily in 2025-2026 -- good platform alignment. |
-| Drag and drop | Drop text (hex code, callsign, airport code) onto the app to search/fly-to. | Low | SwiftUI .dropDestination() modifier. Parse dropped text. Quick interaction for power users. |
-| Handoff (future) | Start tracking on Mac, continue on iPhone/iPad when iOS companion app exists. | Med | NSUserActivity with geographic context. Requires future iOS app. Do not build yet but design data model to support it. |
-
-### Data & Performance Advantages
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| SQLite/SwiftData persistence | Web version uses IndexedDB (limited queries, no schema, browser-dependent). Native gets proper relational database with migrations, efficient range queries, and automatic iCloud sync via CloudKit. | Med | SwiftData models: TrailHistory (hex, points, lastSeen), FlightStats (timestamp, messageRate, aircraftCount, signalLevel), AircraftCache (hex, registration, type, operator, fetchDate), AlertRule (type, pattern, active). |
-| Background data collection | macOS apps are not suspended when minimized (unlike iOS or browser tabs). App continues polling and accumulating data in background. Web version stops rendering when tab is hidden. | Low | Reduce poll frequency when not frontmost (e.g., 5s instead of 1s). Continue writing to SQLite. Resume full-speed rendering when brought to front. |
-| Efficient memory with ARC + value types | Web version fights JavaScript garbage collection causing frame drops. Native uses deterministic ARC for reference types and stack-allocated value types for hot-path data. | Low | Use structs for AircraftState, TrailPoint, MapTile. simd_float3 for positions. Metal buffers with .storageModeManaged. No GC pauses. |
-| Multi-window shared data | Multiple windows observe the same data source. No duplicate API calls. Changes in one window (e.g., theme switch) can optionally propagate to others. | Med | Shared actor or @Observable singleton for DataManager. Windows subscribe to same state. Data fetched once, displayed in multiple views. |
-| Launch-time performance | Web version loads THREE.js library, CSV airport data, fonts, and tiles sequentially. Native app: Metal pipeline compiles at build time, airport data can be bundled as pre-indexed binary, shaders are precompiled to GPU-specific binary. | Low | .metallib compiled at build time. Airport data as bundled asset. Launch to first aircraft render in < 1 second vs. 3-5 seconds for web version. |
+| Improved aircraft silhouettes | Better recognizability at a glance. Current models are basic primitive compositions. Swept wing angles, tapered fuselages, and distinctive tail shapes make each category immediately identifiable -- especially important in retro wireframe mode where color cues are absent. | Med | Modify `AircraftMeshLibrary` builders. Jet: 30-degree swept wings via `appendBox` with rotated corners or custom vertex arrays. Widebody: wider fuselage, larger engines, 2+2 engine layout. Military: proper delta wing (triangular prism, not box). Helicopter: larger cabin sphere, visible skid detail. Regional: high-wing mount, T-tail. Keep vertex count under 500 per type for instancing budget. |
+| Terrain LOD (level of detail) | Current terrain uses uniform 32x32 subdivision per tile regardless of distance. Distant tiles waste vertices. Reducing distant subdivision to 16x16 or 8x8 saves significant vertex processing and allows higher near-camera detail (64x64). | Med | Add distance-based subdivision selection in `TerrainTileManager.buildTerrainMesh`. Near camera: 48x48 or 64x64 subdivisions. Mid-range: 32x32 (current). Far: 16x16. Based on tile distance from camera center. |
+| Airspace class filter toggles | Web version has per-class toggles (B/C/D) so users can show only the airspace they care about. Aviation enthusiasts expect this control. | Low | Add toggle buttons or Settings checkboxes for Class B, C, D visibility. Store in `@AppStorage`. Pass filter state to `AirspaceVolumeManager`. |
+| Airspace volume labels | Web version stores `NAME` and `ICAO_ID` per volume (e.g., "SEATTLE CLASS B", "KSEA"). Showing the airspace name when hovering or at the center of the volume helps users identify which airport's airspace they are seeing. | Low | Render a billboard label at the centroid of each airspace polygon, similar to existing airport labels. Reuse `LabelManager` infrastructure. |
+| Info panel: data source indicator | Show whether data is coming from local dump1090 or global API, and which provider (airplanes.live vs adsb.lol) is active. Users troubleshooting connectivity need this. | Low | Add a status line to `InfoPanel` showing current data source. Read from `UserDefaults` or observe `FlightDataManager` state. |
+| Smoother panel transitions | Current panel show/hide uses basic SwiftUI `.transition(.move)`. Adding spring animations and matched geometry effects would feel more polished. | Low | Replace `.easeInOut(duration: 0.25)` with `.spring(response: 0.35, dampingFraction: 0.85)`. Add `.matchedGeometryEffect` for aircraft detail panel appearing from the selected aircraft's screen position. |
 
 ---
 
 ## Anti-Features
 
-Features to explicitly NOT build. These are traps that waste effort, harm the product, or miss the point of going native.
+Features to explicitly NOT build in v2.1. These are tempting scope expansions that would derail the milestone.
 
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| SceneKit or RealityKit for 3D rendering | Higher-level 3D frameworks add abstraction overhead, limit control over draw calls, and prevent the instanced rendering architecture that justifies this rewrite. SceneKit's per-node rendering model is essentially what THREE.js does -- same problem. | Raw Metal + MetalKit. MTKView with custom render/compute pipelines. Full control over GPU work submission. |
-| MapKit for the 3D map view | MapKit renders its own map into its own layer. Cannot composite with custom Metal 3D rendering. Cannot overlay thousands of instanced aircraft or custom trail geometry. Different coordinate systems. | Custom tile rendering in Metal. Download standard slippy map tiles with URLSession, render as textured ground-plane quads in the same Metal render pass as aircraft. |
-| WebView (WKWebView) for any UI | Defeats the purpose of going native. WebViews have their own process, different rendering pipeline, different input handling. Mixing web and native UI is a maintenance nightmare. | Pure SwiftUI for all panels, controls, and overlays. SwiftUI inspector, toolbar, sidebar, charts -- all native. |
-| iOS/iPadOS port in Phase 1 | Touch vs. trackpad UX is fundamentally different. Metal works on both, but UI layout, gesture handling, and platform integration (menu bar, widgets, notifications) are completely different. Splitting focus guarantees both versions ship half-baked. | macOS first, macOS only. Share data layer code via Swift package when iOS port starts. Separate UI layer. |
-| Photorealistic aircraft models (glTF/OBJ) | Loading detailed 3D models for 1000+ aircraft requires per-model GPU memory, prevents instanced rendering (all instances must share geometry), and conflicts with the stylized wireframe/simple-solid aesthetic. Asset pipeline complexity for loading, converting, and LOD-ing 3D model formats is enormous. | Keep procedural geometry (cones, cylinders, boxes). Match web version's style. Instanced rendering requires all instances of a type to share one vertex buffer. |
-| Custom map tile server | Massive infrastructure to host, cache, and serve map tiles. Existing free tile servers (OpenStreetMap, CartoDB, Stamen, ESRI) are reliable and fast. | Use existing public tile servers. Cache tiles locally with URLCache or disk cache. |
-| Touch Bar support | Apple discontinued Touch Bar on all current Mac models. No Mac sold since late 2023 includes one. Code would serve zero new users. | Skip entirely. Allocate effort to menu bar, widgets, and Spotlight instead. |
-| Real-time audio (engine sounds, ATC) | Enormous scope: spatial audio engine, audio streaming, content sourcing/licensing, volume controls, performance impact. Zero overlap with visual tracking features. | Limit audio to macOS notification sounds for aircraft alerts. Standard UNNotificationSound. |
-| Machine learning flight prediction | Training data collection, model selection, inference pipeline, validation against actual paths. Research project, not product feature. | Simple linear extrapolation: extend a dashed line from aircraft's current position along heading at current speed. No ML needed. |
-| Electron / Catalyst wrapper | Electron = web version with more overhead. Catalyst = UIKit-first, second-class Mac citizen. Both defeat the purpose of native Metal rendering and macOS integration. | Pure Swift + Metal + SwiftUI. Purpose-built for macOS. |
-| Recording and playback | 6-hour recording at 1fps for 500 aircraft = massive storage. Playback UI (timeline, scrubbing, speed controls) is essentially building a media player. The web version explicitly deferred this as an anti-feature. | Long trail durations (up to 4000 points at ~100ms intervals = ~7 minutes) provide historical context without playback infrastructure. |
+| Loaded 3D aircraft models (glTF/OBJ) | Breaks instanced rendering (all instances of a type must share one vertex buffer). Asset pipeline complexity is enormous. Loading, converting, LOD-ing per-aircraft models for 500+ simultaneous aircraft is a different architectural paradigm. | Improve procedural geometry in `AircraftMeshLibrary`. Better silhouettes with the same primitive-composition approach. This preserves instanced draw calls. |
+| Weather radar overlay | Massive scope: tile source for weather data, temporal animation, transparency compositing with map tiles, refresh intervals, API costs. Not part of a flight tracker's core loop. | Defer to v2.2+. If users need weather, they can use a separate weather app alongside. |
+| Flight path prediction (extrapolated dashed line) | Requires accurate heading-hold assumption (invalid for turning aircraft), speed model, and adds visual clutter. Web version never implemented it. | Keep focus on historical trails which are proven valuable. |
+| Order-independent transparency (OIT) for airspace | Apple's Metal provides OIT via tile shaders and image blocks (A11+ GPUs). However, the complexity is extreme for the visual benefit. Airspace volumes are large, non-overlapping within a class, and rendered at very low opacity (6%). Sorting errors would be barely visible. | Use simple back-to-front sorting by airspace class (D first, then C, then B). Render after opaque geometry, before aircraft. Disable depth writes. The visual result is indistinguishable from OIT at 6% opacity. |
+| 3D heatmap (elevated colored columns) | Looks cool in demos but adds visual clutter to an already dense scene. Occludes aircraft and terrain. The web version uses a 2D canvas overlay for good reason. | 2D SwiftUI Canvas overlay in the statistics panel area. Clean, unobtrusive, matches web version's proven UX. |
+| Airspace from non-FAA sources (EUROCONTROL, etc.) | Massively different data format, different classification system (ICAO vs. FAA), different APIs. Multi-region airspace support is a v3.0 feature. | Hard-code FAA ArcGIS FeatureServer endpoint. This covers US, Puerto Rico, and Virgin Islands. International users see no airspace -- acceptable for v2.1. |
+| GPU-based polygon triangulation | Compute shader ear clipping sounds elegant but polygon count is low (typically 8-30 vertices per airspace boundary). CPU triangulation is instant. | Simple ear-clipping on CPU. The `airspaceData` typically has <500 features, each with <50 vertices. Total triangulation time: <10ms. |
 
 ---
 
 ## Feature Dependencies
 
 ```
-[Data Source Protocol]
+[v2.1 Bug Fixes]
     |
-    +-> [Aircraft Data Buffer] -- stores timestamped position samples
-    |     |
-    |     +-> [Interpolation System] -- lerp positions/headings each frame
-    |     |     |
-    |     |     +-> [Instance Buffer Writer] -- writes interpolated data to GPU buffer
-    |     |     |     |
-    |     |     |     +-> [Instanced Aircraft Rendering] -- 6 draw calls (one per type)
-    |     |     |     +-> [Glow Sprite Rendering] -- 1 instanced draw call
-    |     |     |     +-> [Aircraft Label Rendering] -- instanced billboards
-    |     |     |     +-> [Altitude Line Rendering] -- instanced dashed lines
-    |     |     |
-    |     |     +-> [Trail Point Collection] -- ring buffer per aircraft
-    |     |     |     |
-    |     |     |     +-> [Trail Vertex Buffer] -- GPU polyline geometry
-    |     |     |     +-> [Trail SQLite Persistence] -- restore on reappear
-    |     |     |
-    |     |     +-> [Aircraft Detail Panel] -- SwiftUI reads current values
-    |     |
-    |     +-> [Aircraft Enrichment] -- async API lookup by hex
-    |     |
-    |     +-> [Alert System] -- scans incoming data against rules
-    |           |
-    |           +-> [macOS Notifications]
-    |           +-> [Menu Bar Badge Update]
+    +-> [Map Tile Fix] -- standalone, no dependencies
+    |     Root cause: debug tileManager.texture(for:) returning nil
     |
-    +-> [Statistics Accumulator] -- counts, averages, distributions
-          |
-          +-> [SwiftUI Charts] -- time-series graphs
-          +-> [Coverage Heatmap] -- 20x20 grid texture
-          +-> [Dock Badge] -- NSApp.dockTile.badgeLabel
+    +-> [Propeller Fix] -- standalone, modify AircraftInstanceManager compound transform
+    |
+    +-> [Model Quality] -- standalone, modify AircraftMeshLibrary builders
+    |
+    +-> [Info Panel Links] -- depends on: existing AircraftDetailPanel, NSWorkspace
+    |
+    +-> [Info Panel Photo] -- depends on: EnrichmentService (add photo URL fetch)
 
-[Map Tile System]
+[Airspace Volume Rendering] -- largest new feature
     |
-    +-> [Tile Fetcher] -- URLSession + disk cache
-    |     |
-    |     +-> [Metal Texture Upload] -- async MTLTexture creation
-    |           |
-    |           +-> [Ground Plane Rendering] -- textured quads at Y=0
+    +-> [AirspaceDataService] -- FAA ArcGIS API client
+    |     +-> Fetches GeoJSON for visible map bounds
+    |     +-> Caches airspace data per region
+    |     +-> Triggers re-fetch when camera moves significantly
     |
-    +-> [Terrain System] -- Mapbox terrain-RGB decode
-    |     |
-    |     +-> [Terrain Mesh Generation] -- displaced vertices
-    |     +-> [Terrain Scale Sync] -- linked to altitude exaggeration
+    +-> [AirspaceVolumeManager] -- mesh generation
+    |     +-> Polygon triangulation (ear clipping)
+    |     +-> Extruded mesh generation (floor-to-ceiling)
+    |     +-> Metal buffer creation (vertex + index)
+    |     +-> LRU cache for generated meshes
     |
-    +-> [Airport Database] -- OurAirports CSV load + index
-          |
-          +-> [Airport Labels] -- SDF text at airport positions
-          +-> [Airport Search] -- SwiftUI searchable() with autocomplete
-          +-> [Fly-To Animation] -- smooth camera + map center transition
+    +-> [Airspace Pipeline State] -- new Metal pipeline
+    |     +-> Alpha blending enabled (sourceAlpha, oneMinusSourceAlpha)
+    |     +-> Depth write disabled (read-only depth test)
+    |     +-> New shader pair: airspace_vertex, airspace_fragment
+    |     +-> Per-volume color uniform (B=blue, C=purple, D=cyan)
+    |
+    +-> [Renderer Integration] -- encode after terrain, before aircraft
+    |     +-> encodeAirspaceVolumes() method
+    |     +-> Theme-aware coloring (retro: green)
+    |
+    +-> [Settings Toggle] -- @AppStorage("showAirspace")
+    +-> [Class Filter] -- @AppStorage("airspaceClassB/C/D")
 
-[Camera System]
+[Coverage Heatmap]
     |
-    +-> [Trackpad Gestures] -- MagnifyGesture, RotateGesture, DragGesture
-    +-> [Keyboard Controls] -- menu bar mapped shortcuts
-    +-> [Follow Mode] -- target = selected aircraft
-    +-> [Auto-Rotate] -- constant angle increment
-
-[Theme System]
+    +-> [HeatmapAccumulator] -- grid data model
+    |     +-> 20x20 Int array, accumulate from InterpolatedAircraftState
+    |     +-> Clear/reset capability
+    |     +-> Normalize for rendering (0.0-1.0 range)
     |
-    +-> [Render Pipeline Selection] -- wireframe vs. solid
-    +-> [Shader Uniforms] -- sky color, ground tint, trail palette
-    +-> [SwiftUI Appearance] -- accent colors, backgrounds, text colors
-
-[Settings Persistence] -- @AppStorage / UserDefaults
+    +-> [HeatmapView] -- SwiftUI Canvas
+    |     +-> Theme-aware color gradient
+    |     +-> Toggle visibility from stats panel or settings
     |
-    +-> All toggle/slider/theme/unit states
-    +-> Window position + size (NSWindow restoration)
-    +-> Last data source + center coordinates + zoom level
+    +-> [Settings Toggle] -- @AppStorage("showHeatmap")
 
-[Menu Bar Status Item] -- independent lifecycle from main window
-    +-> [Aircraft Count Badge]
-    +-> [Mini Aircraft List]
-    +-> [Quick Actions] -- open window, switch source, screenshot
-
-[WidgetKit] -- separate target, shared data via App Group
-    +-> [Aircraft Count Widget]
-    +-> [Stats Summary Widget]
+[Visual Polish] -- independent improvements
+    +-> [Aircraft Silhouettes] -- AircraftMeshLibrary only
+    +-> [Terrain LOD] -- TerrainTileManager only
+    +-> [Panel Animations] -- ContentView transitions only
 ```
 
-### Critical Path
+### Critical Path for v2.1
 
-The minimum sequence to get a visible, working application:
+Ordering by risk and dependency:
 
-1. Metal render pipeline + MTKView in SwiftUI window
-2. Data source polling + JSON parsing
-3. Instance buffer + instanced aircraft rendering (even one type)
-4. Camera system with trackpad gestures
-5. Map tile rendering (textured ground plane)
-6. Interpolation system (smooth movement)
-7. Aircraft selection (color picking) + detail panel
+1. **Bug fixes first** -- map tiles, propeller, model quality (unblocks user testing)
+2. **Info panel restoration** -- links, photo (quick wins, visible improvement)
+3. **Airspace volumes** -- largest feature, most implementation risk
+4. **Coverage heatmap** -- simpler feature, can run in parallel with airspace
+5. **Visual polish** -- terrain LOD, panel transitions (finishing touches)
 
-Everything else builds on this foundation.
+---
+
+## Airspace Volume Rendering: Deep Dive
+
+This is the highest-complexity feature in v2.1. Here is the detailed breakdown.
+
+### Data Source
+
+The web version uses the FAA AIS Open Data FeatureServer:
+```
+https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/Class_Airspace/FeatureServer/0/query
+```
+
+Query parameters:
+- `where=CLASS+IN+('B','C','D')` -- filter to controlled airspace classes
+- `geometry={west},{south},{east},{north}` -- bounding box of visible area
+- `geometryType=esriGeometryEnvelope` -- bounding box spatial filter
+- `inSR=4326` -- WGS84 coordinate system
+- `spatialRel=esriSpatialRelIntersects` -- return features that intersect the box
+- `outFields=NAME,CLASS,LOCAL_TYPE,UPPER_VAL,LOWER_VAL,UPPER_UOM,LOWER_UOM,ICAO_ID`
+- `f=geojson` -- GeoJSON output format
+- `resultRecordCount=500` -- limit to 500 features per request
+
+Confidence: HIGH -- this exact URL is used in the working web version (line 1883-1905 of the HTML file).
+
+### Visual Specification
+
+From the web version (lines 1918-1984):
+
+| Property | Class B | Class C | Class D |
+|----------|---------|---------|---------|
+| Fill color | `#4466ff` (blue) | `#9944ff` (purple) | `#44aaff` (cyan) |
+| Fill opacity | 6% | 6% | 6% |
+| Edge opacity | 30% | 30% | 30% |
+| Render order | 3 (front) | 2 (middle) | 1 (back) |
+| Retro override | Green fill 3%, green edge 40% | Same | Same |
+
+Geometry: 2D polygon outline from GeoJSON, extruded from `LOWER_VAL` (floor altitude) to `UPPER_VAL` (ceiling altitude). Altitude conversion: if `UOM == "FL"`, multiply by 100 to get feet. Then apply the same altitude scale factor as aircraft (0.001 world units per foot).
+
+Shape: Class B airspace looks like an inverted wedding cake (multiple stacked shelves of increasing radius). Each shelf is a separate GeoJSON feature with its own floor/ceiling. Class C is typically two concentric rings. Class D is a simple cylinder. All are rendered as separate extruded polygons.
+
+### Metal Implementation Pattern
+
+New pipeline state (similar to existing glow pipeline):
+- Alpha blending: source * sourceAlpha + dest * (1 - sourceAlpha)
+- Depth compare: lessEqual (read depth, so volumes are occluded by terrain)
+- Depth write: disabled (volumes are see-through)
+- Cull mode: none (render both faces for transparency from inside)
+- Triangle fill mode: fill (not wireframe, even in retro -- wireframe volumes look broken)
+
+New shader pair in `AirspaceShaders.metal`:
+- `airspace_vertex`: transforms position by view-projection, passes color
+- `airspace_fragment`: returns color with very low alpha (0.06) for fill faces, higher alpha (0.3) for edge faces
+
+Wireframe edges rendered as a separate draw call using the same vertex data but with `setTriangleFillMode(.lines)` or as `EdgesGeometry`-equivalent (extract unique edges, render as line primitives).
+
+### Polygon Triangulation
+
+The GeoJSON coordinates describe 2D polygon outlines (lat/lon pairs). To create a filled mesh, these must be triangulated.
+
+Approach: **Ear clipping algorithm** -- simple, robust for the typical airspace polygons (convex or mildly concave, no holes, 8-30 vertices). Implementation:
+1. Convert polygon coordinates to 2D (project to XZ plane since Y is altitude)
+2. Run ear clipping to produce triangle indices
+3. Create extruded mesh: top face + bottom face + side quads connecting top/bottom edges
+
+Alternative: Use the existing `appendCylinder`-style approach from AircraftMeshLibrary but with arbitrary polygon cross-sections instead of circular ones. The extrusion logic is the same -- two parallel copies of the polygon connected by quad strips on the sides.
+
+### Performance Budget
+
+- Typical airspace query returns 50-200 features
+- Each feature has 8-30 boundary vertices
+- Triangulated mesh per feature: ~100-300 triangles (top + bottom + sides)
+- Total triangle count: ~10K-50K for a dense area
+- This is trivial for Metal -- fewer triangles than the terrain mesh
+
+Regeneration: only when camera moves significantly (similar to tile loading). Cache generated meshes keyed by GeoJSON feature ID. Invalidate when airspace toggle changes.
+
+---
+
+## Coverage Heatmap: Deep Dive
+
+### Data Accumulation
+
+From the web version (lines 5368-5377):
+- Maintain a `[Int]` array of 20x20 = 400 cells
+- Each frame, for each aircraft with valid lat/lon:
+  - Normalize lat/lon to 0-1 range within current map bounds
+  - Map to grid cell index: `gridX = floor(normX * 20)`, `gridY = floor(normY * 20)`
+  - Increment: `heatmap[gridY * 20 + gridX] = min(255, heatmap[idx] + 1)`
+- Reset capability (clear all cells)
+
+### Rendering
+
+Recommend **SwiftUI Canvas** overlay (matches web version's 2D canvas approach):
+
+```
+Canvas { context, size in
+    let cellW = size.width / 20
+    let cellH = size.height / 20
+    let maxVal = max(heatmap.max() ?? 1, 1)
+
+    for y in 0..<20 {
+        for x in 0..<20 {
+            let intensity = Double(heatmap[y * 20 + x]) / Double(maxVal)
+            let color = themeHeatmapColor(intensity)
+            context.fill(
+                Path(CGRect(x: Double(x) * cellW, y: Double(19 - y) * cellH, width: cellW - 1, height: cellH - 1)),
+                with: .color(color)
+            )
+        }
+    }
+}
+```
+
+Theme colors (from web version lines 5444-5450):
+- Day: `rgba(0, 100+155*i, 255*i, 0.2+i*0.8)` -- blue-to-cyan gradient
+- Night: `rgba(0, 180+75*i, 255*i, 0.2+i*0.8)` -- cyan-to-white gradient
+- Retro: `rgba(0, 255*i, 0, 0.2+i*0.8)` -- green gradient
+
+### Placement
+
+Show as a small overlay (160x160 points) within the statistics panel area, or as a standalone toggle. Title: "Signal Coverage" for local mode, "Aircraft Coverage" for global mode.
 
 ---
 
 ## MVP Recommendation
 
-### Phase 1: Core Metal Rendering (Proves Architecture)
+### Must-Have for v2.1 Ship
 
-Prioritize these -- they validate that Metal instanced rendering works and outperforms the web version:
+1. **Map tile bug fix** -- without map tiles, the app is broken
+2. **Propeller rotation fix** -- visible rendering bug
+3. **Aircraft model improvements** -- better silhouettes for the 6 categories
+4. **Info panel external links** -- 3 clickable URLs (FlightAware, ADSB Exchange, Planespotters)
+5. **Airspace volume rendering** -- the flagship v2.1 feature, completes web parity
+6. **Coverage heatmap** -- completes web parity
+7. **Airspace toggle in Settings** -- users need to turn it on/off
 
-1. **Metal render pipeline** -- MTKView wrapped in NSViewRepresentable, basic scene with clear color
-2. **Instanced aircraft rendering** -- shared geometry per type, instance buffer with position/rotation/color, one draw call per aircraft category
-3. **Map tile ground plane** -- async tile download, Metal texture creation, textured quad grid
-4. **Data source polling** -- local dump1090 + global API with DataSource protocol
-5. **Smooth interpolation** -- position buffer with 2-second delayed lerp, 60fps updates
-6. **Camera controls** -- trackpad pinch/rotate/drag mapped to spherical camera
-7. **Aircraft selection** -- color-pick render pass (render aircraft with unique ID colors to offscreen texture, read pixel on click)
-8. **Aircraft detail panel** -- SwiftUI inspector showing flight data
-9. **Theme system** -- retro wireframe + day solid as minimum two modes
+### Nice-to-Have for v2.1
 
-### Phase 2: Feature Parity with Web Version
+8. **Aircraft photo in detail panel** -- async image loading, adds visual richness
+9. **Terrain LOD** -- performance optimization, not user-visible
+10. **Airspace class filter toggles** -- power user feature
+11. **Panel animation polish** -- spring animations, subtle improvement
+12. **Airspace volume labels** -- names on airspace boundaries
 
-10. **Flight trails** -- GPU polyline rendering, per-vertex altitude color, configurable length/width
-11. **Aircraft labels** -- billboarded text via CoreText texture atlas or SDF
-12. **Airport database + search** -- CSV loading, searchable() autocomplete, fly-to animation
-13. **Airport 3D labels** -- ground-positioned text for nearby airports
-14. **Terrain elevation** -- Mapbox terrain-RGB displacement mesh
-15. **Night theme** -- third theme variant
-16. **Settings persistence** -- @AppStorage for all state
-17. **Keyboard shortcuts** -- native macOS menu bar integration with Cmd key combos
-18. **Statistics panel** -- SwiftUI Charts for time-series, altitude distribution
-19. **Aircraft enrichment** -- hexdb.io/adsbdb.com lookup with cache
-20. **Airspace volumes** -- FAA Class B/C/D transparent extruded polygons
+### Defer to v2.2
 
-### Phase 3: Native Advantages (Justifies the Rewrite)
-
-21. **Menu bar status item** -- aircraft count, mini list, quick actions
-22. **macOS notifications** -- alert rules for callsigns, squawks, altitudes
-23. **Dock icon badge** -- live aircraft count
-24. **MSAA** -- 4x anti-aliasing (one-line config)
-25. **Coverage heatmap** -- Metal texture or SwiftUI Canvas
-26. **Multiple windows** -- independent map regions, shared data
-27. **Follow mode improvements** -- smooth camera tracking with velocity prediction
-28. **Background data collection** -- continue polling when minimized
-
-### Phase 4: Polish & Platform Integration
-
-29. **Desktop Widgets (WidgetKit)** -- aircraft count, stats summary
-30. **Post-processing bloom** -- soft glow for retro theme
-31. **HDR/EDR rendering** -- vivid colors on capable displays
-32. **Spotlight integration** -- search active flights from Spotlight
-33. **Share sheet** -- screenshot and flight detail sharing
-34. **Shortcuts / App Intents** -- Siri automation
-35. **Drag and drop** -- drop hex/callsign/airport code
-
-### Defer Indefinitely
-
-- **GPU compute interpolation** -- CPU lerp is fast enough for < 5000 aircraft. Profile first.
-- **Metal 3 mesh shader trails** -- Complex, requires M1+, standard polylines work fine.
-- **Handoff** -- Requires iOS companion app. Way out of scope.
-- **iOS port** -- Different project, different UI, different gesture model.
-
----
-
-## Competitive Landscape
-
-### ADS-B Radar (macOS, $9.99) -- Primary Competitor
-
-Native macOS app. Menu bar-first. 2D radar visualization.
-
-**Features to match:**
-- Menu bar aircraft radar (their signature -- must match or exceed)
-- Background notifications for callsigns, squawks, altitudes, distance
-- SQLite flight logging with historic flight paths
-- Weather overlays (stretch goal)
-- 7-day statistics graphs
-- Polar plot visualization
-
-**Our differentiator:** Full 3D visualization with terrain, trails, and multiple aircraft model types. ADS-B Radar is 2D radar-style. Our retro wireframe 3D aesthetic is unique in the market. Multiple themes vs. their single style.
-
-### Flighty (iOS/macOS, subscription) -- Design Reference
-
-Apple Design Award winner. Not a direct competitor (personal flight tracking, not ADS-B enthusiast visualization), but study their design patterns:
-- Exceptional SwiftUI implementation
-- Live Activities / Dynamic Island
-- Airport signage-inspired design language
-- "25-hour where's my plane" feature
-
-**Lesson to apply:** Invest in SwiftUI design quality. The native app should feel premium and Mac-native, not like a web app wrapper.
-
-### Flightradar24 (web/iOS, freemium) -- Awareness Competitor
-
-Dominant flight tracker globally. Web-based 3D mode exists but is not a native app.
-
-**Our differentiator:** Native Metal performance, local ADS-B receiver support, retro aesthetic, no subscription required, open data sources.
+- Weather overlays
+- Flight path prediction
+- Desktop Widgets (WidgetKit)
+- Spotlight/Shortcuts integration
+- Multiple window support improvements
+- GPU compute frustum culling
+- Post-processing bloom
 
 ---
 
 ## Sources
 
-### Official Apple Documentation (HIGH confidence)
-- [Metal Overview](https://developer.apple.com/metal/)
-- [Metal Sample Code](https://developer.apple.com/metal/sample-code/)
-- [MTKView Documentation](https://developer.apple.com/documentation/metalkit/mtkview)
-- [Load Resources Faster with Metal 3 (WWDC22)](https://developer.apple.com/videos/play/wwdc2022/10104/)
-- [Transform Geometry with Metal Mesh Shaders (WWDC22)](https://developer.apple.com/videos/play/wwdc2022/10162/)
-- [Modern Rendering with Metal (WWDC19)](https://developer.apple.com/videos/play/wwdc2019/601/)
-- [Optimize GPU Renderers with Metal (WWDC23)](https://developer.apple.com/videos/play/wwdc2023/10127/)
-- [MagnifyGesture](https://developer.apple.com/documentation/swiftui/magnifygesture)
-- [NSMagnificationGestureRecognizer](https://developer.apple.com/documentation/appkit/nsmagnificationgesturerecognizer)
-- [NSPanGestureRecognizer](https://developer.apple.com/documentation/appkit/nspangesturerecognizer)
-- [UNUserNotificationCenter](https://developer.apple.com/documentation/usernotifications/unusernotificationcenter)
-- [Core Spotlight](https://developer.apple.com/documentation/corespotlight)
-- [App Intents](https://developer.apple.com/documentation/AppIntents/app-intents)
-- [WidgetKit](https://developer.apple.com/documentation/widgetkit)
-- [Inspectors in SwiftUI (WWDC23)](https://developer.apple.com/videos/play/wwdc2023/10161/)
-- [What's New in Widgets (WWDC25)](https://developer.apple.com/videos/play/wwdc2025/278/)
-- [Develop for Shortcuts and Spotlight with App Intents (WWDC25)](https://developer.apple.com/videos/play/wwdc2025/260/)
+### Existing Codebase Analysis (HIGH confidence)
+- Full review of all 42 Swift files in AirplaneTracker3D/
+- `Renderer.swift` (1060 lines): 10+ pipeline states, render loop, encoding methods
+- `AircraftMeshLibrary.swift` (497 lines): 6 body meshes + rotor + propeller, procedural primitives
+- `AircraftInstanceManager.swift` (294 lines): triple-buffered instancing, category batching
+- `TerrainTileManager.swift` (322 lines): AWS Terrarium tile decoding, 32x32 mesh generation
+- `ShaderTypes.h` (109 lines): all shared GPU data structures
+- `airplane-tracker-3d-map.html` lines 1880-2017: airspace volume implementation
+- `airplane-tracker-3d-map.html` lines 5368-5455: coverage heatmap implementation
 
-### Community & Tutorial Sources (MEDIUM confidence)
-- [Metal by Example: Instanced Rendering](https://metalbyexample.com/instanced-rendering/)
-- [Metal by Example: Mesh Shaders and Meshlet Culling](https://metalbyexample.com/mesh-shaders/)
-- [Kodeco: GPU-Driven Rendering](https://www.kodeco.com/books/metal-by-tutorials/v3.0/chapters/26-gpu-driven-rendering)
-- [Drawing Lines is Hard (GPU polyline techniques)](https://mattdesl.svbtle.com/drawing-lines-is-hard)
-- [Instanced Line Rendering (polyline via instancing)](https://wwwtyro.net/2019/11/18/instanced-lines.html)
-- [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
-- [Metal View for SwiftUI (NSViewRepresentable wrapping)](https://medium.com/@giikwebdeveloper/metal-view-for-swiftui-93f5f78ec36a)
-- [MetalViewUI: SwiftUI wrapper for MTKView](https://github.com/AlessandroToschi/MetalViewUI)
-- [GPU Tilemap Rendering with Single Draw Call](https://blog.paavo.me/gpu-tilemap-rendering/)
-- [Metal Texture Tiling for Large Panoramas (2026)](https://ikyle.me/blog/2026/metal-texture-tiling)
+### FAA Data Source (HIGH confidence)
+- [FAA AIS Open Data: Class Airspace](https://adds-faa.opendata.arcgis.com/datasets/c6a62360338e408cb1512366ad61559e_0)
+- Verified FeatureServer URL active and returning GeoJSON as of research date
+- Web version line 1883 uses `services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/Class_Airspace/FeatureServer/0`
 
-### Competitor Analysis (HIGH confidence)
-- [ADS-B Radar macOS App](https://adsb-radar.com/)
-- [ADS-B Radar App Store Listing](https://apps.apple.com/us/app/ads-b-radar/id1538149835?mt=12)
-- [Flighty](https://flighty.com)
-- [Behind the Design: Flighty (Apple Developer)](https://developer.apple.com/news/?id=970ncww4)
-- [Flightradar24](https://www.flightradar24.com/how-it-works)
+### Metal Rendering Patterns (HIGH confidence)
+- [Metal by Example: Translucency and Transparency](https://metalbyexample.com/translucency-and-transparency/) -- alpha blending, back-to-front sorting
+- [Apple: Order-Independent Transparency with Image Blocks](https://developer.apple.com/documentation/metal/metal_sample_code_library/implementing_order-independent_transparency_with_image_blocks) -- OIT reference (decided against for v2.1)
+- [Apple: MTLBlendFactor](https://developer.apple.com/documentation/metal/mtlblendfactor) -- blend factor documentation
 
-### Existing Web App Analysis (HIGH confidence)
-- Full source code review of `airplane-tracker-3d-map.html` (5735 lines)
-- Verified features: 6 aircraft categories with distinct geometry, wireframe + solid modes, Line2 fat-line trails with per-vertex color, 3 themes, 10x10 map tile grid, terrain elevation (Mapbox terrain-RGB), airspace volumes (FAA GeoJSON), airport database (OurAirports 78K+), 3D TextGeometry airport labels, aircraft enrichment APIs (hexdb.io, adsbdb.com), 2-second delayed lerp interpolation at 30fps, follow mode, dual data sources with failover, IndexedDB stats persistence, coverage heatmap, altitude distribution, top airlines, comprehensive keyboard shortcuts
+### Airspace Visualization Domain (MEDIUM confidence)
+- [Pilot Institute: Airspace Classes Explained](https://pilotinstitute.com/airspace-explained/) -- Class B "inverted wedding cake", Class C concentric rings, Class D cylinder
+- [3D Airspace visualization](https://3d-airspace.vercel.app/) -- interactive FAA airspace viewer
+- [3D Airspace Google Earth](https://3dairspace.org.uk/) -- reference for visual appearance
+
+### Heatmap & Coverage Domain (MEDIUM confidence)
+- [tar1090: Advanced Features (heatmap)](https://deepwiki.com/wiedehopf/tar1090/5-advanced-features) -- heatmap density visualization
+- [ADS-B Heatmap](https://adsb-heatmap.com/) -- standalone heatmap tool
+- [FlightAware ADS-B Coverage Map](https://www.flightaware.com/adsb/coverage) -- reference for coverage visualization

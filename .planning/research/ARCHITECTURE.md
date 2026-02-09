@@ -1,972 +1,603 @@
-# Architecture Patterns
+# Architecture Patterns: v2.1 Integration
 
-**Domain:** Native macOS Metal flight tracker (rewrite from THREE.js web app)
-**Researched:** 2026-02-08
-**Confidence:** HIGH (Metal rendering patterns from Apple docs + Metal by Example; SwiftUI integration from Apple WWDC sessions; Swift concurrency from official documentation)
+**Domain:** Airspace volumes, coverage heatmaps, and visual polish integration into existing Metal 3 flight tracker
+**Researched:** 2026-02-09
+**Confidence:** HIGH (based on direct codebase analysis of all rendering files + Metal transparent rendering patterns from Metal by Example + Apple compute shader documentation)
 
-## Recommended Architecture
+## Current Architecture Summary
 
-The native macOS app uses a three-layer architecture with strict separation: **Data Layer** (Swift concurrency actors + async/await), **Rendering Layer** (Metal pipeline with MTKView), and **UI Layer** (SwiftUI with NSViewRepresentable bridge). The Data Layer and Rendering Layer communicate through a shared observable model. The UI Layer reads from the same model and sends user actions back through it.
-
-This is NOT a port of the web app's procedural architecture. The web version uses global mutable state, a single `animate()` loop, and DOM manipulation. The native version uses value types, actors for thread safety, protocol-oriented rendering, and SwiftUI's declarative UI. The only things preserved are the domain logic (coordinate transforms, interpolation math, data normalization) and the visual design.
+The existing rendering architecture uses a **single render command encoder per frame** with ordered draw call encoding. All visual elements share one render pass descriptor and one depth buffer. The draw order within `Renderer.draw(in:)` is:
 
 ```
-+------------------------------------------------------------------+
-|                        SwiftUI Layer                              |
-|  [InfoPanel] [ControlsView] [AirportSearch] [SettingsView]       |
-|  [SelectedPlaneView] [GraphsView] [StatusBar]                    |
-+------------------------------------------------------------------+
-        |  reads @Observable       |  user actions
-        v                          v
-+------------------------------------------------------------------+
-|                    AppState (@Observable)                         |
-|  - aircraftList: [AircraftModel]                                 |
-|  - selectedAircraft: AircraftModel?                              |
-|  - settings: AppSettings                                         |
-|  - dataSourceMode: DataSourceMode                                |
-|  - connectionStatus: ConnectionStatus                            |
-+------------------------------------------------------------------+
-        |  supplies data to         ^  receives updates from
-        v                          |
-+------------------------------------------------------------------+
-|                    Metal Renderer                                 |
-|  [MetalView: NSViewRepresentable wrapping MTKView]                |
-|  [Renderer: MTKViewDelegate]                                     |
-|  [AircraftRenderPass] [MapTileRenderPass] [TrailRenderPass]       |
-|  [LabelRenderPass] [AltitudeLineRenderPass]                      |
-+------------------------------------------------------------------+
-        |  GPU commands             ^  per-frame data
-        v                          |
-+------------------------------------------------------------------+
-|                    Metal GPU Pipeline                             |
-|  [Command Queue] [Pipeline States] [Vertex/Fragment Shaders]     |
-|  [Texture Cache] [Instance Buffers] [Uniform Buffers]            |
-+------------------------------------------------------------------+
-
-        -------- Separate async domain --------
-
-+------------------------------------------------------------------+
-|                    Data Layer (Actors)                            |
-|  [FlightDataActor] - polls dump1090/airplanes.live/adsb.lol      |
-|  [AircraftInterpolator] - smooth position interpolation           |
-|  [EnrichmentActor] - hexdb.io/adsbdb lookups                     |
-|  [AirportDataActor] - OurAirports CSV loading + search           |
-|  [SettingsStore] - UserDefaults persistence                       |
-+------------------------------------------------------------------+
-        |  URLSession async/await
-        v
-+------------------------------------------------------------------+
-|                    Network / External APIs                        |
-|  [dump1090] [airplanes.live] [adsb.lol] [OpenSky]                |
-|  [hexdb.io] [adsbdb.com]                                         |
-+------------------------------------------------------------------+
+1. Terrain meshes (opaque, depth-write ON)
+2. Flat tile quads (opaque fallback, depth-write ON)
+3. Altitude reference lines (alpha-blended, depth-write ON)
+4. Aircraft bodies - instanced per category (opaque, depth-write ON)
+5. Spinning parts - rotors/propellers (opaque, depth-write ON)
+6. [wireframe mode restore to fill if retro]
+7. Trail polylines (alpha-blended, depth-write OFF via glowDepthStencilState)
+8. Aircraft labels - billboards (alpha-blended, depth-write OFF)
+9. Airport labels - billboards (alpha-blended, depth-write OFF)
+10. Glow sprites - additive blend (alpha-blended, depth-write OFF)
 ```
 
-### Component Boundaries
+**Key architectural facts from the code:**
 
-| Component | Responsibility | Communicates With |
-|-----------|---------------|-------------------|
-| **AppState** | Central observable model. Holds aircraft list, selection, settings, connection status. Published to both SwiftUI and Renderer. | SwiftUI views (read), Data Layer actors (write), Renderer (read) |
-| **MetalView** | NSViewRepresentable wrapping MTKView. Bridges SwiftUI layout to Metal rendering surface. Forwards mouse/keyboard input. | SwiftUI (hosting), Renderer (delegate) |
-| **Renderer** | MTKViewDelegate. Owns Metal device, command queue, pipeline states. Reads AppState each frame, encodes draw commands. | MTKView (delegate callbacks), AppState (read), GPU (command buffers) |
-| **FlightDataActor** | Actor managing data polling. Runs async polling loop with fallback chain. Normalizes responses to common AircraftModel. | Network (URLSession), AppState (publishes updates) |
-| **AircraftInterpolator** | Smoothly interpolates aircraft positions between data updates (5-10s intervals to 60fps). Runs on render thread or dedicated actor. | AppState aircraft array (read/write per frame) |
-| **EnrichmentActor** | Lazily fetches aircraft metadata (registration, type, route) from enrichment APIs. Caches results. | Network (URLSession), AppState (enriches aircraft models) |
-| **AirportDataActor** | Loads OurAirports CSV once, builds search index. Provides search and nearby queries. | Network (one-time CSV fetch), AppState (search results) |
-| **SettingsStore** | Persists user preferences to UserDefaults. Restores on launch. | AppState settings (read/write) |
+- **Triple buffering:** 3 uniform buffers, 3 instance buffers per manager, ring-buffered via `currentBufferIndex`
+- **Shared Uniforms struct:** `modelMatrix`, `viewMatrix`, `projectionMatrix` (defined in ShaderTypes.h)
+- **BufferIndex enum:** Slots 0-7 already allocated (Uniforms, Vertices, ModelMatrix, Instances, GlowInstances, TrailVertices, LabelInstances, AltLineVertices)
+- **No separate render passes:** Everything is one encoder with pipeline state swaps
+- **Coordinate system:** Mercator projection, worldScale=500, Y=altitude, ground at Y=0
+- **Manager pattern:** Each visual element has a dedicated manager class (TrailManager, LabelManager, AirportLabelManager, AircraftInstanceManager) that owns triple-buffered GPU buffers and provides `update()` + buffer accessors
+- **Pipeline pattern:** Each visual element has its own pipeline state(s), created in `Renderer.init`
+- **MSAA:** 4x sample count on all pipeline states
+- **Depth format:** `.depth32Float`
+- **Color format:** `.bgra8Unorm`
 
-### Data Flow
+---
 
-**Aircraft data flow (network to pixels):**
+## New Feature Integration Architecture
 
-```
-FlightDataActor (polling every 1-10s)
-  |
-  | async/await URLSession
-  v
-Raw JSON from API (ADSBx v2 format: {ac: [{hex, lat, lon, alt_baro, ...}]})
-  |
-  | DataNormalizer.normalize() -> [AircraftModel]
-  v
-AppState.aircraftList updated on @MainActor
-  |
-  | @Observable notifies SwiftUI (info panels update)
-  | Renderer reads in draw(in:) callback
-  v
-AircraftInterpolator.interpolate(aircraft, deltaTime)
-  |
-  | Produces interpolated position/rotation per frame
-  v
-Renderer encodes to per-instance buffer
-  |
-  | setVertexBuffer + drawIndexedPrimitives(instanceCount:)
-  v
-GPU renders instanced aircraft geometry
-```
+### Feature 1: Airspace Volume Rendering
 
-**User interaction flow (click to selection):**
+**What it is:** Semi-transparent 3D shapes representing FAA airspace classes (Class B inverted wedding cake, Class C cylinders, Class D cylinders) rendered on the map at correct geographic positions and altitudes.
+
+**Geometry approach:** Procedural cylinder/truncated-cone meshes generated at init time (similar to how `AircraftMeshLibrary` builds procedural geometry). Each airspace volume is a **unit cylinder** or **unit truncated cone** scaled and positioned per-instance via model matrices.
+
+#### New Files
+
+| File | Type | Purpose |
+|------|------|---------|
+| `AirspaceVolumeManager.swift` | NEW | Loads airspace data, generates per-instance transforms, triple-buffered instance buffers |
+| `AirspaceShaders.metal` | NEW | Vertex/fragment shaders for semi-transparent volumes with Fresnel-like edge highlighting |
+| `AirspaceGeometry.swift` | NEW | Procedural unit cylinder and truncated cone mesh generation (position + normal vertices) |
+
+#### Modified Files
+
+| File | Change |
+|------|--------|
+| `ShaderTypes.h` | Add `BufferIndexAirspaceInstances = 8`, add `AirspaceInstanceData` struct |
+| `Renderer.swift` | Add `airspaceVolumeManager` property, `airspacePipeline` pipeline state, `encodeAirspaceVolumes()` method, call in draw loop |
+| `ThemeManager.swift` | Add `airspaceColors` to `ThemeConfig` (per-class RGBA with alpha ~0.15-0.25) |
+
+#### Data Flow
 
 ```
-Mouse click on MTKView
+airports.json (or separate airspace.json)
   |
-  | MTKView subclass overrides mouseDown(with:)
-  | Converts window coordinates to Metal NDC
+  | AirspaceVolumeManager.init() loads + converts to world coordinates
   v
-Renderer.hitTest(point) -> AircraftModel?
+Per-airspace: center position (SIMD3), base altitude (Float), top altitude (Float),
+              inner radius, outer radius (for Class B tiers), airspace class enum
   |
-  | Ray-cast from camera through click point
-  | Test against aircraft bounding spheres
+  | AirspaceVolumeManager.update(bufferIndex:, cameraPosition:, themeConfig:)
+  | Distance-culled, sorted back-to-front from camera
   v
-AppState.selectedAircraft = hitAircraft
+AirspaceInstanceData buffer (triple-buffered):
+  - modelMatrix (4x4): translate to world position, scale to radius/height
+  - color (float4): theme-aware RGBA with alpha for transparency
+  - _pad fields for alignment
   |
-  | @Observable notifies both SwiftUI and Renderer
+  | encodeAirspaceVolumes() in Renderer.draw()
   v
-SwiftUI: SelectedPlaneView appears with detail info
-Renderer: Highlights selected aircraft, starts follow camera if enabled
+GPU renders semi-transparent cylinders with alpha blending
 ```
 
-## Xcode Project Structure
+#### Render Pass Integration
 
-Use a standard Xcode project with Swift Package Manager for external dependencies (none expected for core app). Internal code is organized as Xcode groups (folders), not separate SPM packages, because Metal shader files (.metal) must be in the main app target for Xcode to compile them into default.metallib automatically. Putting .metal files in an SPM package requires manual metallib compilation and is not worth the complexity.
+Airspace volumes are **semi-transparent** and must render:
+- **AFTER** all opaque geometry (terrain, aircraft, altitude lines)
+- **BEFORE** other transparent elements (trails, labels, glow)
+- With **depth-write OFF** (read depth to be occluded by terrain/aircraft, but do not write to avoid occluding each other incorrectly)
+- With **back-to-front sorting** for correct alpha compositing
+- Using the existing `glowDepthStencilState` (depthCompare: lessEqual, depthWrite: false)
+
+**Updated draw order:**
 
 ```
-AirplaneTracker3D/
-|-- AirplaneTracker3D.xcodeproj
-|-- AirplaneTracker3D/
-|   |-- App/
-|   |   |-- AirplaneTracker3DApp.swift          # @main, WindowGroup
-|   |   |-- AppState.swift                       # Central @Observable model
-|   |   |-- ContentView.swift                    # Root view: ZStack of MetalView + SwiftUI overlays
-|   |
-|   |-- Models/
-|   |   |-- AircraftModel.swift                  # Aircraft data model (position, track, altitude, etc.)
-|   |   |-- AirportModel.swift                   # Airport data model (ICAO, IATA, coords, type)
-|   |   |-- AppSettings.swift                    # Persisted settings (theme, units, trail config)
-|   |   |-- DataSourceMode.swift                 # Enum: .local, .global
-|   |   |-- AircraftCategory.swift               # Enum: helicopter, small, regional, narrowbody, widebody, military
-|   |
-|   |-- DataLayer/
-|   |   |-- FlightDataActor.swift                # Actor: polling loop with fallback chain
-|   |   |-- DataNormalizer.swift                  # Normalizes dump1090/adsb.lol/OpenSky to AircraftModel
-|   |   |-- AircraftInterpolator.swift            # Position interpolation between data updates
-|   |   |-- EnrichmentActor.swift                 # Actor: hexdb.io/adsbdb enrichment with cache
-|   |   |-- AirportDataActor.swift                # Actor: CSV loading, search index, nearby queries
-|   |   |-- SettingsStore.swift                   # UserDefaults persistence
-|   |   |-- NetworkClient.swift                   # Thin URLSession wrapper with timeout/retry
-|   |
-|   |-- Rendering/
-|   |   |-- MetalView.swift                       # NSViewRepresentable wrapping MTKView
-|   |   |-- Renderer.swift                        # MTKViewDelegate, owns all Metal state
-|   |   |-- RenderPipelines.swift                 # Pipeline state creation (aircraft, map, trails, labels)
-|   |   |-- Camera.swift                          # Orbit camera: projection + view matrices
-|   |   |-- CoordinateSystem.swift                # latLonToXZ, altitudeScale, mapBounds
-|   |   |-- AircraftMeshes.swift                  # Geometry data for aircraft categories (vertex buffers)
-|   |   |-- MapTileManager.swift                  # Tile loading, texture creation, tile grid math
-|   |   |-- TrailRenderer.swift                   # Trail line rendering with altitude color gradient
-|   |   |-- LabelRenderer.swift                   # Text-to-texture label rendering (Core Text + Metal)
-|   |   |-- TextureCache.swift                    # LRU texture cache for map tiles and labels
-|   |
-|   |-- Shaders/
-|   |   |-- ShaderTypes.h                         # Shared structs between Swift and MSL (bridging header)
-|   |   |-- AircraftShaders.metal                 # Vertex/fragment for instanced aircraft rendering
-|   |   |-- MapTileShaders.metal                  # Vertex/fragment for textured ground plane tiles
-|   |   |-- TrailShaders.metal                    # Vertex/fragment for colored trail lines
-|   |   |-- LabelShaders.metal                    # Vertex/fragment for billboard text sprites
-|   |   |-- CommonShaders.metal                   # Shared functions (lighting, color utilities)
-|   |
-|   |-- Views/
-|   |   |-- InfoPanelView.swift                   # Aircraft count, message rate, data source indicator
-|   |   |-- SelectedPlaneView.swift               # Selected aircraft detail panel
-|   |   |-- ControlsView.swift                    # Theme, units, altitude slider, trail toggles
-|   |   |-- AirportSearchView.swift               # Search bar with autocomplete dropdown
-|   |   |-- GraphsView.swift                      # Statistics charts (message rate, aircraft count)
-|   |   |-- SettingsView.swift                    # Preferences window
-|   |   |-- StatusBarView.swift                   # Bottom bar: FPS, data source, connection status
-|   |
-|   |-- Utilities/
-|   |   |-- MathUtilities.swift                   # Haversine, lerp, clamp, matrix helpers
-|   |   |-- ColorUtilities.swift                  # Altitude-to-color mapping, theme colors
-|   |   |-- CSVParser.swift                       # Lightweight CSV parser for OurAirports data
-|   |
-|   |-- Resources/
-|   |   |-- Assets.xcassets                       # App icon, color sets
-|   |   |-- AirplaneTracker3D-Bridging-Header.h   # Imports ShaderTypes.h for Swift access
-|   |
-|   |-- Info.plist
+1. Terrain meshes (opaque)
+2. Flat tile quads (opaque fallback)
+3. Altitude reference lines (alpha-blended, depth-write ON)
+4. Aircraft bodies (opaque)
+5. Spinning parts (opaque)
+6. [wireframe restore if retro]
+7. >>> AIRSPACE VOLUMES (alpha-blended, depth-write OFF, back-to-front sorted) <<<
+8. Trail polylines (alpha-blended, depth-write OFF)
+9. Coverage heatmap overlay (alpha-blended, depth-write OFF)
+10. Aircraft labels (alpha-blended, depth-write OFF)
+11. Airport labels (alpha-blended, depth-write OFF)
+12. Glow sprites (additive blend, depth-write OFF)
 ```
 
-### Structure Rationale
+#### Shader Design
 
-- **Shaders/ as a top-level group:** Metal .metal files must be in the main target for Xcode's automatic metallib compilation. Separating them into their own group keeps shader code distinct from Swift code while maintaining build system compatibility.
+```metal
+// AirspaceShaders.metal
 
-- **ShaderTypes.h bridging header:** This is the standard Apple-recommended pattern for sharing struct definitions between Swift (CPU) and MSL (GPU). The bridging header imports this file, making types like `Uniforms`, `PerInstanceData`, `VertexIn` available to both sides without duplication.
+struct AirspaceInstanceData {
+    float4x4 modelMatrix;   // 64 bytes: position + scale
+    float4 color;            // 16 bytes: theme-aware RGBA
+    float heightScale;       // 4 bytes: for altitude mapping
+    float _pad0, _pad1, _pad2; // 12 bytes padding
+};
+// Total: 96 bytes (same as AircraftInstanceData for alignment consistency)
 
-- **DataLayer/ uses actors, not classes:** Swift actors provide compile-time data race safety. The `FlightDataActor` can safely be called from any thread/task. The `@MainActor` annotation on AppState ensures UI updates happen on the main thread.
+// Vertex shader: standard instanced transform
+// Fragment shader: Fresnel-like edge glow for volume visibility
+//   - Compute view-dependent opacity: alpha increases at glancing angles
+//   - This makes the volume boundaries visible without obscuring the interior
+//   - discard_fragment() for fully transparent fragments to avoid depth issues
+```
 
-- **Rendering/ owns all Metal state:** The Renderer is the single owner of MTLDevice, MTLCommandQueue, and all pipeline states. No Metal objects leak into the SwiftUI layer. This prevents accidental cross-thread GPU access.
+#### Fresnel Edge Approach (HIGH confidence)
 
-- **Models/ are value types (structs):** `AircraftModel`, `AirportModel`, `AppSettings` are all structs. This ensures they are Sendable (can cross actor boundaries safely) and enables value-semantic diffing for efficient SwiftUI updates.
+Rather than rendering solid semi-transparent volumes (which require perfect back-to-front sorting per-pixel), use a **Fresnel-like rim shader**:
+- Compute `dot(viewDirection, surfaceNormal)` in fragment shader
+- When the dot product is near 1.0 (facing camera directly), the surface is nearly transparent
+- When the dot product is near 0 (edge-on/grazing), the surface is more opaque
+- This gives a "glass bubble" effect that clearly shows volume boundaries without obscuring content inside
+- Eliminates the need for perfect sort order since most fragments are very transparent
+- Similar technique used by the existing glow sprites but applied to 3D geometry
+
+```metal
+fragment float4 airspace_fragment(AirspaceVertexOut in [[stage_in]]) {
+    float3 viewDir = normalize(in.cameraPosition - in.worldPosition);
+    float3 normal = normalize(in.worldNormal);
+    float fresnel = 1.0 - abs(dot(viewDir, normal));
+    float edgeAlpha = pow(fresnel, 2.0) * in.color.a * 3.0; // boost edge visibility
+    float baseAlpha = in.color.a * 0.05; // very subtle fill
+    float alpha = min(baseAlpha + edgeAlpha, 0.8);
+    if (alpha < 0.01) discard_fragment();
+    return float4(in.color.rgb * alpha, alpha); // premultiplied
+}
+```
+
+#### Airspace Data Requirements
+
+Airspace data can be embedded as a JSON file in the bundle (like airports.json). Each entry needs:
+
+```json
+{
+  "id": "KSEA-B",
+  "class": "B",
+  "center_lat": 47.449,
+  "center_lon": -122.309,
+  "tiers": [
+    { "inner_nm": 0, "outer_nm": 10, "floor_ft": 0, "ceiling_ft": 10000 },
+    { "inner_nm": 10, "outer_nm": 20, "floor_ft": 3000, "ceiling_ft": 10000 },
+    { "inner_nm": 20, "outer_nm": 30, "floor_ft": 6000, "ceiling_ft": 10000 }
+  ]
+}
+```
+
+Each tier becomes one instanced cylinder draw. The unit cylinder mesh is shared; only the model matrix (scale + translate) varies per instance.
+
+---
+
+### Feature 2: Coverage Heatmap
+
+**What it is:** A 2D ground-plane overlay showing aircraft density/coverage as a color gradient (blue=low, red=high). Accumulates over time as aircraft positions are recorded.
+
+**Two implementation approaches considered:**
+
+#### Approach A: Compute Shader + Texture (RECOMMENDED)
+
+Use a Metal compute shader to accumulate aircraft positions into a 2D texture, then render that texture as a ground-plane quad with alpha blending.
+
+**Why this approach:** The heatmap is a 2D spatial accumulation problem. A compute shader can atomically increment texels corresponding to aircraft positions each frame, and the resulting texture can be sampled in a simple textured quad fragment shader. This keeps the render pass simple and leverages GPU parallelism for the accumulation step.
+
+#### Approach B: CPU Grid + Texture Upload
+
+Maintain a 2D grid on CPU, increment cells each frame, upload as texture. Simpler but wastes CPU-GPU bandwidth every frame.
+
+**Verdict: Use Approach A (compute shader)** because the accumulation is embarrassingly parallel and avoids per-frame texture uploads.
+
+#### New Files
+
+| File | Type | Purpose |
+|------|------|---------|
+| `HeatmapManager.swift` | NEW | Owns heatmap texture, configures compute pipeline, runs accumulation + decay compute passes, renders ground quad |
+| `HeatmapShaders.metal` | NEW | Compute kernel for accumulation, compute kernel for decay/normalization, vertex/fragment shaders for ground overlay rendering |
+
+#### Modified Files
+
+| File | Change |
+|------|--------|
+| `ShaderTypes.h` | Add `HeatmapUniforms` struct (grid bounds, cell size, decay rate), add `BufferIndexHeatmapPositions = 9` |
+| `Renderer.swift` | Add `heatmapManager` property, `heatmapPipeline` pipeline state, compute pipeline state, encode compute + render in draw loop |
+| `ThemeManager.swift` | Add `heatmapColorRamp` to `ThemeConfig` |
+
+#### Data Flow
+
+```
+InterpolatedAircraftState[] (each frame from FlightDataManager)
+  |
+  | HeatmapManager.update(states:, bufferIndex:)
+  | Writes aircraft world XZ positions to a position buffer
+  v
+Compute Pass 1 - Accumulate:
+  kernel reads position buffer, atomically increments heatmap texture cells
+  |
+Compute Pass 2 - Decay/Normalize:
+  kernel multiplies all cells by decay factor (e.g. 0.998), clamps to max
+  |
+  v
+Heatmap texture (R32Float or RG16Float, e.g. 256x256 grid)
+  |
+  | encodeHeatmap() renders ground-plane quad sampling this texture
+  v
+Fragment shader maps texture value through color ramp: 0->transparent, low->blue, high->red
+```
+
+#### Compute Pass Integration
+
+The compute pass must happen **before** the render pass in the same command buffer. This is because Metal compute and render encoders cannot be interleaved on the same command buffer -- you must end one encoder before beginning another.
+
+**Updated command buffer structure:**
+
+```swift
+// In Renderer.draw(in:):
+
+// 1. Compute pass (heatmap accumulation + decay)
+if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
+    heatmapManager.encodeCompute(encoder: computeEncoder, states: states, bufferIndex: currentBufferIndex)
+    computeEncoder.endEncoding()
+}
+
+// 2. Render pass (all visual elements as before)
+guard let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else { ... }
+// ... existing draw calls ...
+// ... heatmap ground quad render call ...
+renderEncoder.endEncoding()
+```
+
+#### Heatmap Texture Design
+
+- **Resolution:** 256x256 cells covering the visible tile area
+- **Format:** `.r32Float` (single channel, accumulation counter)
+- **Storage:** `.private` (GPU-only, no CPU access needed)
+- **Usage:** `[.shaderRead, .shaderWrite]` (compute writes, render reads)
+- **Bounds:** Computed from camera target position and current zoom level. When camera moves significantly, the heatmap can be cleared and re-accumulated, or the bounds can shift.
+
+#### Render Integration
+
+The heatmap ground quad renders **after** trails and **before** labels, using the same alpha-blend + depth-read-no-write pattern:
+
+```
+Pipeline: alpha blending (sourceAlpha, oneMinusSourceAlpha)
+Depth: read-only (glowDepthStencilState)
+Geometry: single quad covering the heatmap world bounds
+Fragment: sample heatmap texture, apply color ramp, output premultiplied alpha
+```
+
+The quad vertices are computed from the heatmap world bounds (similar to how tile quads are positioned using `tileModelMatrix`).
+
+---
+
+### Feature 3: Improved Aircraft Models (Visual Polish)
+
+**What it is:** Higher-fidelity procedural meshes for the 6 aircraft categories, with more segments, smoother curves, and potentially normal-mapped surface detail.
+
+#### Modified Files
+
+| File | Change |
+|------|--------|
+| `AircraftMeshLibrary.swift` | Increase cylinder/sphere segment counts, add wing sweep/dihedral, refine proportions, possibly add engine nacelle detail |
+| `AircraftShaders.metal` | Enhance lighting model (specular highlights, ambient occlusion approximation) |
+
+#### No New Files Needed
+
+This is a pure refinement of existing geometry and shading. The instanced rendering pipeline (`AircraftInstanceManager` -> `encodeAircraft()`) is unchanged. Only the mesh data and fragment shader improve.
+
+#### Considerations
+
+- **Vertex count increase:** Current meshes use 8-segment cylinders. Increasing to 16 segments roughly doubles vertex count. At 1024 max instances with 6 categories, this is still well within Metal's capabilities.
+- **UInt16 index limit:** Current meshes use `UInt16` indices (max 65535 vertices per mesh). Higher-detail meshes must stay under this limit or switch to `UInt32`. Given the procedural nature (composed of simple primitives), staying under 65535 is feasible.
+- **No texture maps needed:** The procedural approach with per-vertex normals and improved lighting can produce significantly better visuals without adding texture complexity.
+
+#### Enhanced Lighting Model
+
+```metal
+// Improved aircraft_fragment with Blinn-Phong specular
+fragment float4 aircraft_fragment_v2(AircraftVertexOut in [[stage_in]]) {
+    float3 lightDir = normalize(float3(0.5, 1.0, 0.5));
+    float3 normal = normalize(in.worldNormal);
+    float3 viewDir = normalize(in.cameraPosition - in.worldPosition);
+
+    // Diffuse
+    float diffuse = max(dot(normal, lightDir), 0.0);
+    float ambient = 0.25;
+
+    // Specular (Blinn-Phong)
+    float3 halfVec = normalize(lightDir + viewDir);
+    float spec = pow(max(dot(normal, halfVec), 0.0), 32.0) * 0.3;
+
+    float3 litColor = in.color.rgb * (ambient + diffuse * 0.65) + float3(spec);
+
+    // Existing strobe + beacon effects unchanged
+    // ...
+
+    return float4(litColor, 1.0);
+}
+```
+
+**Note:** Adding `cameraPosition` to the fragment shader requires adding it to the `Uniforms` struct or passing it through the vertex shader output. The simplest approach is to add a `cameraPosition` field to the existing `Uniforms` struct in `ShaderTypes.h`.
+
+---
+
+## Component Boundaries (Updated)
+
+| Component | Responsibility | Communicates With | New/Modified |
+|-----------|---------------|-------------------|--------------|
+| **Renderer** | Owns Metal device, command queue, all pipeline states. Single render encoder per frame. Calls managers in draw order. | All managers, GPU | MODIFIED: add compute pass, add 2 new encode methods |
+| **AirspaceVolumeManager** | Loads airspace data, generates instance transforms, distance-culls, back-to-front sorts, triple-buffers instance data | Renderer (pipeline), MapCoordinateSystem (geo->world), ThemeManager (colors) | NEW |
+| **AirspaceGeometry** | Procedural unit cylinder and truncated cone meshes with normals | AirspaceVolumeManager (mesh buffers) | NEW |
+| **HeatmapManager** | Owns heatmap texture, compute pipelines, position buffer, ground quad geometry. Runs accumulation + decay + render. | Renderer (compute + render encoding), MapCoordinateSystem (bounds), ThemeManager (color ramp) | NEW |
+| **AircraftMeshLibrary** | Procedural 3D geometry for 6 categories + spinning parts | AircraftInstanceManager (mesh lookup) | MODIFIED: higher-detail geometry |
+| **AircraftShaders.metal** | Instanced vertex + fragment for aircraft | GPU | MODIFIED: enhanced lighting |
+| **ShaderTypes.h** | Shared type definitions between Swift and Metal | All shaders, all Swift rendering code | MODIFIED: new buffer indices, new structs, Uniforms expansion |
+| **ThemeManager** | Theme configs with colors for all visual elements | Renderer, all managers | MODIFIED: airspace colors, heatmap ramp |
+
+---
 
 ## Patterns to Follow
 
-### Pattern 1: NSViewRepresentable Bridge for MTKView
+### Pattern 1: Manager Class with Triple-Buffered GPU Data
 
-**What:** SwiftUI cannot host an MTKView directly. Wrap it in an NSViewRepresentable with a Coordinator that acts as the MTKViewDelegate.
+**What:** Every visual element follows the same manager pattern established by `TrailManager`, `LabelManager`, `AirportLabelManager`, and `AircraftInstanceManager`.
 
-**When:** Always. This is the only way to get Metal rendering into a SwiftUI window on macOS.
+**When:** Any new visual element that writes per-frame data to GPU buffers.
 
-**Example:**
-
-```swift
-// MetalView.swift
-import SwiftUI
-import MetalKit
-
-struct MetalView: NSViewRepresentable {
-    let appState: AppState
-
-    func makeCoordinator() -> Renderer {
-        Renderer(appState: appState)
-    }
-
-    func makeNSView(context: Context) -> MTKView {
-        let mtkView = InteractiveMTKView()  // subclass that handles mouse/keyboard
-        guard let device = MTLCreateSystemDefaultDevice() else {
-            fatalError("Metal is not supported on this device")
-        }
-        mtkView.device = device
-        mtkView.colorPixelFormat = .bgra8Unorm_srgb
-        mtkView.depthStencilPixelFormat = .depth32Float
-        mtkView.clearColor = MTLClearColor(red: 0.04, green: 0.04, blue: 0.1, alpha: 1.0)
-        mtkView.preferredFramesPerSecond = 60
-        mtkView.delegate = context.coordinator
-        context.coordinator.mtkView(mtkView, drawableSizeWillChange: mtkView.drawableSize)
-        return mtkView
-    }
-
-    func updateNSView(_ nsView: MTKView, context: Context) {
-        // SwiftUI state changes flow to renderer through AppState (observed directly)
-    }
-}
-
-// InteractiveMTKView.swift - subclass for input handling
-class InteractiveMTKView: MTKView {
-    var inputHandler: ((InputEvent) -> Void)?
-
-    override var acceptsFirstResponder: Bool { true }
-
-    override func mouseDown(with event: NSEvent) {
-        let location = convert(event.locationInWindow, from: nil)
-        inputHandler?(.mouseDown(location))
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        inputHandler?(.mouseDragged(CGPoint(x: event.deltaX, y: event.deltaY)))
-    }
-
-    override func scrollWheel(with event: NSEvent) {
-        inputHandler?(.scrollWheel(event.deltaY))
-    }
-
-    override func keyDown(with event: NSEvent) {
-        inputHandler?(.keyDown(event.keyCode, event.modifierFlags))
-    }
-}
-```
-
-**Confidence:** HIGH -- This is the standard Apple-recommended pattern. MTKView is NSView on macOS, requiring NSViewRepresentable. The Coordinator pattern is documented in Apple's SwiftUI tutorials. Metal by Example and Kodeco's Metal by Tutorials both use this exact approach.
-
-### Pattern 2: Renderer as MTKViewDelegate with Triple Buffering
-
-**What:** The Renderer class conforms to MTKViewDelegate and manages all Metal state. It uses triple buffering (3 in-flight frames) with a DispatchSemaphore to synchronize CPU/GPU access to uniform buffers.
-
-**When:** Always. This is the core rendering architecture.
-
-**Example:**
+**Structure:**
 
 ```swift
-// Renderer.swift
-import MetalKit
-
-class Renderer: NSObject, MTKViewDelegate {
-    static let maxFramesInFlight = 3
-
+final class NewFeatureManager {
+    // Triple-buffered GPU buffers
+    private var buffers: [MTLBuffer] = []
+    private var counts: [Int] = [0, 0, 0]
     private let device: MTLDevice
-    private let commandQueue: MTLCommandQueue
-    private let appState: AppState
 
-    // Pipeline states (created once at init)
-    private var aircraftPipeline: MTLRenderPipelineState!
-    private var mapTilePipeline: MTLRenderPipelineState!
-    private var trailPipeline: MTLRenderPipelineState!
-    private var labelPipeline: MTLRenderPipelineState!
-
-    private var depthStencilState: MTLDepthStencilState!
-
-    // Triple-buffered uniform buffers
-    private var uniformBuffers: [MTLBuffer] = []
-    private var currentBufferIndex = 0
-    private let frameSemaphore = DispatchSemaphore(value: maxFramesInFlight)
-
-    // Per-instance aircraft data buffer (resized as needed)
-    private var aircraftInstanceBuffer: MTLBuffer?
-    private var aircraftInstanceCount: Int = 0
-
-    // Camera
-    private var camera = OrbitCamera()
-    private var projectionMatrix = matrix_identity_float4x4
-
-    init(appState: AppState) {
-        self.appState = appState
-        self.device = MTLCreateSystemDefaultDevice()!
-        self.commandQueue = device.makeCommandQueue()!
-        super.init()
-
-        buildPipelines()
-        buildDepthStencilState()
-        allocateUniformBuffers()
+    init(device: MTLDevice) {
+        // Allocate 3 buffers (Renderer.maxFramesInFlight)
+        for i in 0..<Renderer.maxFramesInFlight {
+            let buffer = device.makeBuffer(length: ..., options: .storageModeShared)!
+            buffer.label = "Feature Buffer \(i)"
+            buffers.append(buffer)
+        }
     }
 
-    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
-        let aspect = Float(size.width / size.height)
-        projectionMatrix = matrix_perspective_projection(
-            fovY: Float.pi / 3, aspect: aspect, near: 0.1, far: 2000
-        )
+    func update(..., bufferIndex: Int) {
+        let ptr = buffers[bufferIndex].contents().bindMemory(to: InstanceType.self, capacity: max)
+        // Write instance data
+        counts[bufferIndex] = writtenCount
     }
 
-    func draw(in view: MTKView) {
-        // Wait for a free buffer slot
-        frameSemaphore.wait()
-
-        guard let commandBuffer = commandQueue.makeCommandBuffer(),
-              let renderPassDescriptor = view.currentRenderPassDescriptor,
-              let drawable = view.currentDrawable else {
-            frameSemaphore.signal()
-            return
-        }
-
-        // Advance buffer index
-        currentBufferIndex = (currentBufferIndex + 1) % Self.maxFramesInFlight
-
-        // Update uniforms for this frame
-        updateUniforms()
-
-        // Update per-instance aircraft data
-        updateAircraftInstances()
-
-        // Encode render commands
-        guard let encoder = commandBuffer.makeRenderCommandEncoder(
-            descriptor: renderPassDescriptor
-        ) else {
-            frameSemaphore.signal()
-            return
-        }
-
-        encoder.setDepthStencilState(depthStencilState)
-
-        // Draw map tiles (ground plane)
-        encodeMapTiles(encoder: encoder)
-
-        // Draw aircraft (instanced)
-        encodeAircraft(encoder: encoder)
-
-        // Draw trails
-        encodeTrails(encoder: encoder)
-
-        // Draw labels (billboards)
-        encodeLabels(encoder: encoder)
-
-        encoder.endEncoding()
-
-        commandBuffer.present(drawable)
-
-        // Signal semaphore when GPU finishes this frame
-        commandBuffer.addCompletedHandler { [weak self] _ in
-            self?.frameSemaphore.signal()
-        }
-
-        commandBuffer.commit()
-    }
+    func buffer(at index: Int) -> MTLBuffer { buffers[index] }
+    func count(at index: Int) -> Int { counts[index] }
 }
 ```
 
-**Confidence:** HIGH -- Triple buffering is Apple's recommended pattern from the Metal Best Practices Guide. The semaphore pattern is documented at developer.apple.com/library/archive/documentation/3DDrawing/Conceptual/MTLBestPracticesGuide/TripleBuffering.html. Metal by Example uses this exact structure.
+### Pattern 2: Pipeline State in Renderer.init
 
-### Pattern 3: Instanced Aircraft Rendering
+**What:** All pipeline states are created once in `Renderer.init` and stored as `let` properties.
 
-**What:** All aircraft of the same category share a single vertex buffer (geometry). Per-aircraft data (position, rotation, color, scale) is stored in a per-instance buffer. A single `drawIndexedPrimitives(instanceCount:)` call renders all aircraft of one category. This replaces the web version's approach of individual THREE.Group objects per aircraft.
+**When:** Any new shader program needs a pipeline state.
 
-**When:** Always for aircraft rendering. This is the core performance advantage over the web version.
+**Why:** Pipeline state creation is expensive (shader compilation). The existing Renderer creates ALL pipeline states in init -- 15+ pipeline states currently. New features must follow this pattern.
 
-**Example (ShaderTypes.h):**
+### Pattern 3: Encode Method per Visual Element
 
-```c
-// ShaderTypes.h - shared between Swift and Metal
-#ifndef ShaderTypes_h
-#define ShaderTypes_h
+**What:** Each visual element has a private `encode*` method in Renderer that sets pipeline state, binds buffers, and issues draw calls.
 
-#include <simd/simd.h>
+**When:** Any new render pass in the draw loop.
 
-// Buffer indices matching setVertexBuffer atIndex:
-typedef enum {
-    BufferIndexVertices       = 0,
-    BufferIndexUniforms       = 1,
-    BufferIndexInstances      = 2,
-} BufferIndex;
-
-// Shared camera/projection uniforms (per-frame)
-typedef struct {
-    matrix_float4x4 viewMatrix;
-    matrix_float4x4 projectionMatrix;
-    matrix_float4x4 viewProjectionMatrix;
-    simd_float3     cameraPosition;
-    float           time;
-} Uniforms;
-
-// Per-instance aircraft data
-typedef struct {
-    matrix_float4x4 modelMatrix;
-    simd_float4     color;          // altitude-based color + alpha
-    float           scale;          // LOD-based scale factor
-    float           lightPhase;     // position light animation phase
-    uint32_t        flags;          // bit flags: selected, highlighted, etc.
-} AircraftInstanceData;
-
-// Vertex input
-typedef struct {
-    simd_float3 position;
-    simd_float3 normal;
-} VertexIn;
-
-#endif
-```
-
-**Example (AircraftShaders.metal):**
-
-```metal
-// AircraftShaders.metal
-#include <metal_stdlib>
-#include "ShaderTypes.h"
-using namespace metal;
-
-struct VertexOut {
-    float4 position [[position]];
-    float3 worldNormal;
-    float3 worldPosition;
-    float4 color;
-    float  lightPhase;
-    uint   flags;
-};
-
-vertex VertexOut aircraft_vertex(
-    const device VertexIn* vertices [[buffer(BufferIndexVertices)]],
-    constant Uniforms& uniforms [[buffer(BufferIndexUniforms)]],
-    const device AircraftInstanceData* instances [[buffer(BufferIndexInstances)]],
-    uint vertexID [[vertex_id]],
-    uint instanceID [[instance_id]])
-{
-    VertexIn vert = vertices[vertexID];
-    AircraftInstanceData inst = instances[instanceID];
-
-    float4 worldPos = inst.modelMatrix * float4(vert.position * inst.scale, 1.0);
-    float3 worldNormal = (inst.modelMatrix * float4(vert.normal, 0.0)).xyz;
-
-    VertexOut out;
-    out.position = uniforms.viewProjectionMatrix * worldPos;
-    out.worldNormal = normalize(worldNormal);
-    out.worldPosition = worldPos.xyz;
-    out.color = inst.color;
-    out.lightPhase = inst.lightPhase;
-    out.flags = inst.flags;
-    return out;
-}
-
-fragment float4 aircraft_fragment(VertexOut in [[stage_in]],
-                                   constant Uniforms& uniforms [[buffer(BufferIndexUniforms)]])
-{
-    // Simple directional lighting
-    float3 lightDir = normalize(float3(0.5, 1.0, 0.5));
-    float diffuse = max(dot(in.worldNormal, lightDir), 0.0);
-    float ambient = 0.3;
-    float lighting = ambient + diffuse * 0.7;
-
-    float3 litColor = in.color.rgb * lighting;
-
-    // Position light blinking
-    float blink = step(0.7, sin(in.lightPhase));
-    litColor += float3(1.0, 0.0, 0.0) * blink * 0.3;
-
-    // Selection highlight
-    if (in.flags & 1u) {
-        litColor = mix(litColor, float3(1.0, 0.8, 0.0), 0.3);
-    }
-
-    return float4(litColor, in.color.a);
-}
-```
-
-**Confidence:** HIGH -- Metal instanced rendering with `instance_id` is documented by Apple and demonstrated extensively in Metal by Example's "Instanced Rendering" article. The per-instance buffer pattern with `drawIndexedPrimitives(instanceCount:)` is the standard approach.
-
-### Pattern 4: Actor-Based Data Polling with AsyncStream
-
-**What:** The `FlightDataActor` uses Swift's actor isolation to safely manage polling state. It produces an `AsyncStream<[AircraftModel]>` that the AppState consumes. The polling loop handles fallback between API providers, respects rate limits, and supports cancellation.
-
-**When:** Always for data fetching. Replaces the web version's `setInterval(fetchData, 1000)`.
-
-**Example:**
+**Structure:**
 
 ```swift
-// FlightDataActor.swift
-actor FlightDataActor {
-    enum Provider: CaseIterable {
-        case local
-        case airplanesLive
-        case adsbLol
-        case openSky
-    }
+private func encodeNewFeature(encoder: MTLRenderCommandEncoder, uniformBuffer: MTLBuffer) {
+    let count = newFeatureManager.count(at: currentBufferIndex)
+    guard count > 0 else { return }
 
-    private let networkClient: NetworkClient
-    private var currentProvider: Provider = .local
-    private var providerFailCounts: [Provider: Int] = [:]
-
-    init(networkClient: NetworkClient = NetworkClient()) {
-        self.networkClient = networkClient
-    }
-
-    func pollingStream(
-        mode: DataSourceMode,
-        center: (lat: Double, lon: Double),
-        interval: TimeInterval
-    ) -> AsyncStream<[AircraftModel]> {
-        AsyncStream { continuation in
-            let task = Task {
-                while !Task.isCancelled {
-                    do {
-                        let aircraft = try await fetchWithFallback(mode: mode, center: center)
-                        continuation.yield(aircraft)
-                    } catch {
-                        // Yield empty on total failure, don't stop the stream
-                        continuation.yield([])
-                    }
-                    try await Task.sleep(for: .seconds(interval))
-                }
-                continuation.finish()
-            }
-
-            continuation.onTermination = { _ in
-                task.cancel()
-            }
-        }
-    }
-
-    private func fetchWithFallback(
-        mode: DataSourceMode,
-        center: (lat: Double, lon: Double)
-    ) async throws -> [AircraftModel] {
-        let providers: [Provider] = mode == .local
-            ? [.local]
-            : [.airplanesLive, .adsbLol, .openSky]
-
-        for provider in providers {
-            do {
-                let raw = try await fetchFromProvider(provider, center: center)
-                providerFailCounts[provider] = 0
-                return DataNormalizer.normalize(raw, from: provider)
-            } catch {
-                providerFailCounts[provider, default: 0] += 1
-                continue
-            }
-        }
-        throw FlightDataError.allProvidersFailed
-    }
+    encoder.setRenderPipelineState(newFeaturePipeline)
+    encoder.setDepthStencilState(appropriateDepthState)
+    encoder.setVertexBuffer(uniformBuffer, offset: 0, index: Int(BufferIndexUniforms.rawValue))
+    encoder.setVertexBuffer(newFeatureManager.buffer(at: currentBufferIndex), offset: 0,
+                             index: Int(BufferIndexNewFeature.rawValue))
+    encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: ..., instanceCount: count)
 }
 ```
 
-**Confidence:** HIGH -- Swift actors and AsyncStream are stable APIs since Swift 5.5/5.9. The polling-with-AsyncStream pattern is documented in Apple's WWDC sessions and widely used in production apps. Actor isolation eliminates the data races that the web version's global mutable state is susceptible to.
+### Pattern 4: Theme-Aware Colors via ThemeConfig
 
-### Pattern 5: @Observable AppState as Single Source of Truth
+**What:** All colors that vary by theme are stored in `ThemeConfig` and applied through manager update methods or shader uniforms.
 
-**What:** A single `AppState` class annotated with `@Observable` (Swift 5.9+ Observation framework) serves as the bridge between all layers. SwiftUI views read from it reactively. The Renderer reads from it each frame. Data layer actors write to it via `@MainActor` methods.
+**When:** Any new visual element with theme-dependent appearance.
 
-**When:** Always. This replaces the web version's global variables (`airplanes`, `selectedPlane`, `currentTheme`, etc.).
+**Example from existing code:** `themeManager.config.altLineColor`, `themeManager.config.airportLabelColor`, `themeManager.config.aircraftTint`
 
-**Example:**
-
-```swift
-// AppState.swift
-import Observation
-import simd
-
-@Observable
-@MainActor
-final class AppState {
-    // Aircraft state
-    var aircraftList: [AircraftModel] = []
-    var selectedAircraft: AircraftModel?
-    var aircraftTrails: [String: [TrailPoint]] = [:]  // hex -> trail points
-
-    // Data source
-    var dataSourceMode: DataSourceMode = .local
-    var connectionStatus: ConnectionStatus = .disconnected
-    var activeProvider: String = ""
-
-    // Camera
-    var cameraAngle: Float = 0
-    var cameraPitch: Float = 0.5
-    var cameraDistance: Float = 200
-    var centerLatLon: (lat: Double, lon: Double) = (40.7128, -74.0060)
-
-    // Display settings
-    var settings: AppSettings = AppSettings()
-
-    // Map state
-    var mapZoom: Int = 10
-    var mapBounds: MapBounds?
-
-    // Search
-    var airportSearchResults: [AirportModel] = []
-
-    // Stats
-    var messageRate: Double = 0
-    var aircraftCount: Int = 0
-    var signalLevel: Double = 0
-
-    // Derived properties that Metal renderer needs
-    var viewMatrix: matrix_float4x4 {
-        camera.viewMatrix(
-            angle: cameraAngle, pitch: cameraPitch,
-            distance: cameraDistance, target: centerWorldPosition
-        )
-    }
-
-    var centerWorldPosition: simd_float3 {
-        guard let bounds = mapBounds else { return .zero }
-        let pos = CoordinateSystem.latLonToXZ(
-            lat: centerLatLon.lat, lon: centerLatLon.lon, bounds: bounds
-        )
-        return simd_float3(pos.x, 0, pos.z)
-    }
-
-    // Methods called by data layer actors
-    func updateAircraft(_ aircraft: [AircraftModel]) {
-        self.aircraftList = aircraft
-        self.aircraftCount = aircraft.count
-    }
-
-    func selectAircraft(hex: String) {
-        self.selectedAircraft = aircraftList.first { $0.hex == hex }
-    }
-}
-```
-
-**Confidence:** HIGH -- The @Observable macro is the current recommended approach over ObservableObject (Apple WWDC23 "Discover Observation in SwiftUI"). Using @MainActor on the class ensures all property mutations happen on the main thread, which is required for SwiftUI updates and safe for Metal renderer reads in the draw callback (which also runs on the main thread via MTKView's default configuration).
-
-## Metal Rendering Pipeline Detail
-
-### Pipeline State Architecture
-
-Create all pipeline states once at initialization. Never create pipeline states during rendering.
-
-```
-Renderer.init()
-  |
-  +-- buildAircraftPipeline()
-  |     Vertex: aircraft_vertex (instanced, per-instance modelMatrix + color)
-  |     Fragment: aircraft_fragment (diffuse lighting, position light blink, selection highlight)
-  |     Vertex descriptor: position (float3) + normal (float3)
-  |     Instance step: perInstance for buffer index 2
-  |
-  +-- buildMapTilePipeline()
-  |     Vertex: map_tile_vertex (textured quad, position from tile grid)
-  |     Fragment: map_tile_fragment (texture sampling with theme tinting)
-  |     Vertex descriptor: position (float3) + texcoord (float2)
-  |
-  +-- buildTrailPipeline()
-  |     Vertex: trail_vertex (line strip with per-vertex color)
-  |     Fragment: trail_fragment (vertex color passthrough with alpha fade)
-  |     Vertex descriptor: position (float3) + color (float4)
-  |     Blend: src alpha + (1 - src alpha)
-  |
-  +-- buildLabelPipeline()
-  |     Vertex: label_vertex (billboard quad, always faces camera)
-  |     Fragment: label_fragment (texture sampling with alpha test)
-  |     Vertex descriptor: position (float3) + texcoord (float2)
-  |     Blend: src alpha + (1 - src alpha)
-  |
-  +-- buildDepthStencilState()
-        Compare: less, write enabled (aircraft, tiles)
-        Compare: less, write disabled (trails, labels -- transparent)
-```
-
-### Single Render Pass Encoding Order
-
-Use a single render pass with careful draw ordering. Do NOT use multiple render passes (unnecessary for this app, wastes bandwidth on tile-based GPU).
-
-```
-draw(in view:)
-  |
-  +-- encoder.setDepthStencilState(opaqueDepthState)
-  |
-  +-- 1. Map tiles (opaque, ground plane)
-  |     encoder.setRenderPipelineState(mapTilePipeline)
-  |     For each visible tile:
-  |       encoder.setVertexBuffer(tileQuadVertices)
-  |       encoder.setFragmentTexture(tileTexture)
-  |       encoder.drawPrimitives(.triangle, vertexCount: 6)
-  |
-  +-- 2. Aircraft (opaque, instanced)
-  |     encoder.setRenderPipelineState(aircraftPipeline)
-  |     For each aircraft category (jet, widebody, helicopter, small, military):
-  |       encoder.setVertexBuffer(categoryMeshVertices, index: 0)
-  |       encoder.setVertexBuffer(uniformBuffer, index: 1)
-  |       encoder.setVertexBuffer(instanceBuffer, offset: categoryOffset, index: 2)
-  |       encoder.drawIndexedPrimitives(.triangle, indexCount, instanceCount: categoryCount)
-  |
-  +-- encoder.setDepthStencilState(transparentDepthState)  // write disabled
-  |
-  +-- 3. Altitude lines (transparent, thin lines)
-  |     encoder.setRenderPipelineState(trailPipeline)  // reuse trail pipeline
-  |     For each aircraft with altitude line:
-  |       encoder.drawPrimitives(.line, vertexCount: 2)
-  |
-  +-- 4. Trails (transparent, per-aircraft line strips)
-  |     encoder.setRenderPipelineState(trailPipeline)
-  |     For each aircraft with trail:
-  |       encoder.setVertexBuffer(trailVertexBuffer)
-  |       encoder.drawPrimitives(.lineStrip, vertexCount: trailPointCount)
-  |
-  +-- 5. Labels (transparent, billboard quads)
-  |     encoder.setRenderPipelineState(labelPipeline)
-  |     For each visible label:
-  |       encoder.setFragmentTexture(labelTexture)
-  |       encoder.drawPrimitives(.triangle, vertexCount: 6)
-  |
-  +-- encoder.endEncoding()
-```
-
-**Draw order rationale:** Opaque geometry first (tiles, aircraft) with depth writes. Then transparent geometry (altitude lines, trails, labels) with depth writes disabled, sorted back-to-front. This matches the web version's renderOrder approach but uses Metal's depth stencil state switching instead.
-
-### Shader File Organization
-
-Split shaders by rendering domain, not by shader stage. Each .metal file contains both the vertex and fragment functions for one render pass, plus any helper functions specific to that pass. Shared utilities go in CommonShaders.metal.
-
-```
-Shaders/
-  ShaderTypes.h              # Struct definitions shared between Swift and MSL
-  CommonShaders.metal         # Shared: lighting functions, color utilities, coordinate transforms
-  AircraftShaders.metal       # aircraft_vertex + aircraft_fragment (instanced rendering)
-  MapTileShaders.metal        # map_tile_vertex + map_tile_fragment (textured quads)
-  TrailShaders.metal          # trail_vertex + trail_fragment (colored line strips)
-  LabelShaders.metal          # label_vertex + label_fragment (billboard text sprites)
-```
-
-**Why not one big Shaders.metal?** The web version puts everything in one file because it must. The native version should not. Separate files enable:
-- Faster iteration (change one shader, only that file recompiles)
-- Clear ownership (each rendering subsystem owns its shaders)
-- Easier debugging (Metal shader debugger shows file names)
-
-**Why not vertex.metal and fragment.metal?** Splitting by shader stage is an anti-pattern. A vertex function and its corresponding fragment function are tightly coupled (they share VertexOut struct). Putting them in the same file keeps the interface visible.
-
-All .metal files in the main target are automatically compiled by Xcode into `default.metallib`, which is accessible via `device.makeDefaultLibrary()`. No manual compilation needed.
+---
 
 ## Anti-Patterns to Avoid
 
-### Anti-Pattern 1: Wrapping the Web App in WKWebView
+### Anti-Pattern 1: Separate Render Passes for Transparent Geometry
 
-**What:** Embedding the existing HTML/JS in a WKWebView for quick porting.
-**Why bad:** Defeats the purpose of native performance. WKWebView is sandboxed, has WebGL (not Metal) overhead, cannot access Metal APIs, and the app would not be ARM-optimized. Performance would be identical to or worse than Safari.
-**Instead:** Full native rewrite with Metal rendering. Port the domain logic (coordinate math, interpolation, data normalization), not the rendering code.
+**What:** Creating a new `MTLRenderCommandEncoder` for each transparent layer.
 
-### Anti-Pattern 2: Using SceneKit Instead of Metal
+**Why bad:** The existing architecture uses ONE encoder for the entire frame. Creating multiple render passes means multiple load/store actions on the framebuffer, which destroys performance on tile-based GPU architectures (Apple Silicon). Every encoder start/end triggers a full tile flush.
 
-**What:** Using SceneKit's scene graph (SCNScene, SCNNode, SCNGeometry) for easier porting from THREE.js.
-**Why bad:** SceneKit adds abstraction overhead that prevents the instanced rendering optimization critical for 200+ aircraft at 60fps. SceneKit's node-per-object model has the same draw call problem as THREE.js Groups. SceneKit's material system is less flexible than custom Metal shaders for the altitude color coding, wireframe retro theme, and position light animations this app needs.
-**Instead:** Direct Metal rendering with instanced draw calls. One draw call per aircraft category (6 categories) replaces 200+ individual draw calls. The performance difference on Apple Silicon is dramatic.
+**Instead:** Add new encode calls within the existing single encoder, in the correct draw order position. Use pipeline state switches (cheap) rather than encoder switches (expensive).
 
-### Anti-Pattern 3: Creating MTLRenderPipelineState per Frame
+### Anti-Pattern 2: CPU-Side Back-to-Front Sorting Every Frame
 
-**What:** Building pipeline states inside `draw(in:)` instead of at initialization.
-**Why bad:** Pipeline state creation involves shader compilation and is expensive (milliseconds). Doing it per frame at 60fps would cause catastrophic stuttering.
-**Instead:** Create all pipeline states in `Renderer.init()`. If you need variant pipelines (e.g., wireframe for retro theme), create all variants upfront and switch between pre-built states.
+**What:** Sorting all transparent geometry instances by distance from camera every frame.
 
-### Anti-Pattern 4: Putting Metal State in SwiftUI Views
+**Why bad:** Sorting hundreds/thousands of instances per frame on CPU is expensive and often unnecessary.
 
-**What:** Holding MTLBuffer, MTLTexture, or MTLRenderPipelineState references in SwiftUI View structs or their view models.
-**Why bad:** SwiftUI views are value types that get recreated frequently. Metal resources are reference-counted GPU objects that should have stable lifetimes. Mixing them causes unnecessary resource churn and potential use-after-free.
-**Instead:** All Metal state lives in the Renderer class. SwiftUI communicates with the renderer exclusively through AppState (an @Observable class).
+**Instead:** For airspace volumes (few dozen instances), sorting is cheap and correct. For heatmap (single quad), no sorting needed. For the existing trails/labels/glow, the app already avoids sorting by using depth-read-no-write and accepting minor ordering artifacts -- continue this approach.
 
-### Anti-Pattern 5: Blocking the Main Thread with Data Fetching
+### Anti-Pattern 3: Per-Frame Texture Upload for Heatmap
 
-**What:** Performing network requests synchronously or processing large CSV files on the main thread.
-**Why bad:** The main thread runs both the SwiftUI update cycle and the MTKView draw callback. Blocking it freezes both the UI and rendering.
-**Instead:** All network I/O happens in actors using async/await. The OurAirports CSV (12.5MB) is loaded and parsed in the `AirportDataActor` on a background thread. Results are published to AppState via `@MainActor` methods.
+**What:** Building the heatmap grid on CPU and uploading via `texture.replace()` every frame.
 
-### Anti-Pattern 6: One Draw Call per Aircraft
+**Why bad:** CPU-GPU transfer every frame is wasteful when the GPU can accumulate directly. The existing `LabelManager` does CPU-side rasterization to texture, but that's for text rendering which MUST happen on CPU. Numeric accumulation should stay on GPU.
 
-**What:** Encoding separate `drawPrimitives` for each individual aircraft, mirroring the web version's per-object THREE.Group approach.
-**Why bad:** Draw call overhead is the primary bottleneck in Metal rendering. With 200 aircraft and 6 mesh parts each, this would be 1,200 draw calls per frame. On Apple Silicon's TBDR architecture, the overhead compounds.
-**Instead:** Instanced rendering. Group aircraft by category (helicopter, small, jet, widebody, military, regional). Each category uses a single `drawIndexedPrimitives(instanceCount:)` call. 200 aircraft across 6 categories = 6 draw calls instead of 1,200.
+**Instead:** Use a compute shader to accumulate directly into a `.private` storage mode texture. Zero CPU-GPU transfer for the heatmap data path.
+
+### Anti-Pattern 4: Breaking the Triple-Buffer Ring
+
+**What:** Using a fixed buffer instead of indexing by `currentBufferIndex`.
+
+**Why bad:** The Renderer uses `frameSemaphore` (3 slots) to pipeline CPU work ahead of GPU. Writing to a buffer the GPU is still reading causes tearing or corruption.
+
+**Instead:** ALL per-frame GPU data must use the `bufferIndex` parameter. Every existing manager follows this pattern.
+
+---
 
 ## Scalability Considerations
 
-| Concern | At 100 aircraft | At 500 aircraft | At 2,000 aircraft |
-|---------|-----------------|------------------|--------------------|
-| **Draw calls** | 6 instanced calls (trivial) | 6 instanced calls (trivial) | 6 instanced calls (trivial) |
-| **Instance buffer** | ~10 KB (100 * 96 bytes) | ~48 KB | ~192 KB |
-| **Trail memory** | ~1.2 MB (100 trails * 200 points * 60 bytes) | ~6 MB | ~24 MB (may need to cap trail length) |
-| **Label textures** | 100 * 256x64 textures = ~6.4 MB | 500 textures = ~32 MB (need atlas) | Atlas required, LOD culling aggressive |
-| **CPU interpolation** | Negligible | ~0.5ms per frame | ~2ms per frame (may need SIMD batch) |
-| **Data polling** | One API call, ~20 KB response | One API call, ~100 KB response | Multiple API calls or WebSocket needed |
+| Concern | Current (v2.0) | With Airspace Volumes | With Heatmap | Notes |
+|---------|----------------|----------------------|-------------|-------|
+| Draw calls per frame | ~50-100 (tiles + 6 categories + trails + labels + glow) | +10-30 (instanced airspace) | +2 (compute dispatch + quad) | Negligible increase |
+| GPU memory | ~100MB (tile textures + terrain + instance buffers) | +1-2MB (airspace mesh + instances) | +256KB (256x256 R32F texture) | Negligible increase |
+| Vertex throughput | ~50K verts (terrain) + ~10K (aircraft instances) | +5-10K (cylinder meshes) | +6 (single quad) | Well within budget |
+| Pipeline state switches | ~8 per frame | +1 (airspace pipeline) | +1 (heatmap pipeline) | Each switch is ~microseconds |
+| Compute passes | 0 | 0 | +1 (2 dispatches) | First compute usage in the app |
 
-### Scaling Strategy
+---
 
-1. **Instance buffers scale linearly** and are trivially small. Even 10,000 aircraft would only be ~1 MB of instance data. This is the key advantage of the Metal rewrite over the web version.
+## BufferIndex Allocation Plan
 
-2. **Trail memory is the first bottleneck.** Each trail point needs position (12 bytes) + color (16 bytes) = 28 bytes minimum. At 200 points per trail and 500 aircraft, that is 2.8 MB of vertex data uploaded per frame. Solution: use a ring buffer for trail data, overwriting old points instead of reallocating.
+Current allocation in `ShaderTypes.h`:
 
-3. **Label textures need an atlas at scale.** Creating individual Metal textures per aircraft label is wasteful. At 200+ aircraft, use a texture atlas: render all labels into a single large texture (e.g., 2048x2048), with each label occupying a region. The label shader uses UV offsets to sample the correct region.
-
-4. **CPU interpolation should use SIMD.** The interpolation math (lerp position, slerp rotation) for 500+ aircraft can be vectorized using Swift's SIMD types (simd_float3, simd_quatf). At 2,000 aircraft, consider moving interpolation to a Metal compute shader.
-
-## Integration Points
-
-### SwiftUI <-> Metal Renderer
-
-| Integration | Mechanism | Direction |
-|-------------|-----------|-----------|
-| Aircraft data to GPU | AppState.aircraftList read in Renderer.draw() | AppState -> Renderer |
-| Camera controls | AppState.cameraAngle/pitch/distance mutated by SwiftUI sliders and MTKView gestures | Both directions |
-| Selection | Mouse click -> Renderer.hitTest() -> AppState.selectedAircraft -> SwiftUI detail panel | Renderer -> AppState -> SwiftUI |
-| Theme changes | AppState.settings.theme changed by SwiftUI -> Renderer recreates materials/colors | SwiftUI -> AppState -> Renderer |
-| Settings | SwiftUI controls mutate AppState.settings -> Renderer reads per frame | SwiftUI -> AppState -> Renderer |
-| FPS display | Renderer calculates FPS -> AppState.fps (or direct) -> SwiftUI StatusBar | Renderer -> SwiftUI |
-
-### Data Layer <-> AppState
-
-| Integration | Mechanism | Direction |
-|-------------|-----------|-----------|
-| Flight data updates | FlightDataActor.pollingStream -> Task consuming stream -> AppState.updateAircraft() | Actor -> @MainActor |
-| Enrichment data | EnrichmentActor.enrich(hex:) -> AppState.enrichAircraft() | Actor -> @MainActor |
-| Airport search | User types -> AirportDataActor.search(query:) -> AppState.airportSearchResults | SwiftUI -> Actor -> @MainActor |
-| Settings persistence | AppState.settings didSet -> SettingsStore.save() | @MainActor -> sync |
-| Connection status | FlightDataActor reports provider status -> AppState.connectionStatus | Actor -> @MainActor |
-
-### New Components (not in web version)
-
-| Component | Why New | Web Equivalent |
-|-----------|---------|----------------|
-| MetalView (NSViewRepresentable) | Required to host MTKView in SwiftUI | None (DOM container) |
-| Renderer (MTKViewDelegate) | Metal rendering loop replaces THREE.js renderer | `animate()` + `renderer.render()` |
-| ShaderTypes.h (bridging header) | Shares struct definitions between Swift and MSL | None (JS has no shader types) |
-| .metal shader files (4-5 files) | GPU programs replace THREE.js materials | Implicit in THREE.js materials |
-| FlightDataActor | Thread-safe data polling replaces `setInterval(fetchData)` | `fetchData()` + `setInterval` |
-| AircraftInterpolator | Explicit interpolation module replaces inline code | `interpolateAircraft()` (inline in animate) |
-| OrbitCamera | Camera math extracted into dedicated type | Camera variables + `updateCameraPosition()` |
-| TextureCache | LRU cache for map tile and label textures | `tileCache` Map |
-| AppState (@Observable) | Single source of truth replaces global variables | ~50 global variables |
-
-### Components Preserved (logic ported, not code)
-
-| Domain Logic | Web Implementation | Native Implementation |
-|--------------|-------------------|----------------------|
-| Coordinate transform | `latLonToXZ()` | `CoordinateSystem.latLonToXZ()` (same math, Swift struct) |
-| Altitude color mapping | `getAltitudeColor()` | `ColorUtilities.altitudeColor()` (same logic) |
-| Aircraft categorization | `getAircraftCategory()` | `AircraftCategory.from(data:)` (same rules) |
-| Data normalization | Inline in `fetchData()` | `DataNormalizer.normalize()` (extracted) |
-| Haversine distance | `haversine()` | `MathUtilities.haversine()` (same formula) |
-| Trail point collection | Inline in `interpolateAircraft()` | `TrailRenderer.addPoint()` (extracted) |
-
-## Build Order (Dependency Analysis)
-
-Components have clear dependency ordering. This is the recommended implementation sequence:
-
+```c
+BufferIndexUniforms       = 0  // Shared uniforms (VP matrices)
+BufferIndexVertices       = 1  // Per-vertex position data
+BufferIndexModelMatrix    = 2  // Per-tile model matrix / trail line width
+BufferIndexInstances      = 3  // Aircraft instances / trail resolution
+BufferIndexGlowInstances  = 4  // Glow sprite instances
+BufferIndexTrailVertices  = 5  // Trail polyline vertices
+BufferIndexLabelInstances = 6  // Label billboard instances
+BufferIndexAltLineVertices = 7 // Altitude line vertices
 ```
-Phase 1: Metal Foundation (Window + Rendering Surface)
-    |
-    +--- Xcode project setup, MetalView, Renderer skeleton, empty draw loop
-    |    ShaderTypes.h, first .metal file (clear color only)
-    |    AppState skeleton, ContentView with MetalView
-    |    RESULT: App window with colored Metal surface
-    |
-Phase 2: Camera + Ground Plane
-    |
-    +--- OrbitCamera, CoordinateSystem, projection/view matrices
-    |    Map tile pipeline: textured quads on ground plane
-    |    MapTileManager: tile URL generation, async texture loading
-    |    Mouse/keyboard input handling on MTKView
-    |    RESULT: Pannable, zoomable map on Metal ground plane
-    |
-Phase 3: Data Pipeline + Aircraft Rendering
-    |
-    +--- FlightDataActor, DataNormalizer, NetworkClient
-    |    AircraftModel, AircraftCategory
-    |    Aircraft mesh geometry (vertex buffers for each category)
-    |    AircraftShaders.metal (instanced rendering)
-    |    Per-instance buffer management
-    |    AircraftInterpolator (smooth movement between updates)
-    |    RESULT: Aircraft appearing and moving on the map
-    |
-Phase 4: Trails + Labels + Selection
-    |
-    +--- TrailRenderer + TrailShaders.metal
-    |    LabelRenderer + LabelShaders.metal (Core Text -> texture)
-    |    Hit testing (ray-cast for aircraft selection)
-    |    SelectedPlaneView (SwiftUI detail panel)
-    |    EnrichmentActor (hexdb.io lookups)
-    |    RESULT: Full interactive flight visualization
-    |
-Phase 5: UI Controls + Settings
-    |
-    +--- InfoPanelView, ControlsView (theme, units, altitude scale)
-    |    SettingsStore (UserDefaults persistence)
-    |    Keyboard shortcuts
-    |    Theme switching (day/night/retro shader variants)
-    |    RESULT: Feature-complete core app
+
+New allocations:
+
+```c
+BufferIndexAirspaceInstances = 8  // Airspace volume instances
+BufferIndexHeatmapPositions  = 9  // Aircraft positions for compute accumulation
+BufferIndexHeatmapUniforms   = 10 // Heatmap grid configuration
 ```
+
+---
+
+## Uniforms Struct Expansion
+
+The current `Uniforms` struct contains only matrices:
+
+```c
+typedef struct {
+    simd_float4x4 modelMatrix;
+    simd_float4x4 viewMatrix;
+    simd_float4x4 projectionMatrix;
+} Uniforms;
+```
+
+For enhanced aircraft lighting and airspace Fresnel effects, add `cameraPosition`:
+
+```c
+typedef struct {
+    simd_float4x4 modelMatrix;
+    simd_float4x4 viewMatrix;
+    simd_float4x4 projectionMatrix;
+    simd_float3 cameraPosition;    // NEW: for specular/Fresnel calculations
+    float _pad;                     // alignment padding
+} Uniforms;
+```
+
+This requires updating the Swift side where `Uniforms` is populated:
+
+```swift
+uniforms.pointee.cameraPosition = camera.position
+```
+
+**Impact analysis:** Every shader that reads `uniforms` will see the expanded struct, but since they all access by named field (not by offset), this is backward-compatible. The `_pad` field ensures the struct remains 16-byte aligned (208 bytes total after expansion vs 192 before).
+
+---
+
+## Suggested Build Order
+
+Based on dependency analysis of the integration points:
+
+### Phase 1: Foundation Changes (prerequisite for everything)
+
+1. **Expand `Uniforms` struct** in `ShaderTypes.h` to add `cameraPosition`
+2. **Update `Renderer.draw()`** to populate `uniforms.pointee.cameraPosition = camera.position`
+3. **Add new `BufferIndex` entries** to `ShaderTypes.h`
+4. **Add new color fields** to `ThemeConfig` in `ThemeManager.swift`
+
+These changes are non-breaking. Existing shaders continue to work because they access uniforms by field name.
+
+### Phase 2: Airspace Volume Rendering
+
+5. **Create `AirspaceGeometry.swift`** -- unit cylinder + truncated cone meshes
+6. **Create `AirspaceVolumeManager.swift`** -- data loading, instancing, distance culling
+7. **Create `AirspaceShaders.metal`** -- Fresnel-edge instanced rendering
+8. **Wire into `Renderer.swift`** -- pipeline state in init, encode method, draw loop insertion
+9. **Add airspace data file** (JSON, embedded in bundle)
+
+### Phase 3: Coverage Heatmap
+
+10. **Create `HeatmapShaders.metal`** -- compute kernels (accumulate + decay) + render shaders
+11. **Create `HeatmapManager.swift`** -- texture management, compute dispatch, quad rendering
+12. **Wire into `Renderer.swift`** -- compute pipeline in init, compute dispatch before render, encode call in render loop
+
+### Phase 4: Visual Polish
+
+13. **Improve `AircraftMeshLibrary.swift`** -- higher segment counts, refined proportions
+14. **Enhance `AircraftShaders.metal`** -- Blinn-Phong specular, optional AO approximation
 
 **Phase ordering rationale:**
-- **Phase 1 first** because everything depends on having a Metal rendering surface. Cannot test any rendering without this foundation. This is the "hello Metal" phase.
-- **Phase 2 second** because the camera and map tiles establish the coordinate system and visual frame that everything else is positioned within. Aircraft positions are meaningless without a map reference.
-- **Phase 3 third** because aircraft are the core value proposition. This phase connects the data pipeline to rendering and proves the instanced rendering architecture works. This is the most architecturally significant phase.
-- **Phase 4 fourth** because trails, labels, and selection add polish to the aircraft rendering established in Phase 3. These features depend on having working aircraft to attach to.
-- **Phase 5 last** because UI controls and settings are the final layer on top of a working visualization. The app is usable (if not configurable) without this phase.
+- Phase 1 must come first because Phases 2-4 all depend on expanded Uniforms and new BufferIndex slots
+- Phase 2 before Phase 3 because airspace volumes are simpler (no compute pass, follows existing instanced rendering pattern closely) and validate the transparent rendering integration
+- Phase 3 after Phase 2 because the compute pass is a new pattern for this codebase and should be added after the simpler transparent rendering is proven
+- Phase 4 is independent and can happen anytime after Phase 1, but doing it last avoids blocking the more architecturally significant features
 
-**Each phase is independently verifiable:** After each phase, the app is runnable and demonstrates the capability added. This allows catching architectural mistakes early.
+---
+
+## File Inventory: Complete Change List
+
+### New Files (6)
+
+| File | Lines (est.) | Purpose |
+|------|-------------|---------|
+| `Rendering/AirspaceGeometry.swift` | ~120 | Procedural unit cylinder + truncated cone meshes |
+| `Rendering/AirspaceVolumeManager.swift` | ~250 | Airspace data loading, instance management, culling |
+| `Rendering/AirspaceShaders.metal` | ~80 | Instanced vertex + Fresnel fragment shaders |
+| `Rendering/HeatmapManager.swift` | ~300 | Heatmap texture, compute dispatch, quad rendering |
+| `Rendering/HeatmapShaders.metal` | ~120 | Compute accumulate/decay kernels + render shaders |
+| `Resources/airspace.json` | ~200 | Airspace volume definitions for major airports |
+
+### Modified Files (5)
+
+| File | Changes |
+|------|---------|
+| `Rendering/ShaderTypes.h` | +3 BufferIndex entries, +2 struct definitions, expand Uniforms |
+| `Rendering/Renderer.swift` | +2 pipeline states, +1 compute pipeline, +2 encode methods, +1 compute dispatch, +2 manager properties, modified draw loop order (~80 lines added) |
+| `Rendering/ThemeManager.swift` | +2 ThemeConfig fields (airspace colors, heatmap ramp) |
+| `Rendering/AircraftMeshLibrary.swift` | Increased segment counts in build methods, refined geometry proportions (~50 lines modified) |
+| `Rendering/AircraftShaders.metal` | Enhanced fragment shader with specular + cameraPosition usage (~15 lines modified) |
+
+### Unchanged Files (30+)
+
+All data layer files, all SwiftUI views, camera, map tile system, terrain system, trail system, label systems, selection manager -- none of these need changes for v2.1 features.
+
+---
 
 ## Sources
 
-**Metal Rendering Architecture:**
-- [Writing a Modern Metal App from Scratch (Metal by Example)](https://metalbyexample.com/modern-metal-1/) -- Renderer class structure, MTKViewDelegate pattern, pipeline state creation (HIGH confidence)
-- [Metal by Example: Instanced Rendering](https://metalbyexample.com/instanced-rendering/) -- Per-instance buffer pattern, vertex descriptor step function, instance_id in shaders (HIGH confidence)
-- [Apple Metal Best Practices: Triple Buffering](https://developer.apple.com/library/archive/documentation/3DDrawing/Conceptual/MTLBestPracticesGuide/TripleBuffering.html) -- Semaphore synchronization, ring buffer pattern, completion handler (HIGH confidence)
-- [Apple MTKView Documentation](https://developer.apple.com/documentation/metalkit/mtkview) -- NSView subclass, delegate protocol, frame rate control (HIGH confidence)
-- [Metal Render Passes (Kodeco)](https://www.kodeco.com/books/metal-by-tutorials/v3.0/chapters/12-render-passes) -- Render pass descriptor setup, load/store actions, multi-pass encoding (HIGH confidence)
-- [Optimize GPU Renderers with Metal (WWDC23)](https://developer.apple.com/videos/play/wwdc2023/10127/) -- Function constants, async pipeline creation, occupancy optimization (HIGH confidence)
-- [Discover Metal 4 (WWDC25)](https://developer.apple.com/videos/play/wwdc2025/205/) -- Unified command encoder, Apple Silicon optimizations (MEDIUM confidence -- Metal 4 is new, may not be needed for v2.0)
-
-**SwiftUI + Metal Integration:**
-- [Swift x Metal for 3D Graphics Rendering (Medium)](https://carlosmbe.medium.com/swift-x-metal-for-3d-graphics-rendering-part-1-setting-up-in-swiftui-d2e90d6e5ec3) -- NSViewRepresentable wrapping MTKView, Coordinator as MTKViewDelegate (MEDIUM confidence)
-- [MetalKit in SwiftUI (Apple Developer Forums)](https://developer.apple.com/forums/thread/119112) -- Official guidance on SwiftUI + MTKView (HIGH confidence)
-- [NSView Keyboard and Mouse Input (GitHub)](https://github.com/twohyjr/NSView-Keyboard-and-Mouse-Input) -- MTKView subclass for input handling on macOS (MEDIUM confidence)
-
-**SwiftUI Architecture:**
-- [Apple: Discover Observation in SwiftUI (WWDC23)](https://developer.apple.com/videos/play/wwdc2023/10149/) -- @Observable macro, replaces ObservableObject (HIGH confidence)
-- [Apple: Migrating to @Observable](https://developer.apple.com/documentation/SwiftUI/Migrating-from-the-observable-object-protocol-to-the-observable-macro) -- Migration guide, property tracking (HIGH confidence)
-- [@Observable Macro Performance (SwiftLee)](https://www.avanderlee.com/swiftui/observable-macro-performance-increase-observableobject/) -- Per-property tracking reduces redraws (MEDIUM confidence)
-
-**Swift Concurrency:**
-- [AsyncSequence for Real-Time APIs (Medium)](https://medium.com/@wesleymatlock/asyncsequence-for-real-time-apis-from-legacy-polling-to-swift-6-elegance-c2b8139c21e0) -- AsyncStream polling pattern, cancellation handling (MEDIUM confidence)
-- [Swift Concurrency Deep Dive: Actors (Medium)](https://medium.com/@dhrumilraval212/swift-concurrency-deep-dive-beyond-async-await-architecting-concurrent-systems-with-actors-and-0bc46f0bbb74) -- Actor isolation for shared state, Sendable protocol (MEDIUM confidence)
-- [URLSession with Async/Await (Apple WWDC21)](https://developer.apple.com/videos/play/wwdc2021/10095/) -- Native async URLSession API (HIGH confidence)
-
-**Shader Organization:**
-- [Apple Developer Forums: Swift Package with Metal](https://developer.apple.com/forums/thread/649579) -- Why .metal files should be in main target, not SPM packages (HIGH confidence)
-- [Apple Developer Forums: Defining structs in .h for Swift and Metal](https://forums.developer.apple.com/thread/115086) -- ShaderTypes.h bridging header pattern (HIGH confidence)
-- [Metal Shaders Course: Shader Library Organization](https://www.metal.graphics/appendix-b-shader-library-organization) -- File organization best practices (MEDIUM confidence)
-
-**Existing Codebase:**
-- `/Users/mit/Documents/GitHub/airplane-tracker-3d/airplane-tracker-3d-map.html` -- Web version source (5,735 lines), analyzed for domain logic extraction and feature reference (HIGH confidence)
-
----
-*Architecture research for: Native macOS Metal flight tracker (rewrite from THREE.js web app)*
-*Researched: 2026-02-08*
+- Codebase analysis: Direct reading of all 35 source files in the project
+- [Translucency and Transparency in Metal -- Metal by Example](https://metalbyexample.com/translucency-and-transparency/) -- transparent rendering order, depth buffer management
+- [Processing a texture in a compute function -- Apple Developer](https://developer.apple.com/documentation/metal/compute_passes/processing_a_texture_in_a_compute_function) -- compute shader texture write pattern
+- [Introduction to Compute Programming in Metal -- Metal by Example](https://metalbyexample.com/introduction-to-compute/) -- compute pipeline setup
+- [FAA Airspace Classes in 3D](https://3d-airspace.vercel.app/) -- airspace volume visualization reference
+- [Airspace Classes Explained -- Pilot Institute](https://pilotinstitute.com/airspace-explained/) -- Class B/C/D geometry (inverted wedding cake, cylinders)
