@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-08)
 
 **Core value:** Real-time 3D flight visualization that works both as a personal ADS-B receiver dashboard and as a global flight explorer with airport discovery.
-**Current focus:** Phase 9 -- UI Controls, Settings, Airports
+**Current focus:** Phase 10 -- Native macOS Integration
 
 ## Current Position
 
-Phase: 9 of 10 (UI Controls, Settings, Airports) -- COMPLETE
-Plan: 2 of 2 in current phase (09-02 complete)
-Status: Phase complete
-Last activity: 2026-02-09 -- Plan 09-02 (settings, info panel, statistics, keyboard shortcuts) complete
+Phase: 10 of 10 (Native macOS Integration)
+Plan: 1 of 2 in current phase (10-01 complete)
+Status: In progress
+Last activity: 2026-02-09 -- Plan 10-01 (menu bar, dock badge, notifications) complete
 
-Progress: [================] 100% (17/17 plans across all milestones)
+Progress: [================] 100% (18/19 plans across all milestones)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 16 (7 v1.0 + 9 v2.0)
-- Average duration: ~4.8min (v2.0)
-- Total execution time: ~41min (v2.0)
+- Total plans completed: 17 (7 v1.0 + 10 v2.0)
+- Average duration: ~4.7min (v2.0)
+- Total execution time: ~45min (v2.0)
 
 **By Phase:**
 
@@ -36,6 +36,7 @@ Progress: [================] 100% (17/17 plans across all milestones)
 | 7 (v2.0) | 2 | 11min | 5.5min |
 | 8 (v2.0) | 2 | 10min | 5min |
 | 9 (v2.0) | 2/2 | 8min | 4min |
+| 10 (v2.0) | 1/2 | 4min | 4min |
 
 **Recent Trend:**
 - Phase 5 verified: 5/5 automated checks pass
@@ -47,6 +48,7 @@ Progress: [================] 100% (17/17 plans across all milestones)
 - v2.0 plan 08-02 completed in 7 min
 - v2.0 plan 09-01 completed in 4 min
 - v2.0 plan 09-02 completed in 4 min
+- v2.0 plan 10-01 completed in 4 min
 
 *Updated after each plan completion*
 
@@ -77,6 +79,10 @@ Recent decisions affecting current work:
 - [09-02]: @AppStorage for two-way UserDefaults binding with Renderer frame-time reading
 - [09-02]: Settings scene + CommandMenu pattern for native macOS preferences and menu bar
 - [09-02]: Swift Charts for statistics visualization with timer-based data collection
+- [10-01]: MenuBarManager @StateObject in App struct drives MenuBarExtra label via @Published aircraftCount
+- [10-01]: Aircraft states broadcast via existing NotificationCenter for zero-overhead alert evaluation
+- [10-01]: NotificationManager singleton with @AppStorage, 5-min cooldown deduplication per aircraft per condition
+- [10-01]: Services/ directory for app-level managers, UNUserNotificationCenterDelegate for foreground delivery
 
 ### Pending Todos
 
@@ -90,5 +96,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: Completed 09-02-PLAN.md (settings, info panel, statistics, keyboard shortcuts)
+Stopped at: Completed 10-01-PLAN.md (menu bar status item, dock badge, notifications)
 Resume file: None
