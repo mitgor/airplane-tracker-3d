@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-09)
 
 **Core value:** Real-time 3D flight visualization that works both as a personal ADS-B receiver dashboard and as a global flight explorer with airport discovery.
-**Current focus:** v2.1 Phase 15 in progress -- Visual Polish (LOD + spring animations done)
+**Current focus:** v2.1 Phase 15 complete -- Visual Polish shipped (LOD, spring animations, airspace labels)
 
 ## Current Position
 
-Phase: 15 of 15 (Visual Polish)
-Plan: 1 of 2 in current phase (plan 01 complete)
-Status: Plan 01 complete. Multi-zoom terrain LOD and spring-animated panel transitions shipped.
-Last activity: 2026-02-09 -- Completed 15-01-PLAN.md (Terrain LOD, spring animations)
+Phase: 15 of 15 (Visual Polish) -- COMPLETE
+Plan: 2 of 2 in current phase (all plans complete)
+Status: Phase 15 complete. All v2.1 milestone phases finished.
+Last activity: 2026-02-09 -- Completed 15-02-PLAN.md (Airspace volume labels)
 
-Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [#########.] 90%
+Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [##########] 100%
 
 ## Performance Metrics
 
@@ -24,9 +24,9 @@ Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [#########.] 90
 - Total execution time: ~47min
 
 **v2.1 Velocity:**
-- Plans completed: 9
+- Plans completed: 10
 - Average duration: ~2.8min
-- Total execution time: ~25min
+- Total execution time: ~28min
 
 ## Accumulated Context
 
@@ -56,6 +56,9 @@ Recent decisions affecting current work:
 - v2.1: Three-ring LOD: near(baseZoom+1, r=1), mid(baseZoom, standard), far(baseZoom-1, r=2)
 - v2.1: Spring response 0.35/damping 0.8 for detail panel, 0.3/0.85 for utility panels
 - v2.1: Terrain cache increased from 150 to 250 for multi-zoom tile sets
+- v2.1: Lazy airspace label atlas with name-keyed cache (clear on theme change, re-rasterize on demand)
+- v2.1: Centroid from first fill triangle + mid-altitude Y for airspace label positioning
+- v2.1: Name deduplication for multi-tier airspace labels (one label per airport)
 
 ### Known Issues (v2.1 scope)
 
@@ -76,5 +79,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: Completed 15-01-PLAN.md (Terrain LOD with lodTiles() multi-zoom, spring panel animations). Ready for 15-02-PLAN.md.
+Stopped at: Completed 15-02-PLAN.md (Airspace volume labels). Phase 15 complete. All v2.1 phases done.
 Resume file: None
