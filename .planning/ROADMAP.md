@@ -4,7 +4,7 @@
 
 - **v1.0 Web App Foundation** - Phases 1-4 (shipped 2026-02-07)
 - **v2.0 Native macOS App** - Phases 5-10 (shipped 2026-02-09)
-- **v2.1 Polish & Bug Fixes** - Phases 11-15 (in progress)
+- **v2.1 Polish & Bug Fixes** - Phases 11-15 (shipped 2026-02-09)
 
 ## Phases
 
@@ -38,7 +38,7 @@
 - [x] **Phase 12: Info Panel Restoration** (1/1 plan) - 2026-02-09
 - [x] **Phase 13: Airspace Volume Rendering** (2/2 plans) - 2026-02-09
 - [x] **Phase 14: Coverage Heatmap** (2/2 plans) - 2026-02-09
-- [ ] **Phase 15: Visual Polish** - Terrain LOD, panel animations, and airspace labels
+- [x] **Phase 15: Visual Polish** (2/2 plans) - 2026-02-09
 
 ## Phase Details
 
@@ -133,4 +133,4 @@ Note: Phases 13 and 14 both depend on Phase 11 but not on each other. Phase 15 d
 | 12. Info Panel Restoration | v2.1 | 1/1 | Complete | 2026-02-09 |
 | 13. Airspace Volume Rendering | v2.1 | 2/2 | Complete | 2026-02-09 |
 | 14. Coverage Heatmap | v2.1 | 2/2 | Complete | 2026-02-09 |
-| 15. Visual Polish | v2.1 | 0/2 | Not started | - |
+| 15. Visual Polish | v2.1 | 2/2 | Complete | 2026-02-09 |

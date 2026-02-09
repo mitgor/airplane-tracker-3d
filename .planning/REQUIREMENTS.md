@@ -71,9 +71,9 @@ Deferred to future release. Tracked but not in current roadmap.
 | AIR-03 | Phase 13 | Complete |
 | HEAT-01 | Phase 14 | Complete |
 | HEAT-02 | Phase 14 | Complete |
-| VIS-01 | Phase 15 | Pending |
-| VIS-02 | Phase 15 | Pending |
-| VIS-03 | Phase 15 | Pending |
+| VIS-01 | Phase 15 | Complete |
+| VIS-02 | Phase 15 | Complete |
+| VIS-03 | Phase 15 | Complete |
 
 **Coverage:**
 - v2.1 requirements: 14 total
