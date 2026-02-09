@@ -50,11 +50,11 @@
   1. User sees map tiles rendered on the ground plane surface when the app launches (no blank ground)
   2. User sees propellers spinning aligned with the aircraft nose regardless of the aircraft's heading
   3. User can visually distinguish aircraft categories by silhouette (swept wings on jets, straight wings on props, rotors on helicopters, wide fuselage on widebodies)
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 11-01: TBD
-- [ ] 11-02: TBD
+- [ ] 11-01-PLAN.md -- Fix map tile loading pipeline and propeller rotation
+- [ ] 11-02-PLAN.md -- Improve aircraft silhouettes for category distinction
 
 ### Phase 12: Info Panel Restoration
 **Goal**: Users have a complete aircraft detail panel matching the web version's information density, with position, external links, and photos
@@ -127,7 +127,7 @@ Note: Phases 13 and 14 both depend on Phase 11 but not on each other. Phase 15 d
 | 8. Terrain + Themes | v2.0 | 2/2 | Complete | 2026-02-09 |
 | 9. UI Controls + Settings + Airports | v2.0 | 2/2 | Complete | 2026-02-09 |
 | 10. Native macOS Integration + Distribution | v2.0 | 2/2 | Complete | 2026-02-09 |
-| 11. Bug Fixes & Rendering Foundation | v2.1 | 0/0 | Not started | - |
+| 11. Bug Fixes & Rendering Foundation | v2.1 | 0/2 | Planned | - |
 | 12. Info Panel Restoration | v2.1 | 0/0 | Not started | - |
 | 13. Airspace Volume Rendering | v2.1 | 0/0 | Not started | - |
 | 14. Coverage Heatmap | v2.1 | 0/0 | Not started | - |
