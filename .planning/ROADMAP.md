@@ -35,7 +35,7 @@
 **Milestone Goal:** Fix rendering bugs, restore missing info panel features from the web version, port airspace volumes and coverage heatmaps to native Metal, and polish visual quality across the app.
 
 - [x] **Phase 11: Bug Fixes & Rendering Foundation** (2/2 plans) - 2026-02-09
-- [ ] **Phase 12: Info Panel Restoration** - Restore position, external links, and aircraft photos to the detail panel
+- [x] **Phase 12: Info Panel Restoration** (1/1 plan) - 2026-02-09
 - [ ] **Phase 13: Airspace Volume Rendering** - Render translucent 3D FAA airspace volumes with class toggles and altitude tiers
 - [ ] **Phase 14: Coverage Heatmap** - Render aircraft detection density as a color-mapped ground overlay
 - [ ] **Phase 15: Visual Polish** - Terrain LOD, panel animations, and airspace labels
@@ -128,7 +128,7 @@ Note: Phases 13 and 14 both depend on Phase 11 but not on each other. Phase 15 d
 | 9. UI Controls + Settings + Airports | v2.0 | 2/2 | Complete | 2026-02-09 |
 | 10. Native macOS Integration + Distribution | v2.0 | 2/2 | Complete | 2026-02-09 |
 | 11. Bug Fixes & Rendering Foundation | v2.1 | 2/2 | Complete | 2026-02-09 |
-| 12. Info Panel Restoration | v2.1 | 0/1 | Planned | - |
+| 12. Info Panel Restoration | v2.1 | 1/1 | Complete | 2026-02-09 |
 | 13. Airspace Volume Rendering | v2.1 | 0/0 | Not started | - |
 | 14. Coverage Heatmap | v2.1 | 0/0 | Not started | - |
 | 15. Visual Polish | v2.1 | 0/0 | Not started | - |

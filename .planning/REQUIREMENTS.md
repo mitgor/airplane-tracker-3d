@@ -63,9 +63,9 @@ Deferred to future release. Tracked but not in current roadmap.
 | FIX-01 | Phase 11 | Complete |
 | FIX-02 | Phase 11 | Complete |
 | FIX-03 | Phase 11 | Complete |
-| INFO-01 | Phase 12 | Pending |
-| INFO-02 | Phase 12 | Pending |
-| INFO-03 | Phase 12 | Pending |
+| INFO-01 | Phase 12 | Complete |
+| INFO-02 | Phase 12 | Complete |
+| INFO-03 | Phase 12 | Complete |
 | AIR-01 | Phase 13 | Pending |
 | AIR-02 | Phase 13 | Pending |
 | AIR-03 | Phase 13 | Pending |
