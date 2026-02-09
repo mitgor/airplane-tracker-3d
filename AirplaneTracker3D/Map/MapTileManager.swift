@@ -95,13 +95,30 @@ final class MapTileManager {
     private func fetchTile(_ tile: TileCoordinate) {
         let url = tileURL(for: tile)
 
+        #if DEBUG
+        print("[MapTileManager] Fetching tile \(tile.zoom)/\(tile.x)/\(tile.y) from \(url.absoluteString)")
+        #endif
+
         Task {
             do {
                 let (data, response) = try await urlSession.data(from: url)
 
-                // Verify we got a valid response
-                if let httpResponse = response as? HTTPURLResponse,
-                   httpResponse.statusCode != 200 {
+                // Verify we got a valid HTTP response
+                if let httpResponse = response as? HTTPURLResponse {
+                    #if DEBUG
+                    print("[MapTileManager] Tile \(tile.zoom)/\(tile.x)/\(tile.y) HTTP \(httpResponse.statusCode), \(data.count) bytes")
+                    #endif
+                    if httpResponse.statusCode != 200 {
+                        cacheQueue.sync { pendingRequests.remove(tile) }
+                        return
+                    }
+                }
+
+                // Guard against empty data (would cause MTKTextureLoader to fail)
+                if data.isEmpty {
+                    #if DEBUG
+                    print("[MapTileManager] Tile \(tile.zoom)/\(tile.x)/\(tile.y) received empty data, skipping")
+                    #endif
                     cacheQueue.sync { pendingRequests.remove(tile) }
                     return
                 }
@@ -116,6 +133,10 @@ final class MapTileManager {
                 let texture = try await textureLoader.newTexture(data: data, options: options)
                 texture.label = "Tile \(tile.zoom)/\(tile.x)/\(tile.y)"
 
+                #if DEBUG
+                print("[MapTileManager] Tile \(tile.zoom)/\(tile.x)/\(tile.y) texture created: \(texture.width)x\(texture.height)")
+                #endif
+
                 // Store in cache
                 cacheQueue.sync {
                     pendingRequests.remove(tile)
@@ -127,6 +148,10 @@ final class MapTileManager {
                         let evicted = cacheOrder.removeFirst()
                         cache.removeValue(forKey: evicted)
                     }
+
+                    #if DEBUG
+                    print("[MapTileManager] Cache size: \(cache.count) tiles")
+                    #endif
                 }
             } catch {
                 #if DEBUG

@@ -118,7 +118,7 @@ final class ThemeManager {
 
         switch theme {
         case .day:
-            return URL(string: "https://\(subdomain).basemaps.cartocdn.com/light_all/\(tile.zoom)/\(tile.x)/\(tile.y)@2x.png")!
+            return URL(string: "https://\(subdomain).basemaps.cartocdn.com/light_all/\(tile.zoom)/\(tile.x)/\(tile.y).png")!
         case .night:
             return URL(string: "https://\(subdomain).basemaps.cartocdn.com/dark_all/\(tile.zoom)/\(tile.x)/\(tile.y).png")!
         case .retro:
