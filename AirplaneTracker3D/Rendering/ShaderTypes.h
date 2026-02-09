@@ -13,7 +13,8 @@ typedef enum {
     BufferIndexTrailVertices = 5,
     BufferIndexLabelInstances = 6,
     BufferIndexAltLineVertices = 7,
-    BufferIndexAirspaceVertices = 8
+    BufferIndexAirspaceVertices = 8,
+    BufferIndexHeatmapVertices = 9
 } BufferIndex;
 
 // Texture indices
@@ -115,6 +116,15 @@ typedef struct {
     float _pad0;             // 4 bytes: padding for alignment
     simd_float4 color;       // 16 bytes: per-vertex RGBA (class color with alpha)
 } AirspaceVertex;
+// Total: 32 bytes
+
+// Per-vertex data for heatmap ground quad (position + texCoord, 32 bytes)
+typedef struct {
+    simd_float3 position;    // 12 bytes: world-space XYZ
+    float _pad0;             // 4 bytes: padding
+    simd_float2 texCoord;    // 8 bytes: UV for heatmap texture sampling
+    simd_float2 _pad1;       // 8 bytes: padding to 32 bytes
+} HeatmapVertex;
 // Total: 32 bytes
 
 #endif /* ShaderTypes_h */
