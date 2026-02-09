@@ -184,6 +184,8 @@ struct ContentView: View {
                 // Update center coordinates for info panel
                 centerLat = MapCoordinateSystem.shared.zToLat(pos[2])
                 centerLon = MapCoordinateSystem.shared.xToLon(pos[0])
+                // Feed camera position to polling center so API queries follow the camera
+                flightDataManager.updateCenter(lat: centerLat, lon: centerLon)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleInfoPanel)) { _ in
@@ -206,8 +208,7 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .switchDataSource)) { notification in
             if let source = notification.userInfo?["source"] as? String {
-                let center = (lat: MapCoordinateSystem.shared.centerLat,
-                              lon: MapCoordinateSystem.shared.centerLon)
+                let center = (lat: centerLat, lon: centerLon)
                 let mode: FlightDataActor.DataMode = source == "local" ? .local : .global
                 flightDataManager.switchMode(to: mode, center: center)
             }
