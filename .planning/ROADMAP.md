@@ -64,10 +64,10 @@ Plans:
   1. User sees latitude/longitude coordinates displayed in the aircraft detail panel when an aircraft is selected
   2. User can click links to FlightAware, ADS-B Exchange, and planespotters.net that open in the default browser with the correct aircraft pre-filled
   3. User sees an aircraft photo in the detail panel (fetched from planespotters.net or hexdb.io, with a placeholder shown while loading or if unavailable)
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 12-01: TBD
+- [ ] 12-01-PLAN.md -- Add external links, aircraft photo, and verify lat/lon in detail panel
 
 ### Phase 13: Airspace Volume Rendering
 **Goal**: Users see translucent 3D airspace boundaries on the map that communicate controlled airspace classes and their altitude structure
@@ -128,7 +128,7 @@ Note: Phases 13 and 14 both depend on Phase 11 but not on each other. Phase 15 d
 | 9. UI Controls + Settings + Airports | v2.0 | 2/2 | Complete | 2026-02-09 |
 | 10. Native macOS Integration + Distribution | v2.0 | 2/2 | Complete | 2026-02-09 |
 | 11. Bug Fixes & Rendering Foundation | v2.1 | 2/2 | Complete | 2026-02-09 |
-| 12. Info Panel Restoration | v2.1 | 0/0 | Not started | - |
+| 12. Info Panel Restoration | v2.1 | 0/1 | Planned | - |
 | 13. Airspace Volume Rendering | v2.1 | 0/0 | Not started | - |
 | 14. Coverage Heatmap | v2.1 | 0/0 | Not started | - |
 | 15. Visual Polish | v2.1 | 0/0 | Not started | - |
