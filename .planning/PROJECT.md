@@ -2,22 +2,11 @@
 
 ## What This Is
 
-A real-time 3D flight tracker available as both a browser-based web app (THREE.js/WebGL) and a native macOS application (Swift/Metal/SwiftUI). It visualizes aircraft positions with smooth interpolated movement, flight trails, and rich enrichment data. The web version includes terrain elevation, airspace volumes, airport search, and 3D labels. The native macOS version is being built as a high-performance ARM-optimized Metal application.
+A real-time 3D flight tracker available as both a browser-based web app (THREE.js/WebGL) and a fully native macOS application (Swift/Metal 3/SwiftUI). The native macOS app features a Metal 3 rendering engine with terrain elevation, three visual themes, instanced aircraft rendering, flight trails, airport search with fly-to, SwiftUI settings, and native macOS integration (menu bar status, dock badge, notifications). Optimized for Apple Silicon at 60fps+.
 
 ## Core Value
 
 Real-time 3D flight visualization that works both as a personal ADS-B receiver dashboard and as a global flight explorer with airport discovery.
-
-## Current Milestone: v2.0 Native macOS App
-
-**Goal:** Rewrite the core flight visualization as a fully native macOS application using Swift, Metal, and SwiftUI — optimized for Apple Silicon, no WebView.
-
-**Target features (core first):**
-- Native Metal 3D rendering pipeline for aircraft visualization
-- Real-time data polling (dump1090 local + global API sources)
-- Smooth aircraft interpolation and flight trails
-- SwiftUI controls and aircraft detail panel
-- ARM-optimized performance targeting 60fps+
 
 ## Requirements
 
@@ -43,33 +32,54 @@ Real-time 3D flight visualization that works both as a personal ADS-B receiver d
 - ✓ Airport search, labels, fly-to, nearby browse — v1.0 web
 - ✓ 3D terrain elevation with satellite imagery — v1.0 web
 - ✓ Airspace volume rendering (Class B/C/D) — v1.0 web
+- ✓ Metal 3 rendering with triple buffering and 4x MSAA — v2.0 native
+- ✓ Orbital camera with trackpad orbit/zoom/pan and auto-rotate — v2.0 native
+- ✓ Async map tile ground plane with coordinate system — v2.0 native
+- ✓ 6 instanced aircraft model categories at 60fps — v2.0 native
+- ✓ Local dump1090 and global API polling with automatic failover — v2.0 native
+- ✓ Smooth 60fps interpolated aircraft movement — v2.0 native
+- ✓ GPU polyline flight trails with altitude color gradient — v2.0 native
+- ✓ Billboard text labels with distance-based LOD — v2.0 native
+- ✓ Aircraft selection with enrichment detail panel — v2.0 native
+- ✓ Follow camera mode with smooth tracking — v2.0 native
+- ✓ Terrain elevation mesh from AWS Terrarium tiles — v2.0 native
+- ✓ Three themes (day/night/retro wireframe) affecting all passes — v2.0 native
+- ✓ 3D airport ground labels for 99 major airports — v2.0 native
+- ✓ Airport search by name/IATA/ICAO with fly-to animation — v2.0 native
+- ✓ SwiftUI Settings with persistent preferences — v2.0 native
+- ✓ Swift Charts statistics visualization — v2.0 native
+- ✓ Keyboard shortcuts with macOS menu bar — v2.0 native
+- ✓ Imperial/metric unit switching — v2.0 native
+- ✓ MenuBarExtra status item with live aircraft count — v2.0 native
+- ✓ Dock icon badge with aircraft count — v2.0 native
+- ✓ Configurable aircraft alert notifications — v2.0 native
+- ✓ Standard macOS menus (File/Edit/View/Window) — v2.0 native
+- ✓ DMG build/distribution script with entitlements — v2.0 native
 
 ### Active
 
-<!-- v2.0 — Native macOS App requirements defined in REQUIREMENTS.md -->
-
-(Defined in REQUIREMENTS.md)
+(None — define in next milestone)
 
 ### Out of Scope
 
 - Recording/playback functionality — adds significant complexity, not core to the vision
 - Fly mode (WASD navigation) — orbit camera is sufficient
-- Mobile native app — macOS-first for v2.0
+- Mobile native app — macOS-first
 - User accounts or authentication — client-side only
 - Real-time chat or social features — this is a visualization tool
-- WebView/WKWebView wrapper — must be fully native Metal rendering
-- Mac App Store distribution — direct download for v2.0
-- Full feature parity with web version in v2.0 — core features first, add terrain/airspace/airports in later milestones
+- Mac App Store distribution — direct download distribution
 
 ## Context
 
-This is a platform rewrite. The existing web app (~5,600 lines, single HTML file) serves as the feature reference. The v2.0 native app will be built in Swift using Metal for 3D rendering and SwiftUI for UI controls. The goal is native performance optimized for Apple Silicon (M1/M2/M3/M4), targeting 60fps+ with hundreds of aircraft.
+**v2.0 shipped.** The native macOS app is a complete rewrite of the web version using Swift, Metal 3, and SwiftUI. 42 source files, 7,043 LOC. The web version (~5,600 lines, single HTML file) remains available as the cross-platform option.
 
-The web version remains the production app. The native version starts with core rendering and data pipeline, with richer features (terrain, airports, airspace) planned for subsequent milestones.
+The native app includes all core visualization features from v1.0 web plus native macOS integration (menu bar, dock badge, notifications, standard menus). The only v1.0 web features not ported to native are: airspace volumes and coverage heatmaps.
 
-Inspiration: [Air Loom](http://objectiveunclear.com/airloom.html) — the native app should feel as polished and performant as dedicated aviation software.
+**Tech stack:** Swift, Metal 3, SwiftUI, macOS 14 Sonoma minimum, zero external dependencies.
 
-Airport data source: OurAirports dataset (open data, includes coordinates, IATA/ICAO codes, names, types).
+Inspiration: [Air Loom](http://objectiveunclear.com/airloom.html)
+
+Airport data: embedded 99-airport JSON dataset (OurAirports-derived).
 
 ## Constraints
 
@@ -79,7 +89,7 @@ Airport data source: OurAirports dataset (open data, includes coordinates, IATA/
 - **Data sources**: Global APIs must be free/public (no paid API keys required)
 - **Offline tolerance**: App should degrade gracefully when APIs are unavailable
 - **Distribution**: Direct download (DMG), no App Store sandboxing constraints
-- **macOS version**: macOS 13 Ventura+ (Metal 3 support)
+- **macOS version**: macOS 14 Sonoma+ (Metal 3 support)
 
 ## Key Decisions
 
@@ -89,10 +99,17 @@ Airport data source: OurAirports dataset (open data, includes coordinates, IATA/
 | Multiple global APIs with fallback | No single free API guarantees uptime; fallback ensures reliability | ✓ Good — v1.0 |
 | Major airports only for 3D labels | Showing all airports would be visually cluttered and hurt performance | ✓ Good — v1.0 |
 | 4-phase roadmap: Data -> Airports -> Terrain -> Airspace | Follows dependency chain; each phase delivers independently verifiable capability | ✓ Good — v1.0 |
-| Metal over SceneKit for 3D | Maximum performance and control for real-time flight data rendering | — Pending |
-| SwiftUI over AppKit for UI | Modern, declarative, sufficient for controls/panels/settings | — Pending |
-| Core features first, add terrain/airports later | Reduces v2.0 scope to achievable milestone, proves native rendering works | — Pending |
-| Direct download distribution | No App Store sandboxing, faster iteration, full system access | — Pending |
+| Metal over SceneKit for 3D | Maximum performance and control for real-time flight data rendering | ✓ Good — v2.0 |
+| SwiftUI over AppKit for UI | Modern, declarative, sufficient for controls/panels/settings | ✓ Good — v2.0 |
+| Triple buffering with DispatchSemaphore(value: 3) | Smooth 60fps without GPU stalls | ✓ Good — v2.0 |
+| Mercator projection with worldScale=500 | Simple coordinate mapping, works globally | ✓ Good — v2.0 |
+| NotificationCenter for SwiftUI-Metal bridge | Decoupled communication, avoids tight binding | ✓ Good — v2.0 |
+| @AppStorage + UserDefaults.standard frame-time reads | Settings persist and take effect immediately | ✓ Good — v2.0 |
+| CPU-side terrain vertex displacement | Simpler than GPU displacement, adequate for current tile count | ✓ Good — v2.0 |
+| MenuBarExtra for menu bar status | Pure SwiftUI, no AppKit bridging needed | ✓ Good — v2.0 |
+| Unsigned DMG default, signed as opt-in | Works without Apple Developer Program membership | ✓ Good — v2.0 |
+| Zero external Swift dependencies | URLSession, simd, UserDefaults only — no SPM packages | ✓ Good — v2.0 |
+| Direct download distribution | No App Store sandboxing, faster iteration, full system access | ✓ Good — v2.0 |
 
 ---
-*Last updated: 2026-02-08 after v2.0 milestone start*
+*Last updated: 2026-02-09 after v2.0 milestone complete*
