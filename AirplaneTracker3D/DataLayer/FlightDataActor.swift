@@ -77,17 +77,27 @@ actor FlightDataActor {
     /// Current polling mode.
     private var currentMode: DataMode = .global
 
+    /// Dynamic query center updated by the camera position pipeline.
+    private var currentCenter: (lat: Double, lon: Double) = (lat: 47.6, lon: -122.3)
+
     // MARK: - Public API
+
+    /// Update the query center. Called from the camera position pipeline so each
+    /// subsequent polling cycle fetches aircraft for the area the user is viewing.
+    func updateCenter(lat: Double, lon: Double) {
+        currentCenter = (lat: lat, lon: lon)
+    }
 
     /// Start polling for aircraft data. Returns an AsyncStream that yields the latest
     /// aircraft dictionary after each poll cycle.
     ///
     /// - Parameters:
     ///   - mode: Local (dump1090) or global (airplanes.live/adsb.lol) mode.
-    ///   - center: Center coordinates for the search area (lat, lon).
+    ///   - center: Initial center coordinates for the search area (lat, lon).
     /// - Returns: An AsyncStream yielding the latest aircraft by hex after each fetch.
     func startPolling(mode: DataMode, center: (lat: Double, lon: Double)) -> AsyncStream<[String: AircraftModel]> {
         currentMode = mode
+        currentCenter = center
         dataBuffer.removeAll()
         lastSeen.removeAll()
 
@@ -96,6 +106,7 @@ actor FlightDataActor {
                 let interval: Duration = mode == .local ? .seconds(1) : .seconds(5)
                 while !Task.isCancelled {
                     guard let self = self else { break }
+                    let center = await self.currentCenter
                     let aircraft = await self.fetchWithFallback(mode: mode, center: center)
                     await self.updateBuffer(aircraft)
                     let latest = await self.latestAircraft()
@@ -259,10 +270,18 @@ final class FlightDataManager {
         pollingTask = nil
     }
 
+    /// Update the polling center to match the current camera position.
+    func updateCenter(lat: Double, lon: Double) {
+        Task {
+            await actor.updateCenter(lat: lat, lon: lon)
+        }
+    }
+
     /// Switch data mode (local/global). Restarts polling with the new mode.
     func switchMode(to mode: FlightDataActor.DataMode, center: (lat: Double, lon: Double)) {
         Task {
             await actor.switchMode(to: mode)
+            await actor.updateCenter(lat: center.lat, lon: center.lon)
         }
         startPolling(mode: mode, center: center)
     }
