@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-09)
 
 **Core value:** Real-time 3D flight visualization that works both as a personal ADS-B receiver dashboard and as a global flight explorer with airport discovery.
-**Current focus:** v2.1 Phase 11 -- Bug Fixes & Rendering Foundation
+**Current focus:** v2.1 Phase 12 -- Info Panel Restoration
 
 ## Current Position
 
-Phase: 11 of 15 (Bug Fixes & Rendering Foundation)
-Plan: 2 of 2 in current phase
-Status: Phase 11 complete
-Last activity: 2026-02-09 -- Completed 11-02-PLAN.md (aircraft silhouette geometry)
+Phase: 12 of 15 (Info Panel Restoration)
+Plan: 1 of 1 in current phase
+Status: Phase 12 complete
+Last activity: 2026-02-09 -- Completed 12-01-PLAN.md (external links, aircraft photo, lat/lon verification)
 
-Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [##........] 20%
+Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [###.......] 40%
 
 ## Performance Metrics
 
@@ -24,9 +24,9 @@ Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [##........] 20
 - Total execution time: ~47min
 
 **v2.1 Velocity:**
-- Plans completed: 2
+- Plans completed: 3
 - Average duration: ~2min
-- Total execution time: ~4min
+- Total execution time: ~6min
 
 ## Accumulated Context
 
@@ -43,12 +43,13 @@ Recent decisions affecting current work:
 - v2.1: T-tail + wing-mounted engines for regional jet distinction (not just scaled-down jet)
 - v2.1: Removed @2x retina suffix from CartoDB day theme URL for reliable tile loading
 - v2.1: Propeller mesh at origin with noseOffset translation (clean matrix composition pattern)
+- v2.1: planespotters.net as primary photo source with hexdb.io fallback (no API key, AsyncImage handles 404)
 
 ### Known Issues (v2.1 scope)
 
 - ~~Map tile ground plane not displaying~~ FIXED: @2x URL removed, diagnostic logging added (11-01)
 - ~~Propeller rotation matrix incorrectly composed~~ FIXED: mesh at origin + noseOffset translation (11-01)
-- Native detail panel missing: lat/lon, aircraft photo, external links
+- ~~Native detail panel missing: lat/lon, aircraft photo, external links~~ FIXED: links, photo, lat/lon verified (12-01)
 - Airspace volumes and coverage heatmaps not yet ported from web
 
 ### Pending Todos
@@ -62,5 +63,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: Completed 11-01-PLAN.md (tile loading + propeller fix) and 11-02-PLAN.md (aircraft silhouettes). Phase 11 complete.
+Stopped at: Completed 12-01-PLAN.md (info panel restoration: external links, aircraft photo, lat/lon). Phase 12 complete.
 Resume file: None
