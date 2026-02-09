@@ -845,6 +845,7 @@ extension Renderer: MTKViewDelegate {
             uniforms.pointee.modelMatrix = matrix_identity_float4x4
             uniforms.pointee.viewMatrix = camera.viewMatrix
             uniforms.pointee.projectionMatrix = camera.projectionMatrix
+            uniforms.pointee.cameraPosition = camera.position
 
             // Determine tile zoom level and visible tiles
             currentZoom = tileManager.zoomLevel(forCameraDistance: camera.distance)

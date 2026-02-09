@@ -12,7 +12,8 @@ typedef enum {
     BufferIndexGlowInstances = 4,
     BufferIndexTrailVertices = 5,
     BufferIndexLabelInstances = 6,
-    BufferIndexAltLineVertices = 7
+    BufferIndexAltLineVertices = 7,
+    BufferIndexAirspaceVertices = 8
 } BufferIndex;
 
 // Texture indices
@@ -25,6 +26,8 @@ typedef struct {
     simd_float4x4 modelMatrix;
     simd_float4x4 viewMatrix;
     simd_float4x4 projectionMatrix;
+    simd_float3 cameraPosition;    // World-space camera position (for Fresnel/specular)
+    float _pad;                     // Alignment padding
 } Uniforms;
 
 // Per-vertex data (colored geometry)
@@ -105,5 +108,13 @@ typedef struct {
     simd_float2 texCoord;   // UV for map tile texture sampling
     simd_float3 normal;     // Computed surface normal for lighting
 } TerrainVertex;
+
+// Per-vertex data for airspace volume rendering (32 bytes)
+typedef struct {
+    simd_float3 position;    // 12 bytes: world-space XYZ
+    float _pad0;             // 4 bytes: padding for alignment
+    simd_float4 color;       // 16 bytes: per-vertex RGBA (class color with alpha)
+} AirspaceVertex;
+// Total: 32 bytes
 
 #endif /* ShaderTypes_h */
