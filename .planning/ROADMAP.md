@@ -88,11 +88,10 @@ Plans:
   2. User can choose between Local, Remote, and Global data sources in Settings
   3. Switching data source takes effect immediately -- aircraft from the new source appear without restarting the app
   4. Remote dump1090 polls aircraft.json from the configured IP:port and displays aircraft on the map
-**Plans**: TBD
+**Plans:** 1 plan
 
 Plans:
-- [ ] 18-01: TBD
-- [ ] 18-02: TBD
+- [ ] 18-01-PLAN.md — Add remote DataMode, Settings UI for IP/port, and immediate source switching
 
 ## Progress
 
@@ -118,4 +117,4 @@ Phases execute in numeric order: 16 -> 17 -> 18
 | 15. Visual Polish | v2.1 | 2/2 | Complete | 2026-02-09 |
 | 16. Camera-Following API & Aircraft Visibility | v2.2 | 1/1 | Complete | 2026-02-09 |
 | 17. Expanded Airport Database | v2.2 | 1/1 | Complete | 2026-02-09 |
-| 18. Remote Data Sources | v2.2 | 0/TBD | Not started | - |
+| 18. Remote Data Sources | v2.2 | 0/1 | Not started | - |
