@@ -132,4 +132,10 @@ final class ThemeManager {
 extension Notification.Name {
     static let themeChanged = Notification.Name("themeChanged")
     static let cycleTheme = Notification.Name("cycleTheme")
+    static let setTheme = Notification.Name("setTheme")
+    static let resetCamera = Notification.Name("resetCamera")
+    static let toggleAutoRotate = Notification.Name("toggleAutoRotate")
+    static let toggleInfoPanel = Notification.Name("toggleInfoPanel")
+    static let toggleStats = Notification.Name("toggleStats")
+    static let aircraftCountUpdated = Notification.Name("aircraftCountUpdated")
 }

@@ -40,6 +40,10 @@
 		A10001000000000000000033 /* FlyToAnimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000033 /* FlyToAnimator.swift */; };
 		A10001000000000000000034 /* AirportSearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000034 /* AirportSearchViewModel.swift */; };
 		A10001000000000000000035 /* AirportSearchPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000035 /* AirportSearchPanel.swift */; };
+		A10001000000000000000036 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000036 /* SettingsView.swift */; };
+		A10001000000000000000037 /* InfoPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000037 /* InfoPanel.swift */; };
+		A10001000000000000000038 /* StatisticsCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000038 /* StatisticsCollector.swift */; };
+		A10001000000000000000039 /* StatisticsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000039 /* StatisticsPanel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -78,6 +82,10 @@
 		A10002000000000000000033 /* FlyToAnimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlyToAnimator.swift; sourceTree = "<group>"; };
 		A10002000000000000000034 /* AirportSearchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirportSearchViewModel.swift; sourceTree = "<group>"; };
 		A10002000000000000000035 /* AirportSearchPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirportSearchPanel.swift; sourceTree = "<group>"; };
+		A10002000000000000000036 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A10002000000000000000037 /* InfoPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InfoPanel.swift; sourceTree = "<group>"; };
+		A10002000000000000000038 /* StatisticsCollector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatisticsCollector.swift; sourceTree = "<group>"; };
+		A10002000000000000000039 /* StatisticsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatisticsPanel.swift; sourceTree = "<group>"; };
 		A10003000000000000000001 /* AirplaneTracker3D.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AirplaneTracker3D.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -186,6 +194,9 @@
 			children = (
 				A10002000000000000000027 /* AircraftDetailPanel.swift */,
 				A10002000000000000000035 /* AirportSearchPanel.swift */,
+				A10002000000000000000036 /* SettingsView.swift */,
+				A10002000000000000000037 /* InfoPanel.swift */,
+				A10002000000000000000039 /* StatisticsPanel.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -202,6 +213,7 @@
 			isa = PBXGroup;
 			children = (
 				A10002000000000000000034 /* AirportSearchViewModel.swift */,
+				A10002000000000000000038 /* StatisticsCollector.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -315,6 +327,10 @@
 				A10001000000000000000033 /* FlyToAnimator.swift in Sources */,
 				A10001000000000000000034 /* AirportSearchViewModel.swift in Sources */,
 				A10001000000000000000035 /* AirportSearchPanel.swift in Sources */,
+				A10001000000000000000036 /* SettingsView.swift in Sources */,
+				A10001000000000000000037 /* InfoPanel.swift in Sources */,
+				A10001000000000000000038 /* StatisticsCollector.swift in Sources */,
+				A10001000000000000000039 /* StatisticsPanel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
