@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-09)
 
 **Core value:** Real-time 3D flight visualization that works both as a personal ADS-B receiver dashboard and as a global flight explorer with airport discovery.
-**Current focus:** v2.1 Phase 14 -- Coverage Heatmap (plan 1 of 2 complete)
+**Current focus:** v2.1 Phase 14 complete -- Coverage Heatmap fully integrated
 
 ## Current Position
 
-Phase: 14 of 15 (Coverage Heatmap)
-Plan: 1 of 2 in current phase
-Status: Plan 14-01 complete (heatmap data pipeline), plan 14-02 pending (renderer integration)
-Last activity: 2026-02-09 -- Completed 14-01-PLAN.md (HeatmapManager, HeatmapShaders, ShaderTypes.h)
+Phase: 14 of 15 (Coverage Heatmap) -- COMPLETE
+Plan: 2 of 2 in current phase (all plans complete)
+Status: Phase 14 complete. Coverage heatmap fully integrated into renderer with settings toggle.
+Last activity: 2026-02-09 -- Completed 14-02-PLAN.md (Renderer integration, Settings toggle, ThemeConfig color ramp)
 
-Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [######....] 70%
+Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [########..] 80%
 
 ## Performance Metrics
 
@@ -24,9 +24,9 @@ Progress: v1.0 shipped (4 phases), v2.0 shipped (6 phases), v2.1 [######....] 70
 - Total execution time: ~47min
 
 **v2.1 Velocity:**
-- Plans completed: 6
-- Average duration: ~2.8min
-- Total execution time: ~17min
+- Plans completed: 8
+- Average duration: ~2.9min
+- Total execution time: ~23min
 
 ## Accumulated Context
 
@@ -50,6 +50,9 @@ Recent decisions affecting current work:
 - v2.1: UserDefaults.register() for boolean defaults (airspace toggles default to true)
 - v2.1: Managed storage mode for heatmap MTLTexture (supports replace() on macOS discrete GPUs)
 - v2.1: 50% bounds shift threshold for heatmap grid reset (freshness vs. stability)
+- v2.1: Heatmap renders once after tiles before both branches (persists without aircraft)
+- v2.1: Temporary fill-mode restore in retro theme for heatmap ground overlay
+- v2.1: ThemeConfig heatmapColorRamp provides explicit low/high gradient per theme
 
 ### Known Issues (v2.1 scope)
 
@@ -57,7 +60,7 @@ Recent decisions affecting current work:
 - ~~Propeller rotation matrix incorrectly composed~~ FIXED: mesh at origin + noseOffset translation (11-01)
 - ~~Native detail panel missing: lat/lon, aircraft photo, external links~~ FIXED: links, photo, lat/lon verified (12-01)
 - ~~Airspace volumes data pipeline built, pending Renderer integration (13-02)~~ FIXED: fully integrated (13-02)
-- Coverage heatmap data pipeline built (14-01), pending Renderer integration (14-02)
+- ~~Coverage heatmap data pipeline built (14-01), pending Renderer integration (14-02)~~ FIXED: fully integrated (14-02)
 
 ### Pending Todos
 
@@ -70,5 +73,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: Completed 14-01-PLAN.md (HeatmapManager data pipeline: 32x32 grid, theme-aware texture, ground quad shaders). Ready for 14-02.
+Stopped at: Completed 14-02-PLAN.md (Renderer integration: heatmap pipeline, draw loop wiring, Settings toggle). Phase 14 complete. Ready for Phase 15.
 Resume file: None
