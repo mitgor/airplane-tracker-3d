@@ -42,6 +42,36 @@ struct AirplaneTracker3DApp: App {
 
 struct AppCommands: Commands {
     var body: some Commands {
+        // Remove "New Window" from File menu (single-window app)
+        CommandGroup(replacing: .newItem) { }
+
+        // View menu: add app-specific toggle items after toolbar section
+        // No keyboard shortcuts here -- the Tracker menu provides the primary shortcuts
+        CommandGroup(after: .toolbar) {
+            Button("Toggle Info Panel") {
+                NotificationCenter.default.post(name: .toggleInfoPanel, object: nil)
+            }
+
+            Button("Toggle Statistics") {
+                NotificationCenter.default.post(name: .toggleStats, object: nil)
+            }
+
+            Divider()
+
+            Button("Toggle Airport Search") {
+                NotificationCenter.default.post(name: .toggleSearch, object: nil)
+            }
+        }
+
+        // Window menu: add "Reset Camera to Default" after window arrangement items
+        CommandGroup(after: .windowArrangement) {
+            Divider()
+            Button("Reset Camera to Default") {
+                NotificationCenter.default.post(name: .resetCamera, object: nil)
+            }
+            .keyboardShortcut("0", modifiers: .command)
+        }
+
         CommandMenu("Tracker") {
             Button("Reset Camera") {
                 NotificationCenter.default.post(name: .resetCamera, object: nil)
