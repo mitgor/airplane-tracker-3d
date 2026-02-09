@@ -15,6 +15,10 @@ struct AircraftDetailPanel: View {
     @State private var routeInfo: RouteEnrichment?
     @State private var isLoadingEnrichment = true
 
+    @AppStorage("unitSystem") private var unitSystem: String = "imperial"
+
+    private var isMetric: Bool { unitSystem == "metric" }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // Header: callsign + close button
@@ -37,7 +41,7 @@ struct AircraftDetailPanel: View {
             sectionHeader("Flight Data")
 
             dataRow("Altitude", formatAltitude(aircraft.altitude))
-            dataRow("Speed", "\(Int(aircraft.groundSpeed)) kts")
+            dataRow("Speed", formatSpeed(aircraft.groundSpeed))
             dataRow("Heading", "\(Int(aircraft.heading)) deg")
             dataRow("Vert Rate", formatVerticalRate(aircraft.verticalRate))
             if !aircraft.squawk.isEmpty {
@@ -158,12 +162,32 @@ struct AircraftDetailPanel: View {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         formatter.maximumFractionDigits = 0
-        let formatted = formatter.string(from: NSNumber(value: alt)) ?? "\(Int(alt))"
-        return "\(formatted) ft"
+        if isMetric {
+            let meters = alt * 0.3048
+            let formatted = formatter.string(from: NSNumber(value: meters)) ?? "\(Int(meters))"
+            return "\(formatted) m"
+        } else {
+            let formatted = formatter.string(from: NSNumber(value: alt)) ?? "\(Int(alt))"
+            return "\(formatted) ft"
+        }
+    }
+
+    private func formatSpeed(_ speed: Float) -> String {
+        if isMetric {
+            let kmh = speed * 1.852
+            return "\(Int(kmh)) km/h"
+        } else {
+            return "\(Int(speed)) kts"
+        }
     }
 
     private func formatVerticalRate(_ rate: Float) -> String {
         let prefix = rate >= 0 ? "+" : ""
-        return "\(prefix)\(Int(rate)) ft/min"
+        if isMetric {
+            let mps = rate * 0.00508
+            return "\(prefix)\(String(format: "%.1f", mps)) m/s"
+        } else {
+            return "\(prefix)\(Int(rate)) ft/min"
+        }
     }
 }

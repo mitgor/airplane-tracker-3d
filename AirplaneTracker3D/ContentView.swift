@@ -151,7 +151,9 @@ struct ContentView: View {
         .onAppear {
             let center = (lat: MapCoordinateSystem.shared.centerLat,
                           lon: MapCoordinateSystem.shared.centerLon)
-            flightDataManager.startPolling(mode: .global, center: center)
+            let savedSource = UserDefaults.standard.string(forKey: "dataSource") ?? "global"
+            let mode: FlightDataActor.DataMode = savedSource == "local" ? .local : .global
+            flightDataManager.startPolling(mode: mode, center: center)
 
             // Configure statistics collector
             statisticsCollector.aircraftCountProvider = { [self] in
@@ -202,6 +204,14 @@ struct ContentView: View {
                 lastUpdateTime = time
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .switchDataSource)) { notification in
+            if let source = notification.userInfo?["source"] as? String {
+                let center = (lat: MapCoordinateSystem.shared.centerLat,
+                              lon: MapCoordinateSystem.shared.centerLon)
+                let mode: FlightDataActor.DataMode = source == "local" ? .local : .global
+                flightDataManager.switchMode(to: mode, center: center)
+            }
+        }
     }
 }
 
@@ -210,4 +220,5 @@ struct ContentView: View {
 extension Notification.Name {
     static let toggleFollowMode = Notification.Name("toggleFollowMode")
     static let clearSelection = Notification.Name("clearSelection")
+    static let switchDataSource = Notification.Name("switchDataSource")
 }

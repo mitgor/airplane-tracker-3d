@@ -40,6 +40,13 @@ struct SettingsView: View {
                 userInfo: ["theme": newTheme]
             )
         }
+        .onChange(of: dataSource) { _, newSource in
+            NotificationCenter.default.post(
+                name: .switchDataSource,
+                object: nil,
+                userInfo: ["source": newSource]
+            )
+        }
     }
 
     // MARK: - Appearance Tab
