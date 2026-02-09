@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// Tabbed SwiftUI Settings view with @AppStorage-bound controls for theme, units,
-/// data source, trail rendering, and altitude exaggeration. All values persist
-/// across app restarts via UserDefaults.
+/// data source, trail rendering, altitude exaggeration, and notification alerts.
+/// All values persist across app restarts via UserDefaults.
 struct SettingsView: View {
 
     // MARK: - Appearance Settings
@@ -20,6 +20,14 @@ struct SettingsView: View {
 
     @AppStorage("dataSource") private var dataSource: String = "global"
 
+    // MARK: - Notification Settings
+
+    @AppStorage("notificationsEnabled") private var notificationsEnabled: Bool = false
+    @AppStorage("alertOnEmergencySquawk") private var alertOnEmergencySquawk: Bool = true
+    @AppStorage("watchedCallsigns") private var watchedCallsigns: String = ""
+
+    @ObservedObject private var notificationManager = NotificationManager.shared
+
     var body: some View {
         TabView {
             appearanceTab
@@ -31,8 +39,13 @@ struct SettingsView: View {
                 .tabItem {
                     Label("Rendering", systemImage: "cube.transparent")
                 }
+
+            notificationsTab
+                .tabItem {
+                    Label("Notifications", systemImage: "bell")
+                }
         }
-        .frame(width: 400, height: 300)
+        .frame(width: 400, height: 350)
         .onChange(of: selectedTheme) { _, newTheme in
             NotificationCenter.default.post(
                 name: .setTheme,
@@ -96,5 +109,46 @@ struct SettingsView: View {
             }
         }
         .padding()
+    }
+
+    // MARK: - Notifications Tab
+
+    private var notificationsTab: some View {
+        Form {
+            Toggle("Enable Notifications", isOn: $notificationsEnabled)
+
+            if notificationsEnabled {
+                HStack {
+                    if notificationManager.isAuthorized {
+                        Text("Permission: Granted")
+                            .foregroundColor(.green)
+                            .font(.caption)
+                    } else {
+                        Text("Permission: Not Granted")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                        Spacer()
+                        Button("Request Permission") {
+                            Task {
+                                await notificationManager.requestPermission()
+                            }
+                        }
+                    }
+                }
+
+                Toggle("Alert on Emergency Squawk (7500/7600/7700)", isOn: $alertOnEmergencySquawk)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Watched Callsigns (comma-separated):")
+                        .font(.caption)
+                    TextField("e.g. UAL123, DAL456", text: $watchedCallsigns)
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+        }
+        .padding()
+        .task {
+            await notificationManager.checkAuthorization()
+        }
     }
 }

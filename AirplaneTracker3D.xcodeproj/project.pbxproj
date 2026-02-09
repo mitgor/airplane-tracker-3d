@@ -47,6 +47,7 @@
 		A10001000000000000000040 /* MenuBarManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000040 /* MenuBarManager.swift */; };
 		A10001000000000000000041 /* DockBadgeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000041 /* DockBadgeManager.swift */; };
 		A10001000000000000000042 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000042 /* NotificationManager.swift */; };
+		A10001000000000000000043 /* AlertCondition.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000043 /* AlertCondition.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -92,6 +93,7 @@
 		A10002000000000000000040 /* MenuBarManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarManager.swift; sourceTree = "<group>"; };
 		A10002000000000000000041 /* DockBadgeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockBadgeManager.swift; sourceTree = "<group>"; };
 		A10002000000000000000042 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
+		A10002000000000000000043 /* AlertCondition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertCondition.swift; sourceTree = "<group>"; };
 		A10003000000000000000001 /* AirplaneTracker3D.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AirplaneTracker3D.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -182,6 +184,7 @@
 			children = (
 				A10002000000000000000012 /* AircraftModel.swift */,
 				A10002000000000000000013 /* AircraftCategory.swift */,
+				A10002000000000000000043 /* AlertCondition.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -351,6 +354,7 @@
 				A10001000000000000000040 /* MenuBarManager.swift in Sources */,
 				A10001000000000000000041 /* DockBadgeManager.swift in Sources */,
 				A10001000000000000000042 /* NotificationManager.swift in Sources */,
+				A10001000000000000000043 /* AlertCondition.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
