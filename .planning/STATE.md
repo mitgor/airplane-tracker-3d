@@ -41,11 +41,13 @@ Recent decisions affecting current work:
 - v2.1: CPU-side heatmap grid with texture upload (no compute shader needed for 32x32 grid)
 - v2.1: Single aft-offset wing box for jet sweep (simpler than per-side segments, still visually distinct)
 - v2.1: T-tail + wing-mounted engines for regional jet distinction (not just scaled-down jet)
+- v2.1: Removed @2x retina suffix from CartoDB day theme URL for reliable tile loading
+- v2.1: Propeller mesh at origin with noseOffset translation (clean matrix composition pattern)
 
 ### Known Issues (v2.1 scope)
 
-- Map tile ground plane not displaying (async loading pipeline issue)
-- Propeller rotation matrix incorrectly composed (identity noseOffset at line 193-194)
+- ~~Map tile ground plane not displaying~~ FIXED: @2x URL removed, diagnostic logging added (11-01)
+- ~~Propeller rotation matrix incorrectly composed~~ FIXED: mesh at origin + noseOffset translation (11-01)
 - Native detail panel missing: lat/lon, aircraft photo, external links
 - Airspace volumes and coverage heatmaps not yet ported from web
 
@@ -60,5 +62,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: Completed 11-02-PLAN.md (aircraft silhouette geometry). Phase 11 complete. Pending: user visual verification of silhouettes.
+Stopped at: Completed 11-01-PLAN.md (tile loading + propeller fix) and 11-02-PLAN.md (aircraft silhouettes). Phase 11 complete.
 Resume file: None
