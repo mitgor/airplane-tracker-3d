@@ -37,7 +37,7 @@
 - [x] **Phase 11: Bug Fixes & Rendering Foundation** (2/2 plans) - 2026-02-09
 - [x] **Phase 12: Info Panel Restoration** (1/1 plan) - 2026-02-09
 - [x] **Phase 13: Airspace Volume Rendering** (2/2 plans) - 2026-02-09
-- [ ] **Phase 14: Coverage Heatmap** - Render aircraft detection density as a color-mapped ground overlay
+- [ ] **Phase 14: Coverage Heatmap** (2 plans) - Render aircraft detection density as a color-mapped ground overlay
 - [ ] **Phase 15: Visual Polish** - Terrain LOD, panel animations, and airspace labels
 
 ## Phase Details
@@ -91,10 +91,11 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. User sees a color-mapped ground overlay showing aircraft detection density that updates as new aircraft positions are received
   2. User can toggle the coverage heatmap on and off without affecting other map layers
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 14-01: TBD
+- [ ] 14-01-PLAN.md -- HeatmapManager data pipeline: ShaderTypes, Metal shaders, grid accumulation, texture generation
+- [ ] 14-02-PLAN.md -- Renderer integration: pipeline state, draw loop, theme colors, Settings toggle
 
 ### Phase 15: Visual Polish
 **Goal**: Users experience higher visual fidelity through terrain detail, smooth UI transitions, and informative airspace labels
@@ -130,5 +131,5 @@ Note: Phases 13 and 14 both depend on Phase 11 but not on each other. Phase 15 d
 | 11. Bug Fixes & Rendering Foundation | v2.1 | 2/2 | Complete | 2026-02-09 |
 | 12. Info Panel Restoration | v2.1 | 1/1 | Complete | 2026-02-09 |
 | 13. Airspace Volume Rendering | v2.1 | 2/2 | Complete | 2026-02-09 |
-| 14. Coverage Heatmap | v2.1 | 0/0 | Not started | - |
+| 14. Coverage Heatmap | v2.1 | 0/2 | Not started | - |
 | 15. Visual Polish | v2.1 | 0/0 | Not started | - |
