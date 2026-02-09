@@ -25,6 +25,7 @@ struct ThemeConfig {
     let airspaceClassBColor: SIMD4<Float>
     let airspaceClassCColor: SIMD4<Float>
     let airspaceClassDColor: SIMD4<Float>
+    let heatmapColorRamp: (low: SIMD4<Float>, high: SIMD4<Float>)
 }
 
 // MARK: - ThemeManager
@@ -88,7 +89,8 @@ final class ThemeManager {
             altLineColor: SIMD4<Float>(0.5, 0.5, 0.5, 0.3),
             airspaceClassBColor: SIMD4<Float>(0.27, 0.40, 1.0, 0.06),
             airspaceClassCColor: SIMD4<Float>(0.0, 0.8, 0.3, 0.06),
-            airspaceClassDColor: SIMD4<Float>(0.8, 0.0, 0.8, 0.06)
+            airspaceClassDColor: SIMD4<Float>(0.8, 0.0, 0.8, 0.06),
+            heatmapColorRamp: (low: SIMD4<Float>(0, 0.39, 1.0, 0.15), high: SIMD4<Float>(0, 1.0, 1.0, 0.6))
         ),
         .night: ThemeConfig(
             clearColor: (r: 0.039, g: 0.039, b: 0.102),
@@ -102,7 +104,8 @@ final class ThemeManager {
             altLineColor: SIMD4<Float>(0.5, 0.5, 0.5, 0.3),
             airspaceClassBColor: SIMD4<Float>(0.33, 0.47, 1.0, 0.08),
             airspaceClassCColor: SIMD4<Float>(0.0, 0.9, 0.4, 0.08),
-            airspaceClassDColor: SIMD4<Float>(0.9, 0.0, 0.9, 0.08)
+            airspaceClassDColor: SIMD4<Float>(0.9, 0.0, 0.9, 0.08),
+            heatmapColorRamp: (low: SIMD4<Float>(0, 0.31, 0.71, 0.15), high: SIMD4<Float>(0, 1.0, 1.0, 0.7))
         ),
         .retro: ThemeConfig(
             clearColor: (r: 0.0, g: 0.031, b: 0.0),
@@ -116,7 +119,8 @@ final class ThemeManager {
             altLineColor: SIMD4<Float>(0, 1, 0, 0.3),
             airspaceClassBColor: SIMD4<Float>(0.0, 1.0, 0.0, 0.03),
             airspaceClassCColor: SIMD4<Float>(0.0, 1.0, 0.0, 0.03),
-            airspaceClassDColor: SIMD4<Float>(0.0, 1.0, 0.0, 0.03)
+            airspaceClassDColor: SIMD4<Float>(0.0, 1.0, 0.0, 0.03),
+            heatmapColorRamp: (low: SIMD4<Float>(0, 0.24, 0, 0.15), high: SIMD4<Float>(0, 1.0, 0, 0.7))
         ),
     ]
 

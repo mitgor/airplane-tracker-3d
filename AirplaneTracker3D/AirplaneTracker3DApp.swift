@@ -11,6 +11,7 @@ struct AirplaneTracker3DApp: App {
             "showAirspaceClassB": true,
             "showAirspaceClassC": true,
             "showAirspaceClassD": true,
+            "showHeatmap": true,
         ])
     }
 
