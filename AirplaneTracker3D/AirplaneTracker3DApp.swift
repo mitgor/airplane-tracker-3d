@@ -12,6 +12,8 @@ struct AirplaneTracker3DApp: App {
             "showAirspaceClassC": true,
             "showAirspaceClassD": true,
             "showHeatmap": true,
+            "remoteHost": "192.168.1.100",
+            "remotePort": 8080,
         ])
     }
 

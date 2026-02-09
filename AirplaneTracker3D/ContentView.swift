@@ -152,7 +152,17 @@ struct ContentView: View {
             let center = (lat: MapCoordinateSystem.shared.centerLat,
                           lon: MapCoordinateSystem.shared.centerLon)
             let savedSource = UserDefaults.standard.string(forKey: "dataSource") ?? "global"
-            let mode: FlightDataActor.DataMode = savedSource == "local" ? .local : .global
+            let mode: FlightDataActor.DataMode
+            switch savedSource {
+            case "local":
+                mode = .local
+            case "remote":
+                let host = UserDefaults.standard.string(forKey: "remoteHost") ?? "192.168.1.100"
+                let port = UserDefaults.standard.integer(forKey: "remotePort")
+                mode = .remote(host: host, port: port > 0 ? port : 8080)
+            default:
+                mode = .global
+            }
             flightDataManager.startPolling(mode: mode, center: center)
 
             // Configure statistics collector
@@ -209,7 +219,17 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .switchDataSource)) { notification in
             if let source = notification.userInfo?["source"] as? String {
                 let center = (lat: centerLat, lon: centerLon)
-                let mode: FlightDataActor.DataMode = source == "local" ? .local : .global
+                let mode: FlightDataActor.DataMode
+                switch source {
+                case "local":
+                    mode = .local
+                case "remote":
+                    let host = UserDefaults.standard.string(forKey: "remoteHost") ?? "192.168.1.100"
+                    let port = UserDefaults.standard.integer(forKey: "remotePort")
+                    mode = .remote(host: host, port: port > 0 ? port : 8080)
+                default:
+                    mode = .global
+                }
                 flightDataManager.switchMode(to: mode, center: center)
             }
         }

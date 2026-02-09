@@ -24,6 +24,8 @@ struct SettingsView: View {
     // MARK: - Data Settings
 
     @AppStorage("dataSource") private var dataSource: String = "global"
+    @AppStorage("remoteHost") private var remoteHost: String = "192.168.1.100"
+    @AppStorage("remotePort") private var remotePort: Int = 8080
 
     // MARK: - Notification Settings
 
@@ -65,6 +67,24 @@ struct SettingsView: View {
                 userInfo: ["source": newSource]
             )
         }
+        .onChange(of: remoteHost) { _, _ in
+            if dataSource == "remote" {
+                NotificationCenter.default.post(
+                    name: .switchDataSource,
+                    object: nil,
+                    userInfo: ["source": "remote"]
+                )
+            }
+        }
+        .onChange(of: remotePort) { _, _ in
+            if dataSource == "remote" {
+                NotificationCenter.default.post(
+                    name: .switchDataSource,
+                    object: nil,
+                    userInfo: ["source": "remote"]
+                )
+            }
+        }
     }
 
     // MARK: - Appearance Tab
@@ -93,6 +113,24 @@ struct SettingsView: View {
             Picker("Data Source", selection: $dataSource) {
                 Text("Global (airplanes.live)").tag("global")
                 Text("Local (dump1090)").tag("local")
+                Text("Remote (dump1090)").tag("remote")
+            }
+
+            if dataSource == "remote" {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Remote dump1090 Address")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    HStack {
+                        TextField("IP Address", text: $remoteHost)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 180)
+                        Text(":")
+                        TextField("Port", value: $remotePort, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 70)
+                    }
+                }
             }
 
             VStack(alignment: .leading, spacing: 4) {
