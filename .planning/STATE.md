@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-08)
 
 ## Current Position
 
-Phase: 9 of 10 (UI Controls, Settings, Airports) -- IN PROGRESS
-Plan: 1 of 2 in current phase (09-01 complete)
-Status: Executing phase
-Last activity: 2026-02-09 -- Plan 09-01 (airport search, fly-to, nearby) complete
+Phase: 9 of 10 (UI Controls, Settings, Airports) -- COMPLETE
+Plan: 2 of 2 in current phase (09-02 complete)
+Status: Phase complete
+Last activity: 2026-02-09 -- Plan 09-02 (settings, info panel, statistics, keyboard shortcuts) complete
 
-Progress: [===============] 100% (16/17 plans across all milestones)
+Progress: [================] 100% (17/17 plans across all milestones)
 
 ## Performance Metrics
 
@@ -35,7 +35,7 @@ Progress: [===============] 100% (16/17 plans across all milestones)
 | 6 (v2.0) | 2 | 10min | 5min |
 | 7 (v2.0) | 2 | 11min | 5.5min |
 | 8 (v2.0) | 2 | 10min | 5min |
-| 9 (v2.0) | 1/2 | 4min | 4min |
+| 9 (v2.0) | 2/2 | 8min | 4min |
 
 **Recent Trend:**
 - Phase 5 verified: 5/5 automated checks pass
@@ -46,6 +46,7 @@ Progress: [===============] 100% (16/17 plans across all milestones)
 - v2.0 plan 08-01 completed in 3 min
 - v2.0 plan 08-02 completed in 7 min
 - v2.0 plan 09-01 completed in 4 min
+- v2.0 plan 09-02 completed in 4 min
 
 *Updated after each plan completion*
 
@@ -73,6 +74,9 @@ Recent decisions affecting current work:
 - [09-01]: FlyToAnimator smoothstep camera animation, frame-loop update pattern
 - [09-01]: ViewModels directory for SwiftUI ObservableObject view models
 - [09-01]: Notification userInfo [Float] arrays for SIMD3 cross-boundary transport
+- [09-02]: @AppStorage for two-way UserDefaults binding with Renderer frame-time reading
+- [09-02]: Settings scene + CommandMenu pattern for native macOS preferences and menu bar
+- [09-02]: Swift Charts for statistics visualization with timer-based data collection
 
 ### Pending Todos
 
@@ -86,5 +90,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: Completed 09-01-PLAN.md (airport search, fly-to, nearby browsing)
+Stopped at: Completed 09-02-PLAN.md (settings, info panel, statistics, keyboard shortcuts)
 Resume file: None
