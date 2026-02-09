@@ -968,7 +968,7 @@ extension Renderer: MTKViewDelegate {
                 NotificationCenter.default.post(
                     name: .aircraftCountUpdated,
                     object: nil,
-                    userInfo: ["count": states.count, "time": Date()]
+                    userInfo: ["count": states.count, "time": Date(), "states": states]
                 )
             }
 

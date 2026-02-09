@@ -2,6 +2,8 @@ import SwiftUI
 
 @main
 struct AirplaneTracker3DApp: App {
+    @StateObject private var menuBarManager = MenuBarManager()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -14,6 +16,25 @@ struct AirplaneTracker3DApp: App {
         Settings {
             SettingsView()
         }
+
+        MenuBarExtra {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Aircraft Tracked: \(menuBarManager.aircraftCount)")
+                    .font(.headline)
+                Divider()
+                Button("Show Window") {
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                }
+                Button("Quit") {
+                    NSApplication.shared.terminate(nil)
+                }
+                .keyboardShortcut("q")
+            }
+            .padding(8)
+        } label: {
+            Label("\(menuBarManager.aircraftCount)", systemImage: "airplane")
+        }
+        .menuBarExtraStyle(.menu)
     }
 }
 

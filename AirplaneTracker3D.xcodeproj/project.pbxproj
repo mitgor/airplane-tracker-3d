@@ -44,6 +44,9 @@
 		A10001000000000000000037 /* InfoPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000037 /* InfoPanel.swift */; };
 		A10001000000000000000038 /* StatisticsCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000038 /* StatisticsCollector.swift */; };
 		A10001000000000000000039 /* StatisticsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000039 /* StatisticsPanel.swift */; };
+		A10001000000000000000040 /* MenuBarManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000040 /* MenuBarManager.swift */; };
+		A10001000000000000000041 /* DockBadgeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000041 /* DockBadgeManager.swift */; };
+		A10001000000000000000042 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002000000000000000042 /* NotificationManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -86,6 +89,9 @@
 		A10002000000000000000037 /* InfoPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InfoPanel.swift; sourceTree = "<group>"; };
 		A10002000000000000000038 /* StatisticsCollector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatisticsCollector.swift; sourceTree = "<group>"; };
 		A10002000000000000000039 /* StatisticsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatisticsPanel.swift; sourceTree = "<group>"; };
+		A10002000000000000000040 /* MenuBarManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarManager.swift; sourceTree = "<group>"; };
+		A10002000000000000000041 /* DockBadgeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockBadgeManager.swift; sourceTree = "<group>"; };
+		A10002000000000000000042 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
 		A10003000000000000000001 /* AirplaneTracker3D.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AirplaneTracker3D.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -122,6 +128,7 @@
 				A10005000000000000000009 /* Views */,
 				A10005000000000000000011 /* ViewModels */,
 				A10005000000000000000010 /* Data */,
+				A10005000000000000000012 /* Services */,
 			);
 			path = AirplaneTracker3D;
 			sourceTree = "<group>";
@@ -216,6 +223,16 @@
 				A10002000000000000000038 /* StatisticsCollector.swift */,
 			);
 			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		A10005000000000000000012 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				A10002000000000000000040 /* MenuBarManager.swift */,
+				A10002000000000000000041 /* DockBadgeManager.swift */,
+				A10002000000000000000042 /* NotificationManager.swift */,
+			);
+			path = Services;
 			sourceTree = "<group>";
 		};
 		A10005000000000000000005 /* Products */ = {
@@ -331,6 +348,9 @@
 				A10001000000000000000037 /* InfoPanel.swift in Sources */,
 				A10001000000000000000038 /* StatisticsCollector.swift in Sources */,
 				A10001000000000000000039 /* StatisticsPanel.swift in Sources */,
+				A10001000000000000000040 /* MenuBarManager.swift in Sources */,
+				A10001000000000000000041 /* DockBadgeManager.swift in Sources */,
+				A10001000000000000000042 /* NotificationManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
