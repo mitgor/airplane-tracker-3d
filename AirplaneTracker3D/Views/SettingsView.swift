@@ -17,6 +17,7 @@ struct SettingsView: View {
     @AppStorage("showAirspaceClassB") private var showAirspaceClassB: Bool = true
     @AppStorage("showAirspaceClassC") private var showAirspaceClassC: Bool = true
     @AppStorage("showAirspaceClassD") private var showAirspaceClassD: Bool = true
+    @AppStorage("showHeatmap") private var showHeatmap: Bool = true
     @AppStorage("trailWidth") private var trailWidth: Double = 3.0
     @AppStorage("altitudeExaggeration") private var altitudeExaggeration: Double = 1.0
 
@@ -122,6 +123,10 @@ struct SettingsView: View {
                     Toggle("Class D", isOn: $showAirspaceClassD)
                         .foregroundColor(.cyan)
                 }
+            }
+
+            Section("Coverage Heatmap") {
+                Toggle("Show Heatmap", isOn: $showHeatmap)
             }
         }
         .padding()

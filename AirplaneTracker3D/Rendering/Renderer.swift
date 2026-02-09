@@ -39,6 +39,11 @@ final class Renderer: NSObject {
     let airspaceEdgePipeline: MTLRenderPipelineState
     let airspaceManager: AirspaceManager
 
+    // MARK: - Heatmap Rendering Pipeline States
+
+    let heatmapPipeline: MTLRenderPipelineState
+    let heatmapManager: HeatmapManager
+
     // MARK: - Terrain Pipeline States
 
     let terrainTileManager: TerrainTileManager
@@ -411,6 +416,31 @@ final class Renderer: NSObject {
 
         // --- Airspace Manager ---
         airspaceManager = AirspaceManager(device: device)
+
+        // --- Heatmap Pipeline State (alpha blending for semi-transparent ground overlay) ---
+        let heatmapPipelineDesc = MTLRenderPipelineDescriptor()
+        heatmapPipelineDesc.vertexFunction = library.makeFunction(name: "heatmap_vertex")
+        heatmapPipelineDesc.fragmentFunction = library.makeFunction(name: "heatmap_fragment")
+        heatmapPipelineDesc.colorAttachments[0].pixelFormat = metalView.colorPixelFormat
+        heatmapPipelineDesc.colorAttachments[0].isBlendingEnabled = true
+        heatmapPipelineDesc.colorAttachments[0].rgbBlendOperation = .add
+        heatmapPipelineDesc.colorAttachments[0].alphaBlendOperation = .add
+        heatmapPipelineDesc.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+        heatmapPipelineDesc.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+        heatmapPipelineDesc.colorAttachments[0].sourceAlphaBlendFactor = .sourceAlpha
+        heatmapPipelineDesc.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        heatmapPipelineDesc.depthAttachmentPixelFormat = metalView.depthStencilPixelFormat
+        heatmapPipelineDesc.rasterSampleCount = metalView.sampleCount
+        // No vertex descriptor needed -- reading raw buffer by vertexID
+
+        do {
+            heatmapPipeline = try device.makeRenderPipelineState(descriptor: heatmapPipelineDesc)
+        } catch {
+            fatalError("Failed to create heatmap pipeline: \(error)")
+        }
+
+        // --- Heatmap Manager ---
+        heatmapManager = HeatmapManager(device: device)
 
         // --- Trail auxiliary buffers ---
         guard let lwb = device.makeBuffer(length: MemoryLayout<Float>.stride, options: .storageModeShared) else {
@@ -862,6 +892,24 @@ final class Renderer: NSObject {
         encoder.setCullMode(.none)
     }
 
+    // MARK: - Heatmap Rendering
+
+    /// Encode heatmap ground overlay with textured alpha-blended quad.
+    private func encodeHeatmap(encoder: MTLRenderCommandEncoder, uniformBuffer: MTLBuffer) {
+        guard heatmapManager.hasData, let texture = heatmapManager.heatmapTexture() else { return }
+
+        encoder.setRenderPipelineState(heatmapPipeline)
+        encoder.setDepthStencilState(glowDepthStencilState)  // depth read, no write (semi-transparent overlay)
+        encoder.setCullMode(.none)
+
+        encoder.setVertexBuffer(uniformBuffer, offset: 0, index: Int(BufferIndexUniforms.rawValue))
+        encoder.setVertexBuffer(heatmapManager.vertexBuffer(at: currentBufferIndex), offset: 0,
+                                 index: Int(BufferIndexHeatmapVertices.rawValue))
+        encoder.setFragmentTexture(texture, index: 0)
+
+        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: heatmapManager.vertexCount())
+    }
+
     /// Compute geographic bounds of the visible area from current camera state.
     private func computeVisibleBounds() -> (west: Double, south: Double, east: Double, north: Double) {
         let halfExtent = camera.distance * 0.5
@@ -921,6 +969,9 @@ extension Renderer: MTKViewDelegate {
             let showClassC = UserDefaults.standard.bool(forKey: "showAirspaceClassC")
             let showClassD = UserDefaults.standard.bool(forKey: "showAirspaceClassD")
 
+            // Read heatmap visibility setting
+            let showHeatmap = UserDefaults.standard.bool(forKey: "showHeatmap")
+
             // Update camera
             camera.update(deltaTime: deltaTime)
 
@@ -955,6 +1006,9 @@ extension Renderer: MTKViewDelegate {
             airspaceManager.showClassC = showClassC
             airspaceManager.showClassD = showClassD
             airspaceManager.update(bufferIndex: currentBufferIndex, themeConfig: config)
+
+            // Update heatmap buffers (texture + quad geometry)
+            heatmapManager.update(bufferIndex: currentBufferIndex, themeConfig: config)
 
             // Update aspect ratio
             let drawableSize = view.drawableSize
@@ -1075,6 +1129,18 @@ extension Renderer: MTKViewDelegate {
                 }
             }
 
+            // --- Heatmap Ground Overlay (after tiles, before aircraft) ---
+            if showHeatmap {
+                // Heatmap must render in fill mode even in retro theme
+                if isRetro {
+                    encoder.setTriangleFillMode(.fill)
+                }
+                encodeHeatmap(encoder: encoder, uniformBuffer: uniformBuffer)
+                if isRetro {
+                    encoder.setTriangleFillMode(.lines)
+                }
+            }
+
             // --- Aircraft Rendering ---
             let rawStates = flightDataManager?.interpolatedStates(at: now) ?? []
 
@@ -1085,6 +1151,14 @@ extension Renderer: MTKViewDelegate {
                 states = rawStates.map { var s = $0; s.position.y *= altExag; return s }
             } else {
                 states = rawStates
+            }
+
+            // Accumulate heatmap data from aircraft positions
+            if showHeatmap && !states.isEmpty {
+                let bounds = computeVisibleBounds()
+                heatmapManager.accumulate(states: states,
+                                           west: bounds.west, south: bounds.south,
+                                           east: bounds.east, north: bounds.north)
             }
 
             // Post aircraft count periodically (~1 second at 60fps)
