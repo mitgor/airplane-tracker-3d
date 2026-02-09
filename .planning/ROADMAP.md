@@ -37,7 +37,7 @@
 - [x] **Phase 11: Bug Fixes & Rendering Foundation** (2/2 plans) - 2026-02-09
 - [x] **Phase 12: Info Panel Restoration** (1/1 plan) - 2026-02-09
 - [x] **Phase 13: Airspace Volume Rendering** (2/2 plans) - 2026-02-09
-- [ ] **Phase 14: Coverage Heatmap** (2 plans) - Render aircraft detection density as a color-mapped ground overlay
+- [x] **Phase 14: Coverage Heatmap** (2/2 plans) - 2026-02-09
 - [ ] **Phase 15: Visual Polish** - Terrain LOD, panel animations, and airspace labels
 
 ## Phase Details
@@ -131,5 +131,5 @@ Note: Phases 13 and 14 both depend on Phase 11 but not on each other. Phase 15 d
 | 11. Bug Fixes & Rendering Foundation | v2.1 | 2/2 | Complete | 2026-02-09 |
 | 12. Info Panel Restoration | v2.1 | 1/1 | Complete | 2026-02-09 |
 | 13. Airspace Volume Rendering | v2.1 | 2/2 | Complete | 2026-02-09 |
-| 14. Coverage Heatmap | v2.1 | 0/2 | Not started | - |
+| 14. Coverage Heatmap | v2.1 | 2/2 | Complete | 2026-02-09 |
 | 15. Visual Polish | v2.1 | 0/0 | Not started | - |
