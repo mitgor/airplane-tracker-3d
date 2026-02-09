@@ -116,11 +116,11 @@ Plans:
   3. User sees an info panel with aircraft count, last update time, and center coordinates
   4. User can view statistics graphs (aircraft count, message rate over time) rendered with SwiftUI Charts
   5. User can use keyboard shortcuts for common actions and sees them reflected in a native macOS menu bar
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 09-01: Airport database loading, search with autocomplete, fly-to, and nearby browse
-- [ ] 09-02: SwiftUI settings, info panel, statistics graphs, keyboard shortcuts, and persistence
+- [ ] 09-01-PLAN.md -- Airport search with autocomplete, fly-to camera animation, and nearby airports browsing
+- [ ] 09-02-PLAN.md -- SwiftUI Settings window, info panel, statistics charts, keyboard shortcuts with menu bar, and persistence
 
 ### Phase 10: Native macOS Integration + Distribution
 **Goal**: The app feels like a first-class macOS citizen -- menu bar status, dock badge, smart notifications, native menus -- and ships as a signed, notarized DMG
