@@ -78,11 +78,11 @@ Plans:
   2. User can independently toggle visibility of Class B, Class C, and Class D airspace volumes from the UI
   3. User sees airspace volumes colored distinctly by class (blue for Class B, green for Class C, magenta for Class D) with concentric altitude tiers visible
   4. Aircraft and trails remain visible through and in front of airspace volumes (volumes do not occlude other scene elements)
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 13-01: TBD
-- [ ] 13-02: TBD
+- [ ] 13-01-PLAN.md -- Airspace data pipeline: ShaderTypes, ear-clip triangulator, Metal shaders, AirspaceManager
+- [ ] 13-02-PLAN.md -- Renderer integration: pipeline states, draw loop, theme colors, Settings toggles
 
 ### Phase 14: Coverage Heatmap
 **Goal**: Users can visualize their ADS-B receiver coverage area as a density heatmap showing where aircraft have been detected over time
@@ -129,6 +129,6 @@ Note: Phases 13 and 14 both depend on Phase 11 but not on each other. Phase 15 d
 | 10. Native macOS Integration + Distribution | v2.0 | 2/2 | Complete | 2026-02-09 |
 | 11. Bug Fixes & Rendering Foundation | v2.1 | 2/2 | Complete | 2026-02-09 |
 | 12. Info Panel Restoration | v2.1 | 1/1 | Complete | 2026-02-09 |
-| 13. Airspace Volume Rendering | v2.1 | 0/0 | Not started | - |
+| 13. Airspace Volume Rendering | v2.1 | 0/2 | Planned | - |
 | 14. Coverage Heatmap | v2.1 | 0/0 | Not started | - |
 | 15. Visual Polish | v2.1 | 0/0 | Not started | - |
