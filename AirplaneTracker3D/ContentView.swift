@@ -43,7 +43,7 @@ struct ContentView: View {
             MetalView(
                 flightDataManager: flightDataManager,
                 onAircraftSelected: { info in
-                    withAnimation(.easeInOut(duration: 0.25)) {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                         selectedAircraft = info
                     }
                 }
@@ -67,7 +67,7 @@ struct ContentView: View {
                     .buttonStyle(.plain)
 
                     Button(action: {
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
                             showSearchPanel.toggle()
                         }
                     }) {
@@ -116,7 +116,7 @@ struct ContentView: View {
 
                     if showStatsPanel {
                         StatisticsPanel(collector: statisticsCollector)
-                            .transition(.move(edge: .bottom))
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                 }
                 .padding(.horizontal, 12)
@@ -138,14 +138,14 @@ struct ContentView: View {
                         NotificationCenter.default.post(
                             name: .clearSelection, object: nil
                         )
-                        withAnimation(.easeInOut(duration: 0.25)) {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                             selectedAircraft = nil
                         }
                     }
                 )
                 .frame(width: 280)
                 .padding()
-                .transition(.move(edge: .trailing))
+                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
         .onAppear {
@@ -174,7 +174,7 @@ struct ContentView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleSearch)) { _ in
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
                 showSearchPanel.toggle()
             }
         }
@@ -187,12 +187,12 @@ struct ContentView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleInfoPanel)) { _ in
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
                 showInfoPanel.toggle()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleStats)) { _ in
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
                 showStatsPanel.toggle()
             }
         }
