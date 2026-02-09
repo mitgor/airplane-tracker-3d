@@ -60,9 +60,9 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FIX-01 | Phase 11 | Pending |
-| FIX-02 | Phase 11 | Pending |
-| FIX-03 | Phase 11 | Pending |
+| FIX-01 | Phase 11 | Complete |
+| FIX-02 | Phase 11 | Complete |
+| FIX-03 | Phase 11 | Complete |
 | INFO-01 | Phase 12 | Pending |
 | INFO-02 | Phase 12 | Pending |
 | INFO-03 | Phase 12 | Pending |
