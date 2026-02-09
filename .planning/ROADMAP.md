@@ -105,10 +105,11 @@ Plans:
   1. User sees higher-resolution terrain near the camera and lower-resolution terrain in the distance (level of detail scales with viewing distance)
   2. User sees smooth spring-animated transitions when showing and hiding UI panels (detail panel, settings, statistics)
   3. User sees text labels at the center of each airspace volume identifying the associated airport name
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 15-01: TBD
+- [ ] 15-01-PLAN.md -- Terrain LOD (multi-zoom tile selection) and spring-animated panel transitions
+- [ ] 15-02-PLAN.md -- Airspace labels at volume centroids with distance culling
 
 ## Progress
 
@@ -132,4 +133,4 @@ Note: Phases 13 and 14 both depend on Phase 11 but not on each other. Phase 15 d
 | 12. Info Panel Restoration | v2.1 | 1/1 | Complete | 2026-02-09 |
 | 13. Airspace Volume Rendering | v2.1 | 2/2 | Complete | 2026-02-09 |
 | 14. Coverage Heatmap | v2.1 | 2/2 | Complete | 2026-02-09 |
-| 15. Visual Polish | v2.1 | 0/0 | Not started | - |
+| 15. Visual Polish | v2.1 | 0/2 | Not started | - |
